@@ -47,5 +47,5 @@ export const metadata = {
   name: '@flycut/caption-react',
   description: 'Complete video subtitle editing React component with AI-powered speech recognition',
   author: 'FlyCut Team',
-  license: 'MIT'
+  license: 'SEE LICENSE IN LICENSE'
 } as const

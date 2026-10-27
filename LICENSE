@@ -1,32 +1,168 @@
-MIT License
+FlyCut Caption Community Source License
+Version 1.0, 27 October 2026
 
-Copyright (c) 2025 FlyCut Team
+Copyright (c) 2025–2026 FlyCut Team and other contributors.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This is a custom, source-available license. It is not AGPL or MIT, does not
+incorporate either by reference, and is not represented as an OSI-approved
+open-source license. Rights not expressly granted are reserved.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1. Definitions and scope
 
-ADDITIONAL TERMS:
-- You may use and modify this software for personal, educational, or commercial purposes.
-- You may redistribute and create derivative works based on this software.
-- However, you are NOT permitted to remove, modify, or obscure any logos, watermarks,
-  branding elements, or attribution notices present in the software interface.
-- Any distribution or deployment of this software or its derivatives must retain
-  all original branding elements, including but not limited to the FlyCut Caption
-  name, logo, and any associated watermarks or attribution notices.
-- If you wish to remove branding elements, you must obtain explicit written
-  permission from the FlyCut Team.
+Licensor means a rights holder making material available under this license.
+Each Licensor grants only rights it owns or is authorized to grant.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+Software means the first-party FlyCut Caption source code, documentation and
+other materials distributed under this license, including its React library,
+desktop application and first-party sidecar code. Material carrying separate
+license notices remains governed by those notices.
+
+Covered Work means the Software, modifications to it, and a combined program
+incorporating Software code by copying, linking, embedding or bundling it as
+an integrated part. Mere aggregation of independent programs does not make
+an independent program a Covered Work.
+
+Corresponding Source means the preferred source form for modifying a Covered
+Work, including modifications, interface definitions, and the scripts and
+instructions necessary to build, install and run it. It excludes user media,
+credentials, private user data, independent general-purpose tools, and
+unmodified system libraries. Do not include secrets in source distributions.
+
+Closed-Source Integration means incorporating Software into a Covered Work
+while withholding any Corresponding Source required by this license, offering
+the Covered Work under incompatible proprietary terms, or seeking exemption
+from the source-sharing requirements in section 4. An independent program
+that only communicates through an ordinary API, CLI or MCP interface, without
+incorporating Software code or constituting a Covered Work, is not such an
+integration solely because its own source is private.
+
+2. Community permission
+
+Subject to all conditions below, each Licensor grants you a worldwide,
+non-exclusive, royalty-free copyright license to use, copy, study, modify,
+and distribute the Software and Covered Works, and operate them as services.
+Personal, educational, internal-business and commercial use, including
+charging for compliant copies or services, is permitted.
+
+This permission is conditional on sections 3, 4 and 5. You may not sublicense
+a Covered Work under inconsistent terms. Recipients receive these community
+permissions directly from the relevant Licensors, subject to this license.
+
+3. Product name, branding and notices
+
+You must retain the product name "FlyCut Caption" for the Software and its
+modified versions. You must not rename the Software or a Covered Work,
+substitute another product identity for it, or remove, obscure or replace
+existing FlyCut Caption product-name, logo or attribution notices in its
+user interface or distributed documentation. These requirements apply to
+private modifications, distributions and hosted deployments alike.
+
+Existing interface product-name and branding notices must remain readily
+visible in their normal locations. If no user interface exists, identify
+FlyCut Caption in distributed documentation and existing version/help
+identification, if any. Preserve copyright and license notices, this license,
+and applicable third-party legal notices in copies and distributions.
+
+You may add your operator name and "Unofficial modified version by [operator]"
+alongside, but not in place of, FlyCut Caption's identity. Modified or
+third-party-operated versions must clearly identify their changes or
+operator and must not imply official endorsement. A fork's technical
+repository URL, package namespace or build ID may change to avoid collisions,
+but may not replace the required product identity. An independent host
+application may keep its own name, but must not conceal or replace the
+identity of incorporated FlyCut Caption software.
+
+This license grants only the limited branding display permission needed to
+comply with this section. It does not authorize official-status claims,
+endorsement, partnership, or branding unrelated products as FlyCut. It does
+not require watermarks or branding on users' output videos or subtitles.
+
+4. Source availability
+
+When distributing source code of a Covered Work, include its Corresponding
+Source, this license and notices identifying modifications. License your
+modifications to recipients under this same community license.
+
+When distributing a Covered Work in executable or bundled form, provide
+recipients its complete Corresponding Source under this license at no
+additional charge. A prominent, working download link to source for the exact
+version may be used. Maintain access while offering the executable or bundle
+for download. A different or unmodified upstream version is insufficient
+for your modifications.
+
+If users interact remotely over a network with a modified Covered Work you
+operate, prominently offer those users the Corresponding Source of that
+version under this license without charge. Maintain the offer while that
+version is operated. Make the offer reachable through its interface or, for
+API-only services, accompanying service documentation. This includes internal
+users of a modified network service.
+
+Private modifications neither distributed nor made available for remote
+interaction do not require publication of source, but remain subject to
+name retention and the Closed-Source Integration rule. Source-sharing does
+not extend to independent programs merely communicating with a Covered Work
+as described in section 1.
+
+5. Closed-source integration and commercial permission
+
+The community permission does not authorize Closed-Source Integration,
+including private Closed-Source Integration. Before such integration, obtain
+a separate written commercial license from FlyCut Team covering the relevant
+rights, code, versions and intended use. Hosted-service payments, support
+purchases, or quotes are not commercial software license grants.
+
+FlyCut Team may license only rights it owns or is authorized to offer.
+Third-party obligations cannot be waived without the relevant rights holder's
+permission. See COMMERCIAL-LICENSE.md; contact x007xyzabc@gmail.com.
+
+Commercial integration permission does not automatically permit renaming,
+brand removal or official-endorsement claims. Any exception to section 3
+must be explicitly granted in writing by the relevant rights holder.
+
+6. Media outputs and independent programs
+
+Processing user-supplied videos, audio, subtitles or other content does not
+change their ownership or licensing. You may create, publish and sell such
+outputs without a commercial software license, unless their content itself
+incorporates covered Software material. Users remain responsible for rights
+in input content.
+
+Ordinary business use or independent API, CLI or MCP calls do not by
+themselves require a commercial integration license. They do not exempt the
+Software deployment from branding or applicable source-sharing requirements.
+
+7. Third-party material and earlier grants
+
+Third-party code, models, fonts, media and binaries retain their own licenses.
+This license neither replaces them nor grants rights a Licensor does not
+control. Comply with applicable third-party terms for your distribution
+and deployment.
+
+This license applies to revisions expressly released under it. It does not
+revoke or replace permissions already granted for earlier copies. Historical
+licenses kept for reference do not alternatively license this revision.
+
+8. Termination
+
+Your permissions terminate automatically if you materially violate these
+conditions. Stop the violating use or distribution and contact the relevant
+Licensor to resolve the violation. Reinstatement requires that Licensor's
+written confirmation. Compliant downstream recipients do not lose their
+permissions solely because of your violation. Termination does not affect
+rights granted by a separate applicable agreement.
+
+9. Disclaimer and liability
+
+To the maximum extent permitted by law, the Software is provided "as is",
+without express or implied warranties, including merchantability, fitness
+for a particular purpose and noninfringement. No Licensor or contributor is
+liable for damages arising from use, inability to use or distribution,
+except where liability cannot lawfully be excluded or a separate written
+agreement provides otherwise. Mandatory statutory rights are unaffected.
+
+10. License documents
+
+This LICENSE is the controlling English text of the community permission.
+LICENSING.md, TRADEMARKS.md and translations explain its application but do
+not grant an alternative license or override these conditions. An executed
+commercial agreement governs only the permissions it expressly grants.

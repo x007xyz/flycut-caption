@@ -3,6 +3,7 @@ name = "flycut-caption"
 version = "2.0.2"
 description = "FlyCut Caption desktop client"
 authors = ["FlyCut Team"]
+license-file = "../LICENSE"
 edition = "2021"
 
 [lib]

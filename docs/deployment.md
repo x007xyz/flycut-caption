@@ -609,7 +609,8 @@ class FlycutCaption < Formula
   homepage "https://flycut-caption.com"
   url "https://github.com/flycut/caption/archive/v1.0.0.tar.gz"
   sha256 "abc123..."
-  license "MIT"
+  # Custom license; no standard AGPL/MIT identifier represents these terms.
+  license :cannot_represent
 
   depends_on "node" => :build
   depends_on "rust" => :build
@@ -640,7 +641,7 @@ Publisher: FlyCut
 PublisherUrl: https://flycut-caption.com
 PackageName: FlyCut Caption
 PackageUrl: https://github.com/flycut/caption
-License: MIT
+License: FlyCut Caption Community Source License 1.0
 ShortDescription: AI-powered video subtitle editing tool
 Installers:
 - Architecture: x64

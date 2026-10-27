@@ -1,0 +1,32 @@
+MIT License
+
+Copyright (c) 2025 FlyCut Team
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+ADDITIONAL TERMS:
+- You may use and modify this software for personal, educational, or commercial purposes.
+- You may redistribute and create derivative works based on this software.
+- However, you are NOT permitted to remove, modify, or obscure any logos, watermarks,
+  branding elements, or attribution notices present in the software interface.
+- Any distribution or deployment of this software or its derivatives must retain
+  all original branding elements, including but not limited to the FlyCut Caption
+  name, logo, and any associated watermarks or attribution notices.
+- If you wish to remove branding elements, you must obtain explicit written
+  permission from the FlyCut Team.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

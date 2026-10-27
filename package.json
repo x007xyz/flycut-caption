@@ -14,7 +14,12 @@
     "dist/index.js.map",
     "README.md",
     "README.zh.md",
-    "LICENSE"
+    "LICENSE",
+    "LICENSING.md",
+    "COMMERCIAL-LICENSE.md",
+    "TRADEMARKS.md",
+    "docs/LICENSE-MIGRATION.md",
+    "licenses/legacy/LICENSE-before-agpl.txt"
   ],
   "exports": {
     ".": {
@@ -38,7 +43,7 @@
     "speech-recognition"
   ],
   "author": "FlyCut Team",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "homepage": "https://github.com/x007xyz/flycut-caption",
   "repository": {
     "type": "git",

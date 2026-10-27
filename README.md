@@ -846,16 +846,14 @@ We welcome contributions of all kinds!
 
 ## 📝 License
 
-This project is licensed under the MIT License with additional terms:
+FlyCut Caption uses the **FlyCut Caption Community Source License 1.0**, with separate commercial licensing for rights controlled by FlyCut Team. This is a custom source-available license, not standard AGPL or an OSI-approved open-source license. See [LICENSING.md](LICENSING.md) and the controlling [LICENSE](LICENSE).
 
-- ✅ **Allowed**: Personal, educational, commercial use
-- ✅ **Allowed**: Modification, distribution, creating derivative works
-- ❌ **Prohibited**: Removing or modifying logos, watermarks, brand elements in the software interface
-- ❌ **Prohibited**: Hiding or tampering with attribution statements
+- **Community license:** personal and commercial use, including compliant paid services, is permitted. Preserve product identity and provide Corresponding Source for distributions and modified network-accessible versions as specified in LICENSE.
+- **Commercial license:** closed-source integration, including applicable private/internal integrations, requires a prior written commercial license. Contact [x007xyzabc@gmail.com](mailto:x007xyzabc@gmail.com); see [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md). Independent API/CLI/MCP calls do not by themselves require an integration license.
+- **Video outputs:** creating, selling or publishing videos or subtitles does not by itself require a commercial software license or place those outputs under the community software license.
+- **Branding:** **renaming FlyCut Caption is prohibited.** Preserve existing visible branding and distinguish modified/third-party versions from official versions. A commercial license does not automatically waive name retention. See [TRADEMARKS.md](TRADEMARKS.md).
 
-To remove brand elements, please contact FlyCut Team for explicit written permission.
-
-See [LICENSE](LICENSE) file for details.
+Earlier releases retain their original license terms. This change applies to this revision and subsequent revisions carrying these notices; it does not retroactively replace permissions granted for older copies. Third-party code, models, fonts, and binaries retain their own licenses.
 
 ## 🙏 Acknowledgments
 
