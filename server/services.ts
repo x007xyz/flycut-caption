@@ -1,0 +1,82 @@
+import type { AsrProvider, JobSnapshot, PipelineInput, PipelineResult, ExportInput, AgentInput, TextInput } from '../shared/protocol';
+import type { ASRProgress } from '../src/types/subtitle';
+import type { Server } from 'node:http';
+import type { EditorPlugin } from '../src/types/plugin';
+import type { ProviderPackage } from '../src/types/provider';
+import type { z } from 'zod';
+
+export interface HostConfig { home: string; port: number; token: string; resourceRoot: string; pythonUrl?: string;
+  /** User model catalog and downloads (desktop app data dir). Defaults to `<home>/app-data`. */
+  appData?: string;
+  /** Assets unused for this long are deleted (default 24). */
+  assetTtlHours?: number }
+export type ProgressReporter = (progress: ASRProgress) => void;
+export interface ProviderRegistry {
+  register(provider: AsrProvider): () => void;
+  get(id: string): AsrProvider;
+  list(): Array<{ id: string; name: string }>;
+  /** Adds a declarative catalog entry (settings / pipeline UIs). Call inside `ctx.effect`. */
+  describe(pkg: ProviderPackage): () => void;
+  catalog(): ProviderPackage[];
+}
+export interface JobService {
+  create(run: (signal: AbortSignal, report: ProgressReporter, id: string) => Promise<unknown>): JobSnapshot;
+  get(id: string): JobSnapshot;
+  list(): JobSnapshot[];
+  cancel(id: string): Promise<JobSnapshot>;
+}
+export interface AssetService {
+  put(bytes: Buffer): Promise<string>;
+  /** Streams a body into a new asset, rejecting it once it exceeds `limit` bytes. */
+  putStream(source: NodeJS.ReadableStream, limit: number): Promise<string>;
+  /** Moves a finished file (e.g. an export output) into the asset store without copying. */
+  adopt(file: string): Promise<string>;
+  read(id: string): Promise<Buffer>;
+  size(id: string): Promise<number>;
+  path(id: string): string;
+  delete(id: string): Promise<void>;
+}
+export interface PythonService { request(path: string, init?: RequestInit): Promise<Response> }
+export interface WorkflowService {
+  start(input: PipelineInput): JobSnapshot;
+  /** Runs inside an existing job (used by Agent tools) without creating a second job. */
+  run(input: PipelineInput, signal: AbortSignal, report: ProgressReporter): Promise<PipelineResult>;
+}
+export interface AgentToolContext { jobId: string; input: AgentInput; signal: AbortSignal; report: ProgressReporter }
+export interface AgentTool<S extends z.ZodObject = z.ZodObject> {
+  name: string; description: string; schema: S;
+  invoke(args: z.infer<S>, context: AgentToolContext): Promise<string>;
+}
+export interface AgentToolRegistry { register<S extends z.ZodObject>(tool: AgentTool<S>): () => void; list(): AgentTool[] }
+export interface AgentService { start(input: AgentInput): JobSnapshot }
+export interface ExportService { start(input: ExportInput): JobSnapshot }
+export interface EditorPluginRegistry {
+  register(plugin: EditorPlugin): () => void;
+  get(id: string): EditorPlugin;
+  has(id: string): boolean;
+  list(): EditorPlugin['manifest'][];
+}
+export interface TextService { start(input: TextInput): JobSnapshot }
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    hostConfig: HostConfig;
+    providers: ProviderRegistry;
+    jobs: JobService;
+    assets: AssetService;
+    python: PythonService;
+    workflows: WorkflowService;
+    agents: AgentService;
+    agentTools: AgentToolRegistry;
+    export: ExportService;
+    httpServer: Server;
+    editorPlugins: EditorPluginRegistry;
+    text: TextService;
+  }
+  interface Events {
+    /**
+     * Policy hook before an Agent tool executes. Returning a string bails out: the string becomes the
+     * tool result and the tool is not run (e.g. approval or sandbox policies).
+     */
+    'agent/before-tool'(call: { jobId: string; name: string; args: unknown }): string | undefined | Promise<string | undefined>;
+  }
+}

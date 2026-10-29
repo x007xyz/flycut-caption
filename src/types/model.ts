@@ -66,6 +66,10 @@ export interface RecognizerConfig {
 }
 
 export interface AvailableModel {
+  /** Inference runtime; download_sources[].provider only identifies a mirror. */
+  provider?: 'sherpa-onnx' | 'qwen-asr';
+  local_path?: string | null;
+  custom?: boolean;
   id: string;
   name: string;
   family: string;
@@ -122,7 +126,7 @@ export interface ModelDownloadState {
   downloadedModels: Set<string>;
 }
 
-// 全量下载状态（后端 check_all_models_downloaded 返回）
+// 全量下载状态（Host models.status 返回）
 export interface AllModelsStatus {
   all_downloaded: boolean;
   downloaded_model_ids: string[];
@@ -134,6 +138,7 @@ export interface AllModelsStatus {
 
 // 模型 family 分组（用于 UI 渲染）
 export const MODEL_FAMILY_LABELS: Record<string, string> = {
+  qwen_asr: 'Qwen-ASR 多语种',
   sense_voice: 'SenseVoice 多语种',
   paraformer: 'Paraformer 中文优先',
   whisper: 'Whisper 英文 / 多语种',

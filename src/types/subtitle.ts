@@ -2,6 +2,8 @@
 
 export interface SubtitleChunk {
   text: string;
+  /** 当前录音中的匿名说话人编号；不表示跨录音身份。 */
+  speaker?: string;
   secondText?: string; // 副字幕文本
   timestamp: [number, number]; // [start, end] in seconds
   id: string;

@@ -4,7 +4,7 @@
   "version": "2.0.2",
   "identifier": "com.flycut.caption",
   "build": {
-    "beforeDevCommand": "pnpm dev",
+    "beforeDevCommand": "pnpm dev:web",
     "devUrl": "http://localhost:5173",
     "beforeBuildCommand": "pnpm build",
     "frontendDist": "../dist"
@@ -41,8 +41,12 @@
     ],
     "resources": [
       "../models.json",
+      "../python/flycut_runtime.py",
+      "../python/qwen_asr_runner.py",
       "binaries/*",
-      "shared_assets/**/*"
+      "shared_assets/**/*",
+      "../python/funasr_runner.py",
+      "host/**/*"
     ]
   }
 }

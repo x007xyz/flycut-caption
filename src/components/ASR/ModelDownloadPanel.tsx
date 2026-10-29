@@ -1,8 +1,12 @@
+import { ModelLibraryPanel } from './ModelLibraryPanel';
+import { RecommendedModelsPanel } from './RecommendedModelsPanel';
 // 模型下载面板
-// 浏览器端：仅展示 Transformers.js 模型；Tauri 桌面端：仅展示 FunASR 模型。
+// 浏览器端：展示 Web 模型；Tauri 桌面端：展示本地 Python/Provider 模型。
 // VAD (silero-vad) 已内置到安装包，不在此面板展示。
 
 import { useCallback, useEffect, useState } from 'react';
+import { CustomModelPanel } from './CustomModelPanel';
+import { MODEL_CATALOG_CHANGED_EVENT, notifyModelCatalogChanged } from '@/services/customModelCatalog';
 import { cn } from '@/lib/utils';
 import { Download, CheckCircle2, Loader2, AlertCircle, List, SkipForward } from 'lucide-react';
 import type {
@@ -13,10 +17,10 @@ import type {
 import { MODEL_FAMILY_LABELS } from '@/types/model';
 import type { ASRProgress } from '@/types/subtitle';
 import { useAppStore } from '@/stores/appStore';
-import { asrService } from '@/services/asrService';
-import { WEB_ASR_MODELS, WEB_MODEL_FAMILY_LABELS } from '@/config/webAsrModels';
+import { WEB_ASR_MODELS, WEB_MODEL_FAMILY_LABELS } from '../../../shared/asr/webModels';
 import { isTauriRuntime } from '@/utils/runtime';
 import { WEB_MODELS_DOWNLOADED_EVENT } from '@/services/webModelCache';
+import { useClientRuntime } from '@/runtime/context';
 
 type DownloadedWebModels = Record<string, boolean>;
 type DownloadType = string | null;
@@ -38,6 +42,7 @@ function pctFromBytes(downloaded: number, total: number) {
 }
 
 export function ModelDownloadPanel({ className }: ModelDownloadPanelProps) {
+  const { connection, asr: asrService, stores } = useClientRuntime();
   const [isTauri, setIsTauri] = useState(false);
 
   // —— 浏览器模型状态 ——
@@ -53,6 +58,9 @@ export function ModelDownloadPanel({ className }: ModelDownloadPanelProps) {
   const [downloadingType, setDownloadingType] = useState<DownloadType>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const asrModelId = useAppStore(s => s.asrModelId);
+  const setASRModelId = useAppStore(s => s.setASRModelId);
+  const asrBusy = useAppStore(s => s.isLoading);
   const deviceType = useAppStore((s) => s.deviceType);
   const webModelId = useAppStore((s) => s.webModelId);
 
@@ -63,7 +71,7 @@ export function ModelDownloadPanel({ className }: ModelDownloadPanelProps) {
       next[m.id] = ids.includes(m.id);
     }
     setDownloadedWebModels(next);
-  }, []);
+  }, [asrService]);
 
   useEffect(() => {
     const tauri = isTauriRuntime();
@@ -89,11 +97,7 @@ export function ModelDownloadPanel({ className }: ModelDownloadPanelProps) {
 
     setIsLoadingModels(true);
     try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      const [list, allStatus] = await Promise.all([
-        invoke<AvailableModel[]>('list_available_models'),
-        invoke<AllModelsStatus>('check_all_models_downloaded'),
-      ]);
+      const [list, allStatus] = await Promise.all([connection.call('models.list'), connection.call('models.status')]);
       setModels(list);
       setStatus(allStatus);
       setError(null);
@@ -106,56 +110,40 @@ export function ModelDownloadPanel({ className }: ModelDownloadPanelProps) {
     } finally {
       setIsLoadingModels(false);
     }
-  }, []);
+  }, [connection]);
 
   useEffect(() => {
     if (isTauri) {
-      loadClientStatus();
+      void loadClientStatus();
+      const refresh = () => { void loadClientStatus(); };
+      window.addEventListener(MODEL_CATALOG_CHANGED_EVENT, refresh);
+      return () => window.removeEventListener(MODEL_CATALOG_CHANGED_EVENT, refresh);
     }
   }, [isTauri, loadClientStatus]);
-
-  // 桌面端下载进度
-  useEffect(() => {
-    if (!isTauri) return;
-    let unlisten: (() => void) | undefined;
-    import('@tauri-apps/api/event').then(({ listen }) => {
-      listen<ModelDownloadProgress>('model-download-progress', (event) => {
-        const p = event.payload;
-        // 忽略内置 VAD 等非 manifest 模型 id 的进度
-        if (!models.some((m) => m.id === p.model_id)) {
-          return;
-        }
-        setFunasrProgress(p);
-        if (p.status === 'complete') {
-          setDownloadingType(null);
-          setError(null);
-          loadClientStatus();
-        }
-        if (p.status === 'error') {
-          setDownloadingType(null);
-          setError(p.error || '下载失败');
-        }
-      }).then((fn) => { unlisten = fn; });
-    });
-    return () => { unlisten?.(); };
-  }, [isTauri, loadClientStatus, models]);
 
   const startDownloadModel = useCallback(async (modelId: string) => {
     setDownloadingType(`model-${modelId}`);
     setFunasrProgress(null);
     setError(null);
     try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      await invoke('download_model', { modelId });
+      // Download runs as a Host job; job progress replaces the former Tauri progress event.
+      const job = await connection.call('models.download', { modelId });
+      await connection.waitJob(job.id, snapshot => {
+        const progress = snapshot.progress;
+        if (!progress) return;
+        setFunasrProgress({ model_id: modelId, current_file: progress.data ?? progress.file ?? '', file_index: 0, total_files: 1,
+          downloaded_bytes: progress.progress ?? 0, total_bytes: 100, status: 'downloading' });
+      });
+      setDownloadingType(null);
+      notifyModelCatalogChanged();
+      await loadClientStatus();
     } catch (err) {
       setDownloadingType(null);
-      const message = typeof err === 'string' ? err
-        : err instanceof Error ? err.message
-        : String(err);
+      const message = err instanceof Error ? err.message : String(err);
       console.error('[ModelDownload] model download failed:', err);
       setError(message);
     }
-  }, []);
+  }, [loadClientStatus, connection]);
 
   const startDownloadWebModel = useCallback(async (targetWebModelId: string) => {
     setDownloadingType(`web-${targetWebModelId}`);
@@ -185,7 +173,7 @@ export function ModelDownloadPanel({ className }: ModelDownloadPanelProps) {
     } finally {
       unsubscribe();
     }
-  }, [deviceType]);
+  }, [deviceType, asrService]);
 
   const renderDownloadButton = (
     isDownloaded: boolean,
@@ -196,7 +184,7 @@ export function ModelDownloadPanel({ className }: ModelDownloadPanelProps) {
     <button
       type="button"
       onClick={onClick}
-      disabled={isDownloading || isDownloaded}
+      disabled={asrBusy || downloadingType !== null || isDownloading || isDownloaded}
       className={cn(
         'flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-medium shrink-0 transition-colors',
         isDownloaded
@@ -302,6 +290,12 @@ export function ModelDownloadPanel({ className }: ModelDownloadPanelProps) {
     return (
       <div className={cn('space-y-3', className)}>
         {listHeader}
+        <div className="rounded-md border border-dashed border-amber-300 bg-amber-50/60 p-3 text-xs dark:border-amber-800 dark:bg-amber-950/20">
+          <p className="font-medium text-amber-900 dark:text-amber-200">自定义本地模型</p>
+          <p className="mt-1 text-muted-foreground">
+            识别由独立的 FlyCut Host 执行。这里管理 Host 的 Transformers 模型；Qwen、FunASR 等模型由 Host 的 Python worker 提供。
+          </p>
+        </div>
         <div className="space-y-3">
           {Object.entries(WEB_MODEL_FAMILY_LABELS).map(([family, label]) => {
             const familyModels = WEB_ASR_MODELS.filter((m) => m.family === family);
@@ -353,7 +347,7 @@ export function ModelDownloadPanel({ className }: ModelDownloadPanelProps) {
                           </div>
                           <p className="text-xs text-muted-foreground mt-0.5">{model.description}</p>
                           <p className="text-xs text-muted-foreground mt-0.5">
-                            {model.sizeHint} · {deviceType === 'webgpu' ? 'WebGPU' : 'WASM'}
+                            {model.sizeHint} · Host CPU
                             {!model.modelBaseUrl && (
                               <span className="ml-1 text-amber-600 dark:text-amber-400">
                                 · 从 HuggingFace 拉取
@@ -388,6 +382,9 @@ export function ModelDownloadPanel({ className }: ModelDownloadPanelProps) {
   return (
     <div className={cn('space-y-3', className)}>
       {listHeader}
+      <RecommendedModelsPanel />
+      <ModelLibraryPanel disabled={downloadingType !== null} />
+      <CustomModelPanel models={models} disabled={downloadingType !== null} />
       <div className="space-y-3">
         {isLoadingModels && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
@@ -400,7 +397,7 @@ export function ModelDownloadPanel({ className }: ModelDownloadPanelProps) {
           <p className="text-xs text-muted-foreground py-2">未加载到模型，请重启应用后重试。</p>
         )}
 
-        {Object.entries(MODEL_FAMILY_LABELS).map(([family, label]) => {
+        {[...new Set(models.map(m => m.family))].map(family => [family, MODEL_FAMILY_LABELS[family] ?? family]).map(([family, label]) => {
           const familyModels = models.filter((m) => m.family === family);
           if (familyModels.length === 0) return null;
           return (
@@ -449,11 +446,13 @@ export function ModelDownloadPanel({ className }: ModelDownloadPanelProps) {
                             : '未知'}
                         </p>
                       </div>
-                      {renderDownloadButton(
-                        isDownloaded,
-                        isDownloading,
-                        () => startDownloadModel(model.id),
-                      )}
+                      <div className="flex flex-col gap-1 items-end">
+                        {renderDownloadButton(isDownloaded, isDownloading, () => startDownloadModel(model.id))}
+                        {isDownloaded && <button type="button" className="text-xs text-primary hover:underline" disabled={asrBusy || downloadingType !== null} onClick={() => { setASRModelId(model.id); stores.app.getState().setASREngineType('python-runtime'); }}>
+                          {asrModelId === model.id ? '当前模型' : '使用此模型'}
+                        </button>}
+                        {model.provider && <span className="text-[10px] text-muted-foreground">{model.provider}</span>}
+                      </div>
                     </div>
                     {showProgress && renderFunasrCardProgress(funasrProgress)}
                   </div>

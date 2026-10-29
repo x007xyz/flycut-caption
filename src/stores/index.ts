@@ -20,3 +20,5 @@ export {
 } from './historyStore';
 export * from './messageStore';
 export * from './themeStore';
+export * from './pipelineStore';
+export * from './providerConfigStore';

@@ -222,6 +222,7 @@ export function SubtitleItem(props: SubtitleItemProps) {
 
       {/* 右侧：双语文本编辑列 (flex-1) */}
       <div className="flex-1 flex flex-col justify-center py-2 px-4">
+        {chunk.speaker && <span className="text-[11px] text-aimu-text-muted">{chunk.speaker}</span>}
         {/* 主字幕输入框 */}
         {(displayMode === 'Bilingual' || displayMode === 'Main') && (
           <div className={cn('flex-1 flex', isExpanded ? 'items-start' : 'items-center')}>

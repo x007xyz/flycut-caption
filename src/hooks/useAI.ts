@@ -3,8 +3,8 @@ import { useCallback, useMemo } from 'react'
 import { useAppStore } from '@/stores/appStore'
 import { useHistoryStore } from '@/stores/historyStore'
 import { useShowSuccess, useShowError, useShowWarning } from '@/stores/messageStore'
-import { aiService } from '@/services/aiService'
 import type { AIProgress, AISubtitleItem } from '@/types/ai'
+import { useClientRuntime } from '@/runtime/context';
 
 export interface UseAIReturn {
   isAILoading: boolean
@@ -16,6 +16,7 @@ export interface UseAIReturn {
 }
 
 export function useAI(): UseAIReturn {
+  const { ai: aiService } = useClientRuntime();
   const aiModels = useAppStore((s) => s.aiModels)
   const selectedAIModelId = useAppStore((s) => s.selectedAIModelId)
   const aiProgress = useAppStore((s) => s.aiProgress)
@@ -107,7 +108,7 @@ export function useAI(): UseAIReturn {
       clearAIProgress,
       showSuccess,
       showError,
-      showWarning,
+      showWarning, aiService
     ],
   )
 

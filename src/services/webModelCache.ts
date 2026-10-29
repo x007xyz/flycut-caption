@@ -1,7 +1,7 @@
-// 浏览器端 Web ASR 模型下载状态（对齐 Tauri check_all_models_downloaded）
+// 浏览器端 Web ASR 模型下载状态（对齐 Host models.status）
 // transformers.js 将模型文件缓存在 Cache API 的 transformers-cache 中。
 
-import { WEB_ASR_MODELS, getWebAsrModel, type WebAsrModel } from '@/config/webAsrModels';
+import { WEB_ASR_MODELS, getWebAsrModel, type WebAsrModel } from '../../shared/asr/webModels';
 
 export const WEB_MODELS_DOWNLOADED_EVENT = 'flycut:web-models-downloaded';
 

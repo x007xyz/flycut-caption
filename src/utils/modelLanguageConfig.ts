@@ -1,4 +1,4 @@
-import type { WebAsrModel } from '@/config/webAsrModels';
+import type { WebAsrModel } from '../../shared/asr/webModels';
 import type { AvailableModel } from '@/types/model';
 import { getLanguageName, isValidLanguageCode } from '@/constants/languages';
 

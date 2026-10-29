@@ -6,7 +6,7 @@ import tseslint from 'typescript-eslint'
 import { globalIgnores } from 'eslint/config'
 
 export default tseslint.config([
-  globalIgnores(['dist']),
+  globalIgnores(['dist', 'dist-host', 'core', 'server/lib', 'src-tauri/host', 'src-tauri/target', 'src-tauri/sidecars/funasr-asr/target']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
@@ -20,4 +20,5 @@ export default tseslint.config([
       globals: globals.browser,
     },
   },
+  { files: ['tests/architecture/**/*.ts'], rules: { '@typescript-eslint/no-explicit-any': 'off' } },
 ])

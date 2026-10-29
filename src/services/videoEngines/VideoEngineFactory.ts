@@ -1,111 +1,61 @@
-// 视频处理引擎工厂
+// 视频处理引擎注册表：每个前端 Cordis Context 一份（`ctx.videoEngines`），由插件注册引擎
 
 import type { IVideoProcessingEngine, VideoEngineType, EngineCapabilities } from '@/types/videoEngine';
-import { WebAVEngine } from './WebAVEngine';
-import { FFmpegEngine } from './FFmpegEngine';
-import { FFmpegTauriEngine } from './FFmpegTauriEngine';
-import { isTauriRuntime } from '@/utils/runtime';
-// import { WebCodecsEngine } from './WebCodecsEngine'; // 未来扩展
 
-export class VideoEngineFactory {
-  private static engines = new Map<VideoEngineType, new () => IVideoProcessingEngine>([
-    ['webav', WebAVEngine],
-    ['ffmpeg', FFmpegEngine],
-    ['ffmpeg-tauri', FFmpegTauriEngine],
-    // ['webcodecs', WebCodecsEngine], // 未来扩展
-  ]);
+interface EngineEntry { create: () => IVideoProcessingEngine; priority: number }
 
-  /**
-   * 获取指定类型的引擎实例
-   */
-  static async createEngine(type: VideoEngineType): Promise<IVideoProcessingEngine> {
-    const EngineClass = this.engines.get(type);
-    if (!EngineClass) {
-      throw new Error(`不支持的视频处理引擎类型: ${type}`);
-    }
+const unsupported = (reason: string): EngineCapabilities => ({
+  supported: false, reason, formats: [],
+  features: { trimming: false, concatenation: false, audioProcessing: false, subtitleBurning: false, qualityControl: false },
+});
 
-    const engine = new EngineClass();
-    
-    // 检查引擎是否可用
+export class VideoEngineRegistry {
+  private engines = new Map<VideoEngineType, EngineEntry>();
+
+  /** 注册引擎；priority 越小越优先。返回注销函数，供插件在 `ctx.effect` 中使用。 */
+  register(type: VideoEngineType, create: () => IVideoProcessingEngine, priority = 100) {
+    if (this.engines.has(type)) throw new Error(`Duplicate video engine: ${type}`);
+    const entry = { create, priority };
+    this.engines.set(type, entry);
+    return () => { if (this.engines.get(type) === entry) this.engines.delete(type); };
+  }
+
+  /** 创建并检查指定引擎 */
+  async createEngine(type: VideoEngineType): Promise<IVideoProcessingEngine> {
+    const entry = this.engines.get(type);
+    if (!entry) throw new Error(`不支持的视频处理引擎类型: ${type}`);
+    const engine = entry.create();
     const capabilities = await engine.checkCapabilities();
-    if (!capabilities.supported) {
-      throw new Error(`引擎 ${type} 不可用: ${capabilities.reason}`);
-    }
-
+    if (!capabilities.supported) throw new Error(`引擎 ${type} 不可用: ${capabilities.reason}`);
     return engine;
   }
 
-  /**
-   * 获取最佳可用引擎
-   * 根据用户环境自动选择最适合的引擎
-   */
-  static getDefaultEngineOrder(): VideoEngineType[] {
-    return isTauriRuntime()
-      ? ['ffmpeg-tauri', 'webav', 'ffmpeg']
-      : ['webav', 'ffmpeg'];
+  /** 按注册优先级排列的引擎顺序 */
+  getDefaultEngineOrder(): VideoEngineType[] {
+    return [...this.engines.entries()].sort((a, b) => a[1].priority - b[1].priority).map(([type]) => type);
   }
 
-  static async getBestAvailableEngine(preferredOrder?: VideoEngineType[]): Promise<{
-    engine: IVideoProcessingEngine;
-    type: VideoEngineType;
-  }> {
-    const order = preferredOrder ?? VideoEngineFactory.getDefaultEngineOrder();
-    for (const type of order) {
+  async getBestAvailableEngine(preferredOrder?: VideoEngineType[]): Promise<{ engine: IVideoProcessingEngine; type: VideoEngineType }> {
+    for (const type of preferredOrder ?? this.getDefaultEngineOrder()) {
       try {
         const engine = await this.createEngine(type);
         console.log(`选择视频处理引擎: ${type}`);
         return { engine, type };
       } catch (error) {
         console.warn(`引擎 ${type} 不可用:`, error);
-        continue;
       }
     }
-    
     throw new Error('没有可用的视频处理引擎');
   }
 
-  /**
-   * 检查所有引擎的可用性
-   */
-  static async checkAllEngines(): Promise<Record<VideoEngineType, EngineCapabilities>> {
+  async checkAllEngines(): Promise<Record<VideoEngineType, EngineCapabilities>> {
     const results = {} as Record<VideoEngineType, EngineCapabilities>;
-    
-    for (const [type] of this.engines) {
-      try {
-        const EngineClass = this.engines.get(type)!;
-        const engine = new EngineClass();
-        results[type] = await engine.checkCapabilities();
-      } catch (error) {
-        results[type] = {
-          supported: false,
-          reason: error instanceof Error ? error.message : '未知错误',
-          formats: [],
-          features: {
-            trimming: false,
-            concatenation: false,
-            audioProcessing: false,
-            subtitleBurning: false,
-            qualityControl: false,
-          }
-        };
-      }
+    for (const [type, entry] of this.engines) {
+      try { results[type] = await entry.create().checkCapabilities(); }
+      catch (error) { results[type] = unsupported(error instanceof Error ? error.message : '未知错误'); }
     }
-    
     return results;
   }
 
-  /**
-   * 注册新的引擎类型（用于插件化扩展）
-   */
-  static registerEngine(type: VideoEngineType, engineClass: new () => IVideoProcessingEngine) {
-    this.engines.set(type, engineClass);
-    console.log(`注册视频处理引擎: ${type}`);
-  }
-
-  /**
-   * 获取所有支持的引擎类型
-   */
-  static getSupportedEngines(): VideoEngineType[] {
-    return Array.from(this.engines.keys());
-  }
+  getSupportedEngines(): VideoEngineType[] { return [...this.engines.keys()]; }
 }

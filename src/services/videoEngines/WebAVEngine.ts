@@ -196,7 +196,7 @@ export class WebAVEngine implements IVideoProcessingEngine {
         );
       }
 
-      // 优先使用上层传入的字幕 chunks（与 FFmpegTauriEngine 一致）；
+      // 优先使用上层传入的字幕 chunks（与 HostExportEngine 一致）；
       // 无删除时 buildVideoExportSegments 返回的 segment 不携带 text/id，
       // 从 segments 提取会拿不到字幕，导致 Web 端硬烧录无字幕。
       const subtitleChunks: TranscriptChunk[] = options.subtitleChunks

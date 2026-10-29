@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { getWebAsrModel } from '@/config/webAsrModels';
+import { getWebAsrModel } from '../../shared/asr/webModels';
 import type { AvailableModel } from '@/types/model';
 import { useAppStore } from '@/stores/appStore';
 import { isTauriRuntime } from '@/utils/runtime';
@@ -9,6 +9,7 @@ import {
   resolveLanguageForModel,
   type ModelLanguageSelectorConfig,
 } from '@/utils/modelLanguageConfig';
+import { useClientRuntime } from '@/runtime/context';
 
 const DEFAULT_SELECTABLE_CONFIG: ModelLanguageSelectorConfig = {
   mode: 'selectable',
@@ -17,6 +18,7 @@ const DEFAULT_SELECTABLE_CONFIG: ModelLanguageSelectorConfig = {
 
 /** 当前选中 ASR 模型的语言选择器配置，并在切换模型时同步 store.language */
 export function useActiveModelLanguageConfig(): ModelLanguageSelectorConfig {
+  const { connection } = useClientRuntime();
   const asrEngineType = useAppStore((s) => s.asrEngineType);
   const asrModelId = useAppStore((s) => s.asrModelId);
   const webModelId = useAppStore((s) => s.webModelId);
@@ -32,8 +34,7 @@ export function useActiveModelLanguageConfig(): ModelLanguageSelectorConfig {
     }
 
     let cancelled = false;
-    import('@tauri-apps/api/core')
-      .then(({ invoke }) => invoke<AvailableModel[]>('list_available_models'))
+    connection.call('models.list')
       .then((models) => {
         if (cancelled) return;
         setDesktopModel(models.find((model) => model.id === asrModelId));
@@ -45,9 +46,10 @@ export function useActiveModelLanguageConfig(): ModelLanguageSelectorConfig {
     return () => {
       cancelled = true;
     };
-  }, [asrEngineType, asrModelId]);
+  }, [asrEngineType, asrModelId, connection]);
 
   const config = useMemo(() => {
+    if (asrEngineType === 'api') return { mode: 'selectable' as const, language: 'en' };
     if (isTauriRuntime() && asrEngineType === 'funasr-tauri' && desktopModel) {
       return getDesktopModelLanguageConfig(desktopModel);
     }
@@ -58,7 +60,8 @@ export function useActiveModelLanguageConfig(): ModelLanguageSelectorConfig {
     }
 
     return DEFAULT_SELECTABLE_CONFIG;
-  }, [asrEngineType, asrModelId, webModelId, desktopModel]);
+    // desktopModel 已按 asrModelId 拉取，模型切换会通过它触发重算。
+  }, [asrEngineType, webModelId, desktopModel]);
 
   useEffect(() => {
     const resolved = resolveLanguageForModel(config, language);

@@ -2,7 +2,7 @@
 // 按 family 分组渲染已下载的 Web 模型，供 ASRSettingsPanel / 其他位置共用。
 
 import { SelectGroup, SelectItem, SelectLabel } from '@/components/ui/select';
-import { WEB_ASR_MODELS, WEB_MODEL_FAMILY_LABELS } from '@/config/webAsrModels';
+import { WEB_ASR_MODELS, WEB_MODEL_FAMILY_LABELS } from '../../../shared/asr/webModels';
 
 interface WebModelSelectItemsProps {
   /** 已下载的 Web 模型 id 列表 */

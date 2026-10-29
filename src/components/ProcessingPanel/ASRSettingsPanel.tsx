@@ -1,3 +1,6 @@
+import { ASRSourceSelector } from '@/components/ASR/ASRSourceSelector';
+import { PythonRuntimePanel } from '@/components/ASR/PythonRuntimePanel';
+import { MODEL_CATALOG_CHANGED_EVENT } from '@/services/customModelCatalog';
 // ASR 识别设置面板 - 放在播放器下方"选项"标签页
 // 浏览器端仅展示 Web 模型；Tauri 桌面端仅展示 FunASR 模型。下载请到设置弹窗。
 
@@ -8,14 +11,14 @@ import { useShowInfo } from '@/stores/messageStore';
 import { ASRLanguageSelector, ModelSelectItems, WebModelSelectItems } from '@/components/ASR';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { BrainCircuit, Globe, Cpu, AlertCircle, Settings } from 'lucide-react';
-import type { AllModelsStatus, AvailableModel } from '@/types/model';
-import { asrService } from '@/services/asrService';
-import { getWebAsrModel } from '@/config/webAsrModels';
+import type { AvailableModel } from '@/types/model';
+import { getWebAsrModel } from '../../../shared/asr/webModels';
 import { getRuntimeAsrEngineType, isTauriRuntime } from '@/utils/runtime';
 import { useActiveModelTimestamp } from '@/hooks/useActiveModelTimestamp';
 import { useActiveModelLanguageConfig } from '@/hooks/useActiveModelLanguageConfig';
 import { shouldAdvertiseWordLevelDelete } from '@/utils/wordLevelEdit';
 import { WEB_MODELS_DOWNLOADED_EVENT } from '@/services/webModelCache';
+import { useClientRuntime } from '@/runtime/context';
 
 interface ASRSettingsPanelProps {
   className?: string;
@@ -23,15 +26,14 @@ interface ASRSettingsPanelProps {
 }
 
 export function ASRSettingsPanel({ className, onOpenSettings }: ASRSettingsPanelProps) {
+  const { connection, asr: asrService } = useClientRuntime();
   const language = useAppStore((s) => s.language);
-  const deviceType = useAppStore((s) => s.deviceType);
   const asrEngineType = useAppStore((s) => s.asrEngineType);
   const asrModelId = useAppStore((s) => s.asrModelId);
   const webModelId = useAppStore((s) => s.webModelId);
   const isLoading = useAppStore((s) => s.isLoading);
 
   const setLanguage = useAppStore((s) => s.setLanguage);
-  const setDeviceType = useAppStore((s) => s.setDeviceType);
   const setASREngineType = useAppStore((s) => s.setASREngineType);
   const setASRModelId = useAppStore((s) => s.setASRModelId);
   const setWebModelId = useAppStore((s) => s.setWebModelId);
@@ -50,7 +52,7 @@ export function ASRSettingsPanel({ className, onOpenSettings }: ASRSettingsPanel
     const tauri = isTauriRuntime();
     setIsTauri(tauri);
 
-    const expectedEngine = getRuntimeAsrEngineType();
+    const expectedEngine = asrEngineType === 'api' || asrEngineType === 'python-runtime' ? asrEngineType : getRuntimeAsrEngineType();
     if (asrEngineType !== expectedEngine) {
       setASREngineType(expectedEngine);
     }
@@ -62,15 +64,13 @@ export function ASRSettingsPanel({ className, onOpenSettings }: ASRSettingsPanel
       return;
     }
 
-    import('@tauri-apps/api/core').then(({ invoke }) => {
-      invoke<AllModelsStatus>('check_all_models_downloaded')
-        .then((status) => setDownloadedModels(status.downloaded_model_ids))
-        .catch((err) => console.error('Failed to check models:', err));
-      invoke<AvailableModel[]>('list_available_models')
-        .then((list) => setAllModels(list))
-        .catch((err) => console.error('Failed to list available models:', err));
-    });
-  }, [asrEngineType, setASREngineType, webModelId]);
+    connection.call('models.status')
+      .then((status) => setDownloadedModels(status.downloaded_model_ids))
+      .catch((err) => console.error('Failed to check models:', err));
+    connection.call('models.list')
+      .then((list) => setAllModels(list))
+      .catch((err) => console.error('Failed to list available models:', err));
+  }, [asrEngineType, setASREngineType, webModelId, asrService, connection]);
 
   useEffect(() => {
     if (isTauri) return;
@@ -86,38 +86,31 @@ export function ASRSettingsPanel({ className, onOpenSettings }: ASRSettingsPanel
       window.removeEventListener(WEB_MODELS_DOWNLOADED_EVENT, refresh);
       window.removeEventListener('focus', refresh);
     };
-  }, [isTauri]);
+  }, [isTauri, asrService]);
 
   useEffect(() => {
     if (!isTauri) return;
     const handler = () => {
-      import('@tauri-apps/api/core').then(({ invoke }) => {
-        invoke<AllModelsStatus>('check_all_models_downloaded')
-          .then((status) => setDownloadedModels(status.downloaded_model_ids))
-          .catch(() => {});
-        invoke<AvailableModel[]>('list_available_models')
-          .then((list) => setAllModels(list))
-          .catch(() => {});
-      });
+      connection.call('models.status')
+        .then((status) => setDownloadedModels(status.downloaded_model_ids))
+        .catch(() => {});
+      connection.call('models.list')
+        .then((list) => setAllModels(list))
+        .catch(() => {});
     };
     window.addEventListener('focus', handler);
-    return () => window.removeEventListener('focus', handler);
-  }, [isTauri]);
+    window.addEventListener(MODEL_CATALOG_CHANGED_EVENT, handler);
+    return () => {
+      window.removeEventListener('focus', handler);
+      window.removeEventListener(MODEL_CATALOG_CHANGED_EVENT, handler);
+    };
+  }, [isTauri, connection]);
 
   const changeLanguage = useCallback(
     (newLanguage: string) => {
       setLanguage(newLanguage);
     },
     [setLanguage],
-  );
-
-  const changeDevice = useCallback(
-    (device: 'webgpu' | 'wasm') => {
-      setDeviceType(device);
-      const name = device === 'webgpu' ? 'WebGPU' : 'WebAssembly';
-      showInfo('设备切换成功', `已切换到 ${name}`);
-    },
-    [setDeviceType, showInfo],
   );
 
   const changeFunasrModel = useCallback(
@@ -136,7 +129,7 @@ export function ASRSettingsPanel({ className, onOpenSettings }: ASRSettingsPanel
       const meta = getWebAsrModel(modelId);
       showInfo('模型切换成功', `已切换到 ${meta?.name || modelId}`);
     },
-    [setWebModelId, showInfo],
+    [setWebModelId, showInfo, asrService],
   );
 
   const currentModelDownloaded = downloadedModels.includes(asrModelId);
@@ -159,10 +152,23 @@ export function ASRSettingsPanel({ className, onOpenSettings }: ASRSettingsPanel
     </div>
   );
 
+  const sourceSelector = <ASRSourceSelector onOpenSettings={onOpenSettings} />;
+  if (asrEngineType === 'api') return <div className={cn('space-y-3', className)}>
+    {sourceSelector}
+    <ASRLanguageSelector language={language} onLanguageChange={changeLanguage} disabled={isLoading} mode="selectable" />
+    <p className="text-xs text-muted-foreground">音频将发送至所选 API 服务。时间戳和按词精剪能力以实际返回结果为准。</p>
+  </div>;
+  if (asrEngineType === 'python-runtime') return <div className={cn('space-y-3', className)}>
+    {sourceSelector}
+    <PythonRuntimePanel />
+    <ASRLanguageSelector language={language} onLanguageChange={changeLanguage} disabled={isLoading} mode="selectable" />
+    <p className="text-xs text-muted-foreground">音频通过 FlyCut Host 交给 Python worker，模型与推理保留在本机。</p>
+  </div>;
   // —— 浏览器端：仅 Web 模型 ——
   if (!isTauri) {
     return (
       <div className={cn('space-y-3', className)}>
+        {sourceSelector}
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
             <label className="flex items-center space-x-1.5 text-xs font-medium text-muted-foreground">
@@ -183,26 +189,14 @@ export function ASRSettingsPanel({ className, onOpenSettings }: ASRSettingsPanel
               <Cpu className="h-3.5 w-3.5" />
               <span>计算设备</span>
             </label>
-            <Select
-              value={deviceType}
-              onValueChange={(v) => changeDevice(v as 'webgpu' | 'wasm')}
-              disabled={isLoading}
-            >
-              <SelectTrigger size="sm" className="w-full text-xs h-8">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="webgpu">WebGPU (推荐)</SelectItem>
-                <SelectItem value="wasm">WebAssembly (兼容)</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="h-8 rounded-md border px-3 py-1.5 text-xs">CPU · FlyCut Host</div>
           </div>
         </div>
 
         <div className="space-y-1">
           <label className="flex items-center space-x-1.5 text-xs font-medium text-muted-foreground">
             <BrainCircuit className="h-3.5 w-3.5" />
-            <span>浏览器识别模型</span>
+            <span>Transformers 识别模型</span>
           </label>
           {downloadedWebModels.length > 0 ? (
             <Select
@@ -222,7 +216,7 @@ export function ASRSettingsPanel({ className, onOpenSettings }: ASRSettingsPanel
               </SelectContent>
             </Select>
           ) : (
-            downloadHint('未下载浏览器模型')
+            downloadHint('Host 尚未下载模型')
           )}
           {downloadedWebModels.length > 0 && !currentWebModelDownloaded
             && downloadHint('当前模型尚未下载，识别前需先下载')}
@@ -239,6 +233,7 @@ export function ASRSettingsPanel({ className, onOpenSettings }: ASRSettingsPanel
   // —— Tauri 桌面端：仅 FunASR 模型 ——
   return (
     <div className={cn('space-y-3', className)}>
+      {sourceSelector}
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
           <label className="flex items-center space-x-1.5 text-xs font-medium text-muted-foreground">
@@ -261,7 +256,7 @@ export function ASRSettingsPanel({ className, onOpenSettings }: ASRSettingsPanel
           </label>
           {downloadedModels.length > 0 ? (
             <Select
-              value={currentModelDownloaded ? asrModelId : downloadedModels[0]}
+              value={asrModelId}
               onValueChange={(v) => changeFunasrModel(v)}
               disabled={isLoading}
             >
@@ -273,6 +268,7 @@ export function ASRSettingsPanel({ className, onOpenSettings }: ASRSettingsPanel
                   allModels={allModels}
                   downloadedModelIds={downloadedModels}
                 />
+                {!currentModelDownloaded && <SelectItem value={asrModelId} disabled>当前模型尚未下载</SelectItem>}
               </SelectContent>
             </Select>
           ) : (

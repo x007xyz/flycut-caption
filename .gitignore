@@ -8,6 +8,8 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+.venv-funasr/
+__pycache__/
 dist
 dist-ssr
 *.local
@@ -36,3 +38,11 @@ public/whisper-timestamps-demo.mp4
 *.njsproj
 *.sln
 *.sw?
+
+# Generated Cordis and Host bundles
+core/*/lib/
+dist-host/
+.flycut-host/
+server/lib/
+src-tauri/host/
+src-tauri/binaries/flycut-node*

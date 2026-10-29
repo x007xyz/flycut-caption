@@ -1,4 +1,4 @@
-import { WEB_ASR_MODELS } from '@/config/webAsrModels';
+import { WEB_ASR_MODELS } from '../../shared/asr/webModels';
 import { DEFAULT_MODEL_ID } from '@/types/model';
 
 const WEB_MODEL_IDS = new Set(WEB_ASR_MODELS.map((model) => model.id));

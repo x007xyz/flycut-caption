@@ -375,6 +375,7 @@ fn dump_vad_segments(args: &Args, wav_path: &Path) -> Result<VadDumpOutput, Stri
     let duration = samples.len() as f64 / sample_rate as f64;
 
     let segments_ms: Vec<[i32; 2]> = match args.vad_type {
+        VadBackend::None => vec![[0, (duration * 1000.0).round() as i32]],
         VadBackend::Fsmn => {
             let model_dir = args
                 .vad_dir
@@ -449,6 +450,7 @@ fn dump_vad_segments(args: &Args, wav_path: &Path) -> Result<VadDumpOutput, Stri
 
     Ok(VadDumpOutput {
         vad_type: match args.vad_type {
+            VadBackend::None => "none".to_string(),
             VadBackend::Fsmn => "fsmn".to_string(),
             VadBackend::Silero => "silero".to_string(),
         },
@@ -481,6 +483,9 @@ fn recognize_with_vad(
     let mut segments: Vec<(usize, Vec<f32>)> = Vec::new();
 
     match vad_type {
+        VadBackend::None => {
+            segments.push((0, samples.clone()));
+        }
         VadBackend::Fsmn => {
             let model_dir = vad_dir.ok_or_else(|| "FSMN VAD 需要 --vad-dir 参数".to_string())?;
             segments = segment_with_fsmn_vad(wav_path, model_dir, &samples, sample_rate)?;
@@ -1032,6 +1037,7 @@ fn validate_args(args: &Args) -> Result<(), String> {
     }
 
     match args.vad_type {
+        VadBackend::None => {}
         VadBackend::Fsmn => {
             let vad_dir = args
                 .vad_dir
@@ -1122,5 +1128,5 @@ fn escape_json_string(input: &str) -> String {
 }
 
 fn usage() -> String {
-    "用法：funasr-asr --input <media-file> [--vad-dump-json | (--model <model-dir> --model-type <family> --recognizer-config <json> --output-json)] [--vad-type fsmn|silero] [--vad-dir <fsmn-dir>] [--vad-model <silero-onnx>] [--language zh] [--timestamp-mode auto|token|segment]".to_string()
+    "用法：funasr-asr --input <media-file> [--vad-dump-json | (--model <model-dir> --model-type <family> --recognizer-config <json> --output-json)] [--vad-type none|fsmn|silero] [--vad-dir <fsmn-dir>] [--vad-model <silero-onnx>] [--language zh] [--timestamp-mode auto|token|segment]".to_string()
 }

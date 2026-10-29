@@ -1,3 +1,3 @@
 packages:
-  # React组件包 - 这是要发布到npm的包
-  - 'packages/react'
+  - 'core/*'
+  - 'server'

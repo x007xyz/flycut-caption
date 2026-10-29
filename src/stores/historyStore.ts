@@ -1,5 +1,6 @@
 // 字幕历史管理 Zustand Store
-import { create } from 'zustand'
+import { createStore } from 'zustand/vanilla';
+import { bindRuntimeStore } from './runtimeStore';
 import { devtools } from 'zustand/middleware'
 import type { SubtitleChunk, SubtitleTranscript } from '@/types/subtitle'
 import { normalizeAsrTranscript } from '@/utils/asrTranscriptUtils'
@@ -31,7 +32,7 @@ interface InsertChunksAction {
 
 type HistoryAction = UpdateAction | BatchUpdateAction | InsertChunksAction;
 
-interface HistoryState {
+export interface HistoryState {
   // 字幕数据
   chunks: Chunk[];
   wordChunks: Chunk[];
@@ -51,7 +52,7 @@ interface HistoryState {
   canRedo: boolean;
 }
 
-interface HistoryActions {
+export interface HistoryActions {
   // 基础操作
   setTranscript: (transcript: SubtitleTranscript) => void;
   update: (id: string, next: Partial<Chunk>, layer?: ChunkLayer) => void;
@@ -174,7 +175,8 @@ const initialState: HistoryState = {
 };
 
 // 创建Store
-export const useHistoryStore = create<HistoryState & HistoryActions>()(
+/** One instance per client runtime; see `ctx.stores`. */
+export const createHistoryStore = () => createStore<HistoryState & HistoryActions>()(
   devtools(
     (set, get) => ({
       ...initialState,
@@ -920,3 +922,5 @@ export const useDeleteWord = () => useHistoryStore(state => state.deleteWord);
 export const useHistoryText = () => useHistoryStore(state => state.text);
 export const useHistoryLanguage = () => useHistoryStore(state => state.language);
 export const useHistoryDuration = () => useHistoryStore(state => state.duration);
+
+export const useHistoryStore = bindRuntimeStore('history');

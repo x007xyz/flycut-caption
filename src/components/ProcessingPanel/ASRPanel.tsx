@@ -5,7 +5,6 @@ import { cn } from '@/lib/utils';
 import { useAppStore } from '@/stores/appStore';
 import { useHistoryStore } from '@/stores/historyStore';
 import { useShowSuccess, useShowError, useShowInfo, useShowWarning } from '@/stores/messageStore';
-import { asrService } from '@/services/asrService';
 import type { ASRProgress } from '@/types/subtitle';
 import { readFileAsArrayBuffer } from '@/utils/fileUtils';
 import { 
@@ -23,17 +22,19 @@ import {
 import { ASRLanguageSelector, ModelSelectItems, WebModelSelectItems } from '@/components/ASR';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ModelDownloadPanel } from '@/components/ASR/ModelDownloadPanel';
-import type { AvailableModel, AllModelsStatus } from '@/types/model';
-import { getWebAsrModel } from '@/config/webAsrModels';
+import type { AvailableModel } from '@/types/model';
+import { getWebAsrModel } from '../../../shared/asr/webModels';
 import { getRuntimeAsrEngineType, isTauriRuntime } from '@/utils/runtime';
 import { WEB_MODELS_DOWNLOADED_EVENT } from '@/services/webModelCache';
 import { useActiveModelLanguageConfig } from '@/hooks/useActiveModelLanguageConfig';
+import { useClientRuntime } from '@/runtime/context';
 
 interface ASRPanelProps {
   className?: string;
 }
 
 export function ASRPanel({ className }: ASRPanelProps) {
+  const { connection, asr: asrService } = useClientRuntime();
   const videoFile = useAppStore((state) => state.videoFile);
   const language = useAppStore(state => state.language);
   const deviceType = useAppStore(state => state.deviceType);
@@ -79,7 +80,7 @@ export function ASRPanel({ className }: ASRPanelProps) {
     const expectedEngine = getRuntimeAsrEngineType();
     setASREngineType(expectedEngine);
     asrService.setEngineType(expectedEngine);
-  }, [setASREngineType]);
+  }, [setASREngineType, asrService]);
 
   // 浏览器：检查已下载 Web 模型
   useEffect(() => {
@@ -96,27 +97,25 @@ export function ASRPanel({ className }: ASRPanelProps) {
       window.removeEventListener(WEB_MODELS_DOWNLOADED_EVENT, refresh);
       window.removeEventListener('focus', refresh);
     };
-  }, [isTauri]);
+  }, [isTauri, asrService]);
 
   // Tauri：加载 manifest 模型 + 已下载状态；窗口聚焦时刷新
   useEffect(() => {
     if (!isTauri) return;
 
     const load = () => {
-      import('@tauri-apps/api/core').then(({ invoke }) => {
-        invoke<AvailableModel[]>('list_available_models')
-          .then((list) => setAllModels(list))
-          .catch((err) => console.error('Failed to list available models:', err));
-        invoke<AllModelsStatus>('check_all_models_downloaded')
-          .then((status) => setDownloadedModels(status.downloaded_model_ids))
-          .catch((err) => console.error('Failed to check models:', err));
-      });
+      connection.call('models.list')
+        .then((list) => setAllModels(list))
+        .catch((err) => console.error('Failed to list available models:', err));
+      connection.call('models.status')
+        .then((status) => setDownloadedModels(status.downloaded_model_ids))
+        .catch((err) => console.error('Failed to check models:', err));
     };
     load();
     const handler = () => load();
     window.addEventListener('focus', handler);
     return () => window.removeEventListener('focus', handler);
-  }, [isTauri]);
+  }, [isTauri, connection]);
 
   // 设置进度回调
   useEffect(() => {
@@ -159,17 +158,17 @@ export function ASRPanel({ className }: ASRPanelProps) {
     };
 
     return asrService.addProgressCallback(handleProgress);
-  }, [setASRProgress, setTranscript, setError, setStage, showSuccess, showError, showInfo, showWarning]);
+  }, [setASRProgress, setTranscript, setError, setStage, showSuccess, showError, showInfo, showWarning, asrService]);
 
   // 设置设备类型
   useEffect(() => {
     asrService.setDevice(deviceType);
-  }, [deviceType]);
+  }, [deviceType, asrService]);
 
   // 检查是否准备就绪
   const isReady = useCallback(() => {
     return asrService.isReady();
-  }, []);
+  }, [asrService]);
 
   // 加载模型
   const loadModel = useCallback(async () => {
@@ -185,7 +184,7 @@ export function ASRPanel({ className }: ASRPanelProps) {
     } finally {
       setLoading(false);
     }
-  }, [setLoading, setError, showSuccess, showError]);
+  }, [setLoading, setError, showSuccess, showError, asrService]);
 
   // 开始转录
   const startTranscription = useCallback(async (audioBuffer: ArrayBuffer) => {
@@ -226,7 +225,7 @@ export function ASRPanel({ className }: ASRPanelProps) {
     } finally {
       setLoading(false);
     }
-  }, [videoFile, language, asrModelId, setLoading, setError, setASRProgress, showInfo, showWarning, showError]);
+  }, [videoFile, language, asrModelId, setLoading, setError, setASRProgress, showInfo, showWarning, showError, asrService]);
 
   // 重新开始转录
   const retryTranscription = useCallback(async (audioBuffer: ArrayBuffer) => {
@@ -254,7 +253,7 @@ export function ASRPanel({ className }: ASRPanelProps) {
     asrService.setWebModel(modelId);
     const meta = getWebAsrModel(modelId);
     showInfo('模型切换成功', `已切换到 ${meta?.name || modelId}`);
-  }, [setWebModelId, showInfo]);
+  }, [setWebModelId, showInfo, asrService]);
 
   // 更改语言
   const changeLanguage = useCallback((newLanguage: string) => {

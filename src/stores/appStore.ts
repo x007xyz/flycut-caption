@@ -1,5 +1,6 @@
 // 主应用 Zustand Store
-import { create } from 'zustand'
+import { createStore } from 'zustand/vanilla';
+import { bindRuntimeStore } from './runtimeStore';
 import { devtools, persist } from 'zustand/middleware'
 import type { 
   VideoFile, 
@@ -12,7 +13,7 @@ import type { ASREngineType } from '@/services/asrService'
 import type { AIModelConfig, AIProgress } from '@/types/ai'
 import { hasWebGPU } from '@/utils/audioUtils'
 import { DEFAULT_MODEL_ID } from '@/types/model'
-import { DEFAULT_WEB_MODEL_ID, getWebAsrModel } from '@/config/webAsrModels'
+import { DEFAULT_WEB_MODEL_ID, getWebAsrModel } from '../../shared/asr/webModels'
 import { isWebAsrModelId } from '@/utils/asrModelId'
 
 // 旧版 model_id（不在当前 manifest 中），升级后需迁移到 DEFAULT_MODEL_ID
@@ -156,7 +157,8 @@ const initialState: AppState = {
 }
 
 // 创建Store
-export const useAppStore = create<AppState & AppActions>()(
+/** One instance per client runtime; see `ctx.stores`. */
+export const createAppStore = () => createStore<AppState & AppActions>()(
   devtools(
     persist(
     (set) => ({
@@ -427,3 +429,5 @@ export const useAppStore = create<AppState & AppActions>()(
 
 // 注意: 直接使用 useAppStore(state => state.property) 或 useAppStore(state => state.actionName)
 // 这样可以获得更好的性能和类型安全
+
+export const useAppStore = bindRuntimeStore('app');

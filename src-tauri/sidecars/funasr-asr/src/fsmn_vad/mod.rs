@@ -11,6 +11,7 @@ use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VadBackend {
+    None,
     Fsmn,
     Silero,
 }
@@ -18,10 +19,11 @@ pub enum VadBackend {
 impl VadBackend {
     pub fn parse(raw: &str) -> Result<Self, String> {
         match raw {
+            "none" | "off" => Ok(Self::None),
             "fsmn" | "funasr-fsmn" | "funasr" => Ok(Self::Fsmn),
             "silero" => Ok(Self::Silero),
             other => Err(format!(
-                "不支持的 --vad-type：{other}（可选：fsmn、silero）"
+                "不支持的 --vad-type：{other}（可选：none、fsmn、silero）"
             )),
         }
     }

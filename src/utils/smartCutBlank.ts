@@ -1,21 +1,7 @@
-import { calculateBlankSegments } from '@/utils/timeUtils';
 import type { SubtitleChunk } from '@/types/subtitle';
-
-export interface SmartCutBlankResult {
-  segments: Array<{ start: number; end: number }>;
-  totalBlankSeconds: number;
-}
-
-/** 计算可剪切的空白段（纯函数，便于单测） */
-export function computeSmartCutBlank(
-  chunks: Array<{ timestamp: [number, number]; deleted?: boolean }>,
-  threshold: number,
-  totalDuration?: number,
-): SmartCutBlankResult {
-  const segments = calculateBlankSegments(chunks, threshold, totalDuration);
-  const totalBlankSeconds = segments.reduce((acc, seg) => acc + (seg.end - seg.start), 0);
-  return { segments, totalBlankSeconds };
-}
+import { deleteSilencePlugin } from '../../shared/editing/deleteSilencePlugin';
+export { computeSmartCutBlank, type SmartCutBlankResult } from '../../shared/editing/smartCutBlankCore';
+import type { SmartCutBlankResult } from '../../shared/editing/smartCutBlankCore';
 
 /**
  * 将空白段插入为已删除的占位 chunk（与 historyStore.insertBlankChunks 逻辑一致，纯函数版本供测试）
@@ -64,11 +50,12 @@ export function runSmartCutBlank({
   onDone,
   insertBlankChunks,
 }: RunSmartCutBlankOptions): void {
-  const result = computeSmartCutBlank(chunks, threshold, totalDuration);
-  if (result.segments.length === 0) {
+  const analysis = deleteSilencePlugin.analyze({ chunks, totalDuration }, { threshold });
+  if (analysis.ranges.length === 0) {
     onEmpty();
     return;
   }
-  insertBlankChunks(result.segments);
-  onDone(result);
+  const segments = analysis.ranges.map(({ start, end }) => ({ start, end }));
+  insertBlankChunks(segments);
+  onDone({ segments, totalBlankSeconds: analysis.totalDuration });
 }

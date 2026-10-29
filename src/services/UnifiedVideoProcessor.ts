@@ -2,13 +2,15 @@
 
 import type { VideoFile, VideoSegment, VideoProcessingProgress } from '@/types/video';
 import type { IVideoProcessingEngine, VideoEngineType, VideoProcessingOptions } from '@/types/videoEngine';
-import { VideoEngineFactory } from './videoEngines/VideoEngineFactory';
+import type { VideoEngineRegistry } from './videoEngines/VideoEngineFactory';
 
 export class UnifiedVideoProcessor {
   private currentEngine: IVideoProcessingEngine | null = null;
   private onProgress?: (progress: VideoProcessingProgress) => void;
+  private engines: VideoEngineRegistry;
 
-  constructor(onProgress?: (progress: VideoProcessingProgress) => void) {
+  constructor(engines: VideoEngineRegistry, onProgress?: (progress: VideoProcessingProgress) => void) {
+    this.engines = engines;
     this.onProgress = onProgress;
   }
 
@@ -31,14 +33,14 @@ export class UnifiedVideoProcessor {
       // 清理之前的引擎
       await this.cleanup();
 
-      const defaults = VideoEngineFactory.getDefaultEngineOrder();
+      const defaults = this.engines.getDefaultEngineOrder();
       const fallbacks = fallbackEngines ?? defaults;
       const engineOrder = preferredEngine
         ? [preferredEngine, ...fallbacks.filter(e => e !== preferredEngine)]
         : fallbacks;
 
       // 尝试获取最佳可用引擎
-      const { engine, type } = await VideoEngineFactory.getBestAvailableEngine(engineOrder);
+      const { engine, type } = await this.engines.getBestAvailableEngine(engineOrder);
       this.currentEngine = engine;
 
       // 初始化引擎
@@ -89,7 +91,7 @@ export class UnifiedVideoProcessor {
       await this.cleanup();
 
       // 创建新引擎
-      this.currentEngine = await VideoEngineFactory.createEngine(newEngineType);
+      this.currentEngine = await this.engines.createEngine(newEngineType);
       
       // 初始化新引擎
       await this.currentEngine.initialize(videoFile, this.onProgress);
@@ -105,7 +107,7 @@ export class UnifiedVideoProcessor {
    * 检查所有可用引擎
    */
   async checkAllEngines() {
-    return await VideoEngineFactory.checkAllEngines();
+    return await this.engines.checkAllEngines();
   }
 
   /**
@@ -130,7 +132,7 @@ export class UnifiedVideoProcessor {
   /**
    * 获取支持的引擎类型
    */
-  static getSupportedEngines(): VideoEngineType[] {
-    return VideoEngineFactory.getSupportedEngines();
+  getSupportedEngines(): VideoEngineType[] {
+    return this.engines.getSupportedEngines();
   }
 }

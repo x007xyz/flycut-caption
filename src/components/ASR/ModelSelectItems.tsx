@@ -7,14 +7,14 @@ import type { AvailableModel } from '@/types/model';
 import { MODEL_FAMILY_LABELS } from '@/types/model';
 
 interface ModelSelectItemsProps {
-  /** 全部 manifest 模型（来自 list_available_models） */
+  /** 全部 manifest 模型（来自 Host models.list） */
   allModels: AvailableModel[];
-  /** 已下载的模型 id 集合（来自 check_all_models_downloaded） */
+  /** 已下载的模型 id 集合（来自 Host models.status） */
   downloadedModelIds: string[];
 }
 
 export function ModelSelectItems({ allModels, downloadedModelIds }: ModelSelectItemsProps) {
-  const families = Object.keys(MODEL_FAMILY_LABELS);
+  const families = [...new Set(allModels.map(model => model.family))];
 
   return (
     <>
@@ -26,7 +26,7 @@ export function ModelSelectItems({ allModels, downloadedModelIds }: ModelSelectI
 
         return (
           <SelectGroup key={family}>
-            <SelectLabel>{MODEL_FAMILY_LABELS[family]}</SelectLabel>
+            <SelectLabel>{MODEL_FAMILY_LABELS[family] ?? family}</SelectLabel>
             {models.map((m) => (
               <SelectItem key={m.id} value={m.id}>
                 <span className="flex items-center gap-1.5">

@@ -23,6 +23,7 @@ import {
 import { isTauriRuntime } from '@/utils/runtime';
 import { useTranslation } from '@/contexts/LocaleProvider';
 import type { SubtitleDisplayMode } from '@/subtitle';
+import { useClientRuntime } from '@/runtime/context';
 
 export interface VideoExportOptions {
   format: 'mp4' | 'webm';
@@ -61,6 +62,7 @@ export function ExportDialog({
   onExportVideo,
   defaultExportMode,
 }: ExportDialogProps) {
+  const { connection } = useClientRuntime();
   const { t } = useTranslation();
   const initialExportMode: SubtitleDisplayMode = defaultExportMode ?? 'Bilingual';
   const [subtitleExportMode, setSubtitleExportMode] = useState<SubtitleDisplayMode>(initialExportMode);
@@ -85,48 +87,26 @@ export function ExportDialog({
     if (!open || exportType !== 'video') return;
 
     const isTauri = isTauriRuntime();
-    if (!isTauri) {
-      setEnv({
-        isTauri: false,
-        ffmpegAvailable: true,
-        webHardBurn: true,
-        tauriSoftBurn: false,
-        tauriHardBurn: false,
-      });
-      return;
-    }
-
     let cancelled = false;
     (async () => {
       try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        const status = await invoke<{
-          available: boolean;
-          error?: string;
-          source?: 'bundled' | 'system';
-          version?: string;
-          videoEncoderLabel?: string;
-          hardwareEncoding?: boolean;
-        }>('check_ffmpeg_environment');
+        const status = await connection.call('host.info');
+        const available = status.capabilities?.export === true;
         if (cancelled) return;
         setEnv({
-          isTauri: true,
-          ffmpegAvailable: status.available,
-          ffmpegError: status.error,
-          ffmpegSource: status.source,
-          ffmpegVersion: status.version,
-          videoEncoderLabel: status.videoEncoderLabel,
-          hardwareEncoding: status.hardwareEncoding,
-          webHardBurn: false,
-          tauriSoftBurn: status.available,
-          tauriHardBurn: status.available,
+          isTauri,
+          ffmpegAvailable: available,
+          ffmpegError: available ? undefined : 'Host 导出插件不可用',
+          webHardBurn: available,
+          tauriSoftBurn: available,
+          tauriHardBurn: available,
         });
       } catch (error) {
         if (cancelled) return;
         setEnv({
           isTauri: true,
           ffmpegAvailable: false,
-          ffmpegError: error instanceof Error ? error.message : 'FFmpeg 环境检查失败',
+          ffmpegError: error instanceof Error ? error.message : 'Host 导出插件检查失败',
           webHardBurn: false,
           tauriSoftBurn: false,
           tauriHardBurn: false,
@@ -137,9 +117,9 @@ export function ExportDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, exportType]);
+  }, [open, exportType, connection]);
 
-  const softBurnAvailable = env.isTauri ? env.tauriSoftBurn : false;
+  const softBurnAvailable = env.tauriSoftBurn || env.webHardBurn;
   const hardBurnAvailable = env.isTauri ? env.tauriHardBurn : env.webHardBurn;
   const canExportVideo = env.isTauri ? env.ffmpegAvailable : true;
 

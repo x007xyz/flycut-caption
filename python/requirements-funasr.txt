@@ -1,0 +1,4 @@
+# Install into the Python environment used to start flycut_runtime.py.
+funasr>=1.2.0,<2
+torch>=2.1,<3
+torchaudio>=2.1,<3
