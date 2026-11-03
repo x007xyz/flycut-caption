@@ -5,6 +5,7 @@ import { devtools } from 'zustand/middleware'
 import type { SubtitleChunk, SubtitleTranscript } from '@/types/subtitle'
 import { normalizeAsrTranscript } from '@/utils/asrTranscriptUtils'
 import { logAsrModelOutput } from '@/utils/asrOutputLog'
+import { joinWordTexts } from '../../shared/text/joinWords'
 
 type ChunkLayer = 'sentence' | 'word'
 
@@ -141,10 +142,10 @@ const syncSentenceFromWords = (chunks: Chunk[], wordChunks: Chunk[], sentenceId:
 
   const activeWords = words.filter((word) => !word.deleted);
   const allDeleted = activeWords.length === 0;
-  // 与 groupWordsIntoSentences 一致：字词直接拼接（中文无空格）
+  // 与 groupWordsIntoSentences 一致：中文直接拼接，英文以空格分隔
   const text = allDeleted
     ? sentence.text
-    : activeWords.map((word) => word.text).join('').trim() || sentence.text;
+    : joinWordTexts(activeWords.map((word) => word.text)) || sentence.text;
   const timestamp: [number, number] = allDeleted
     ? sentence.timestamp
     : [

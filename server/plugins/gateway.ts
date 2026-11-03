@@ -1,7 +1,9 @@
 import type { Context } from '@deepseek-ai/cordis';
-import { createServer, type IncomingMessage } from 'node:http';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createReadStream } from 'node:fs';
+import { stat } from 'node:fs/promises';
+import { extname, resolve, sep } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { rpcRequestSchema, PROTOCOL_VERSION, type HostFrame, type RpcResponse } from '../../shared/protocol';
 
@@ -11,16 +13,53 @@ async function body(req: IncomingMessage, limit: number): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
+const MIME: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.map': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png',
+  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon', '.wasm': 'application/wasm', '.woff': 'font/woff',
+  '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.otf': 'font/otf', '.txt': 'text/plain; charset=utf-8', '.mp4': 'video/mp4', '.webm': 'video/webm' };
+const LOOPBACK_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+const ASSET_PATH = /^\/assets\/([0-9a-f-]{36})$/i;
+const LOOPBACK_HOST = /^(localhost|127\.0\.0\.1)(:\d+)?$/;
+
+export interface GatewayConfig {
+  /** Registers `host.shutdown`; the `server` profile turns it off so remote clients cannot stop the Host. */
+  shutdown?: boolean;
+}
+
 /**
  * Harness-inspired transport: unary RPC + generation-scoped WebSocket events.
  * The Gateway owns no business methods; it dispatches to `ctx.rpc`, where each plugin registers its own.
  */
-export const gatewayPlugin = { name: 'flycut-api-gateway', inject: ['hostConfig', 'rpc', 'jobs', 'assets'], async apply(ctx: Context) {
+export const gatewayPlugin = { name: 'flycut-api-gateway', inject: ['hostConfig', 'rpc', 'jobs', 'assets'], async apply(ctx: Context, config: GatewayConfig = {}) {
+  const origins = new Set(ctx.hostConfig.allowedOrigins ?? []);
+  const originHosts = new Set([...origins].map(origin => new URL(origin).host));
+  const webRoot = ctx.hostConfig.webRoot ? resolve(ctx.hostConfig.webRoot) : undefined;
   const allowedOrigin = (origin?: string) => !origin || origin === 'tauri://localhost' || origin === 'http://tauri.localhost'
-    || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+    || LOOPBACK_ORIGIN.test(origin) || origins.has(origin);
   const authorized = (req: IncomingMessage, url: URL) => allowedOrigin(req.headers.origin)
     && (req.headers.authorization === `Bearer ${ctx.hostConfig.token}` || url.searchParams.get('token') === ctx.hostConfig.token);
-  ctx.effect(() => ctx.rpc.register('host.shutdown', undefined, () => { setTimeout(() => process.emit('SIGTERM'), 25); return { stopping: true } as const; }));
+  if (config.shutdown !== false) {
+    ctx.effect(() => ctx.rpc.register('host.shutdown', undefined, () => { setTimeout(() => process.emit('SIGTERM'), 25); return { stopping: true } as const; }));
+  }
+  /** Serves the built frontend with SPA fallback; returns false for paths it does not own. */
+  const serveStatic = async (pathname: string, res: ServerResponse) => {
+    let decoded: string; try { decoded = decodeURIComponent(pathname); } catch { return false; }
+    let file = resolve(webRoot!, `.${decoded}`);
+    if (file !== webRoot && !file.startsWith(webRoot! + sep)) return false;
+    let info = await stat(file).catch(() => undefined);
+    if (info?.isDirectory()) { file = resolve(file, 'index.html'); info = await stat(file).catch(() => undefined); }
+    if (!info?.isFile()) {
+      // Client-side routes fall back to the app shell; missing files with an extension stay 404.
+      if (extname(pathname)) return false;
+      file = resolve(webRoot!, 'index.html'); info = await stat(file).catch(() => undefined);
+      if (!info?.isFile()) return false;
+    }
+    const hashed = pathname.startsWith('/assets/');
+    res.writeHead(200, { 'Content-Type': MIME[extname(file).toLowerCase()] ?? 'application/octet-stream', 'Content-Length': info.size,
+      'Cache-Control': hashed ? 'public, max-age=31536000, immutable' : 'no-cache' });
+    await pipeline(createReadStream(file), res).catch(() => res.destroy());
+    return true;
+  };
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     if (allowedOrigin(req.headers.origin) && req.headers.origin) {
@@ -30,12 +69,23 @@ export const gatewayPlugin = { name: 'flycut-api-gateway', inject: ['hostConfig'
     const json = (status: number, value: unknown) => { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)); };
     if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
     if (url.pathname === '/health' && req.method === 'GET') { json(200, { ok: true, protocolVersion: PROTOCOL_VERSION }); return; }
+    if (webRoot && url.pathname === '/__flycut/connection' && req.method === 'GET') {
+      // Same-origin bootstrap for the served frontend. The Host header check blocks DNS-rebinding pages.
+      const host = req.headers.host ?? '';
+      if (!allowedOrigin(req.headers.origin) || !(LOOPBACK_HOST.test(host) || originHosts.has(host))) { json(403, { error: 'Forbidden' }); return; }
+      json(200, { token: ctx.hostConfig.token }); return;
+    }
+    // Vite emits bundles under `/assets/<name>`; Host assets are `/assets/<uuid>`, so only UUIDs reach the API.
+    if (webRoot && req.method === 'GET' && !['/rpc', '/events'].includes(url.pathname) && !ASSET_PATH.test(url.pathname)) {
+      if (await serveStatic(url.pathname, res)) return;
+      json(404, { error: 'Not found' }); return;
+    }
     if (!authorized(req, url)) { json(401, { error: 'Unauthorized' }); return; }
     try {
       if (url.pathname === '/assets' && req.method === 'POST') {
         const assetId = await ctx.assets.putStream(req, 4 * 1024 * 1024 * 1024); json(201, { assetId }); return;
       }
-      const assetMatch = url.pathname.match(/^\/assets\/([0-9a-f-]{36})$/i);
+      const assetMatch = url.pathname.match(ASSET_PATH);
       if (assetMatch && req.method === 'GET') {
         const file = ctx.assets.path(assetMatch[1]); const size = await ctx.assets.size(assetMatch[1]).catch(() => undefined);
         if (size === undefined) { json(404, { error: 'Asset not found' }); return; }
@@ -68,7 +118,7 @@ export const gatewayPlugin = { name: 'flycut-api-gateway', inject: ['hostConfig'
       client.once('close', off);
     });
   });
-  await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(ctx.hostConfig.port, '127.0.0.1', resolve); });
+  await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(ctx.hostConfig.port, ctx.hostConfig.bind ?? '127.0.0.1', resolve); });
   ctx.provide('httpServer', server);
   ctx.effect(() => async () => {
     sockets.clients.forEach(client => client.terminate());

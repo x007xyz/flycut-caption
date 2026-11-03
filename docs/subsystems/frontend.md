@@ -1,0 +1,40 @@
+# 前端（React / UI）
+
+适用范围：`src/**`（`src/runtime/**` 另见 [cordis-host.md](cordis-host.md)）。
+
+## 技术栈
+
+- React 19 + TypeScript（strict，project references：`tsconfig.app.json` / `tsconfig.node.json`）+ Vite
+- Tailwind CSS 4：CSS-first 配置，`src/index.css` 中 `@import "tailwindcss"` 与 `@theme` 块，`@tailwindcss/vite` 插件；没有 `tailwind.config.js` / `postcss.config.js`
+- Shadcn/ui（`components.json`，new-york 风格、neutral 基色），基于 Radix UI；图标用 Lucide React
+- 主题：CSS 变量 + `oklch()` 颜色，内置明暗模式
+- ES modules（`"type": "module"`），路径别名 `@/*` → `./src/*`
+- 包管理器 pnpm
+
+## 目录
+
+- `src/components/`：UI 组件（文件上传、视频播放器、字幕编辑器、ASR 设置、导出等）
+- `src/hooks/`：自定义 Hooks（ASR、字幕管理等）
+- `src/services/`：前端服务层（ASR/AI/视频引擎适配，推理在 Host 执行）
+- `src/stores/`：按 Context 隔离的业务 store（用法见 cordis-host.md）
+- `src/runtime/`：前端 Cordis 组装与 Host 连接
+- `src/types/`、`src/utils/`、`src/locales/`、`src/contexts/`（仅 `LocaleProvider`）
+
+## 规则
+
+- 业务状态放 `src/stores`，通过 `useXStore(selector)` 读取；不要新建全局 React Context 承载业务状态。
+- 服务通过 `useClientRuntime()` 获取 `ctx.asr` / `ctx.ai`，不要写模块级单例。
+- 新的 Shadcn 组件用 `pnpm dlx shadcn@latest add <component-name>` 添加，不要手抄。
+- 用户可见文案走 `src/locales`，见根目录 `INTERNATIONALIZATION.md`。
+- 改动交互细节前先查 [decisions.md](../decisions.md)，已拍板的行为不要在 PR 里顺手改。
+
+## 命令与验证
+
+```bash
+pnpm dev:web          # 只起前端
+pnpm lint
+pnpm tsc -b --noEmit
+pnpm build
+```
+
+涉及字幕分句、智能剪空白等纯逻辑的，跑对应 `pnpm test:sentence-grouping` / `pnpm test:smart-cut`。

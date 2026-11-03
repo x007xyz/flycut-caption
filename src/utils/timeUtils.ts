@@ -5,6 +5,7 @@ import {
   resolveSentenceGroupingOptions,
   type SentenceGroupingOptions,
 } from '../config/sentenceGrouping.ts';
+import { joinWordTexts } from '../../shared/text/joinWords.ts';
 
 export type { SentenceGroupingOptions };
 export {
@@ -241,7 +242,7 @@ export function groupWordsIntoSentences(
       endsSentence(chunk.text, config.sentenceEnders);
 
     if (shouldEndSentence && currentSentence.length > 0) {
-      const sentenceText = currentSentence.map(c => c.text).join('').trim();
+      const sentenceText = joinWordTexts(currentSentence.map(c => c.text));
       const startTime = currentSentence[0].timestamp[0];
       const endTime = currentSentence[currentSentence.length - 1].timestamp[1];
       

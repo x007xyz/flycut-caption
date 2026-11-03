@@ -9,7 +9,13 @@ export interface HostConfig { home: string; port: number; token: string; resourc
   /** User model catalog and downloads (desktop app data dir). Defaults to `<home>/app-data`. */
   appData?: string;
   /** Assets unused for this long are deleted (default 24). */
-  assetTtlHours?: number }
+  assetTtlHours?: number;
+  /** Listen address (default `127.0.0.1`). Anything else makes the Host reachable beyond this machine. */
+  bind?: string;
+  /** Browser origins allowed besides loopback and Tauri, e.g. `https://flycut.example.com`. */
+  allowedOrigins?: string[];
+  /** Built frontend (`dist/`) served by the Host together with the connection bootstrap. */
+  webRoot?: string }
 export type ProgressReporter = (progress: ASRProgress) => void;
 export interface ProviderRegistry {
   register(provider: AsrProvider): () => void;

@@ -468,9 +468,10 @@ fn recognize_with_vad(
     vad_dir: Option<&Path>,
     vad_model_path: Option<&Path>,
     wav_path: &Path,
-    _config: &RecognizerConfig,
+    config: &RecognizerConfig,
     timestamp_mode: TimestampMode,
 ) -> Result<RecognitionOutput, String> {
+    let word_boundary = WordBoundary::for_model_type(&config.model_type);
     let wav_path_str = wav_path
         .to_str()
         .ok_or_else(|| format!("音频路径包含非法字符：{}", wav_path.display()))?;
@@ -548,6 +549,7 @@ fn recognize_with_vad(
                 start_sec,
                 end_sec,
                 timestamp_mode,
+                word_boundary,
                 &mut vad_segments,
                 &mut word_segments,
                 &mut full_text,
@@ -567,6 +569,7 @@ fn recognize_with_vad(
                 0.0,
                 end_sec,
                 timestamp_mode,
+                word_boundary,
                 &mut vad_segments,
                 &mut word_segments,
                 &mut full_text,
@@ -589,6 +592,7 @@ fn append_recognition_result(
     segment_start_sec: f64,
     segment_end_sec: f64,
     timestamp_mode: TimestampMode,
+    word_boundary: WordBoundary,
     vad_segments: &mut Vec<TimedChunk>,
     word_segments: &mut Vec<TimedChunk>,
     full_text: &mut String,
@@ -607,7 +611,7 @@ fn append_recognition_result(
     let prefer_token = !matches!(timestamp_mode, TimestampMode::Segment);
     if prefer_token && has_token_timestamps(result) {
         let mut token_chunks =
-            tokens_to_chunks(result, segment_start_sec, segment_end_sec);
+            tokens_to_chunks(result, segment_start_sec, segment_end_sec, word_boundary);
         if DEFAULT_SENTENCE_GROUPING.merge_adjacent_digit_tokens {
             token_chunks = merge_adjacent_digit_tokens(token_chunks);
         }
@@ -729,10 +733,7 @@ fn flush_sentence_group(
     let sentence_id = format!("sentence-{}", *sentence_index);
     let start = current_words[0].1.start;
     let end = current_words[current_words.len() - 1].1.end;
-    let sentence_text: String = current_words
-        .iter()
-        .map(|(_, w)| w.text.as_str())
-        .collect();
+    let sentence_text = join_word_texts(current_words.iter().map(|(_, w)| w.text.as_str()));
     let word_ids: Vec<String> = current_words
         .iter()
         .map(|(word_index, _)| format!("word-{}", word_index + 1))
@@ -786,7 +787,7 @@ fn is_skippable_token(token: &str) -> bool {
 }
 
 fn normalize_token_text(token: &str) -> String {
-    let trimmed = token.trim();
+    let trimmed = token.trim().trim_start_matches('\u{2581}');
     if trimmed.ends_with("@@") && trimmed.len() > 2 {
         trimmed[..trimmed.len() - 2].to_string()
     } else {
@@ -837,20 +838,13 @@ fn tokens_to_chunks(
     result: &OfflineRecognizerResult,
     segment_start_sec: f64,
     segment_end_sec: f64,
+    word_boundary: WordBoundary,
 ) -> Vec<TimedChunk> {
     let timestamps = result.timestamps.as_ref().unwrap();
     let durations = result.durations.as_deref();
 
-    let mut chunks: Vec<TimedChunk> = Vec::new();
+    let mut tokens: Vec<(&str, f64, f64)> = Vec::new();
     for (index, token) in result.tokens.iter().enumerate() {
-        if is_skippable_token(token) {
-            continue;
-        }
-        let text = normalize_token_text(token);
-        if text.is_empty() {
-            continue;
-        }
-
         let start = segment_start_sec + timestamps[index] as f64;
         let mut end = token_end_sec(
             timestamps,
@@ -862,9 +856,60 @@ fn tokens_to_chunks(
         if end <= start {
             end = (start + 0.05).min(segment_end_sec);
         }
+        tokens.push((token.as_str(), start, end));
+    }
 
-        if is_punctuation_only(&text) {
-            if let Some(last) = chunks.last_mut() {
+    assemble_word_chunks(&tokens, word_boundary)
+}
+
+/// 模型 token 的词边界约定
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum WordBoundary {
+    /// SentencePiece / Whisper：词首 `▁` 或空格标记新词，无标记的 token 接在前一个词后
+    WordStartMarker,
+    /// Paraformer：词尾 `@@` 标记与下一个 token 相连，其余 token 各自成词
+    ContinuationSuffix,
+}
+
+impl WordBoundary {
+    fn for_model_type(model_type: &str) -> Self {
+        if model_type == "paraformer" {
+            Self::ContinuationSuffix
+        } else {
+            Self::WordStartMarker
+        }
+    }
+}
+
+/// 把模型 token 组装成字词：标点并入前一个词，英文等子词按词边界约定合并成完整单词。
+fn assemble_word_chunks(tokens: &[(&str, f64, f64)], word_boundary: WordBoundary) -> Vec<TimedChunk> {
+
+    let mut chunks: Vec<TimedChunk> = Vec::new();
+    let mut previous_continues = false;
+    // 单独的 `▁` token 不产生文字，但下一个 token 是新词
+    let mut pending_word_start = false;
+    for &(raw, start, end) in tokens {
+        if is_skippable_token(raw) {
+            continue;
+        }
+        let text = normalize_token_text(raw);
+        if text.is_empty() {
+            pending_word_start |= raw.contains('\u{2581}');
+            continue;
+        }
+
+        let starts_word = raw.starts_with(' ') || raw.starts_with('\u{2581}') || pending_word_start;
+        pending_word_start = false;
+        let continues_previous = match word_boundary {
+            WordBoundary::WordStartMarker => !starts_word,
+            WordBoundary::ContinuationSuffix => previous_continues,
+        };
+        previous_continues = raw.trim_end().ends_with("@@");
+
+        if let Some(last) = chunks.last_mut() {
+            if is_punctuation_only(&text)
+                || (continues_previous && is_subword_continuation(&last.text, &text))
+            {
                 last.text.push_str(&text);
                 last.end = end;
                 continue;
@@ -875,6 +920,61 @@ fn tokens_to_chunks(
     }
 
     chunks
+}
+
+fn is_cjk_char(ch: char) -> bool {
+    matches!(ch,
+        '\u{3000}'..='\u{303f}'
+        | '\u{3040}'..='\u{30ff}'
+        | '\u{3400}'..='\u{4dbf}'
+        | '\u{4e00}'..='\u{9fff}'
+        | '\u{f900}'..='\u{faff}'
+        | '\u{ff00}'..='\u{ffef}')
+}
+
+/// 英文单词里可出现的字符（不含中日文）
+fn is_word_char(ch: char) -> bool {
+    (ch.is_alphanumeric() && !is_cjk_char(ch)) || matches!(ch, '\'' | '\u{2019}' | '%' | '-' | '&')
+}
+
+/// 子词能否接到前一个词上：两侧都是单词字符，或数字中的小数点/千分位（0.1%、1,400）
+fn is_subword_continuation(previous: &str, next: &str) -> bool {
+    let (Some(last), Some(first)) = (previous.chars().last(), next.chars().next()) else {
+        return false;
+    };
+    // SenseVoice 的数字 token 不带词首标记，字母后接数字视为新词（about 60%），数字后接字母仍合并（100th）
+    if last.is_alphabetic() && first.is_ascii_digit() {
+        return false;
+    }
+    if is_word_char(last) && is_word_char(first) {
+        return true;
+    }
+    let mut tail = previous.chars().rev();
+    matches!(tail.next(), Some('.' | ','))
+        && tail.next().is_some_and(|ch| ch.is_ascii_digit())
+        && first.is_ascii_digit()
+}
+
+/// 拼接字词为句子文本：中日文之间不加空格，其余（英文等）以空格分隔
+fn join_word_texts<'a>(words: impl IntoIterator<Item = &'a str>) -> String {
+    let mut text = String::new();
+    for word in words {
+        let word = word.trim();
+        if word.is_empty() {
+            continue;
+        }
+        let needs_space = match (text.chars().last(), word.chars().next()) {
+            (Some(last), Some(first)) => {
+                !is_cjk_char(last) && !is_cjk_char(first) && !is_punctuation_only(&first.to_string())
+            }
+            _ => false,
+        };
+        if needs_space {
+            text.push(' ');
+        }
+        text.push_str(word);
+    }
+    text
 }
 
 /// 把 VAD 队列里就绪的段全部取出，转成 (start_sample, samples) 存入 segments。
@@ -1129,4 +1229,72 @@ fn escape_json_string(input: &str) -> String {
 
 fn usage() -> String {
     "用法：funasr-asr --input <media-file> [--vad-dump-json | (--model <model-dir> --model-type <family> --recognizer-config <json> --output-json)] [--vad-type none|fsmn|silero] [--vad-dir <fsmn-dir>] [--vad-model <silero-onnx>] [--language zh] [--timestamp-mode auto|token|segment]".to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn words_with(tokens: &[&str], boundary: WordBoundary) -> Vec<String> {
+        let timed: Vec<(&str, f64, f64)> = tokens
+            .iter()
+            .enumerate()
+            .map(|(i, t)| (*t, i as f64 * 0.1, i as f64 * 0.1 + 0.1))
+            .collect();
+        assemble_word_chunks(&timed, boundary).into_iter().map(|c| c.text).collect()
+    }
+
+    fn words(tokens: &[&str]) -> Vec<String> {
+        words_with(tokens, WordBoundary::WordStartMarker)
+    }
+
+    #[test]
+    fn merges_sentencepiece_subwords_into_words() {
+        let tokens = ["▁N", "A", "S", "A", "'", "s", "▁Ke", "pl", "er", "▁mission", "▁orbit", "ing", "."];
+        assert_eq!(words(&tokens), ["NASA's", "Kepler", "mission", "orbiting."]);
+    }
+
+    #[test]
+    fn merges_whisper_style_space_prefixed_tokens() {
+        assert_eq!(words(&[" Hello", ",", " wor", "ld"]), ["Hello,", "world"]);
+    }
+
+    #[test]
+    fn merges_paraformer_at_at_continuations() {
+        assert_eq!(words_with(&["mis@@", "sion", "control"], WordBoundary::ContinuationSuffix), ["mission", "control"]);
+    }
+
+    #[test]
+    fn keeps_decimals_and_thousands_in_one_word() {
+        assert_eq!(words(&["▁0", ".", "1", "%", "▁about", "▁1", ",", "400"]), ["0.1%", "about", "1,400"]);
+    }
+
+    #[test]
+    fn unmarked_digits_after_a_word_start_a_new_word() {
+        assert_eq!(words(&["▁about", "6", "0", "%", "▁than", "1", "0", "0", "th"]), ["about", "60%", "than", "100th"]);
+    }
+
+    #[test]
+    fn standalone_word_marker_starts_new_word() {
+        assert_eq!(words(&["▁", "light", "▁", "years"]), ["light", "years"]);
+    }
+
+    #[test]
+    fn merges_unmarked_latin_letters_in_chinese_results() {
+        // SenseVoice 中文结果没有 `▁`，缩写和百分号应与旧行为一致：WHO、892%
+        assert_eq!(words(&["W", "H", "O", "已", "8", "9", "2", "%", "例"]), ["WHO", "已", "892%", "例"]);
+    }
+
+    #[test]
+    fn does_not_merge_chinese_characters() {
+        assert_eq!(words(&["大", "家", "好", "，", "▁Kepler", "望", "远", "镜"]), ["大", "家", "好，", "Kepler", "望", "远", "镜"]);
+    }
+
+    #[test]
+    fn joins_english_with_spaces_and_chinese_without() {
+        assert_eq!(join_word_texts(["NASA's", "Kepler", "mission."]), "NASA's Kepler mission.");
+        assert_eq!(join_word_texts(["大", "家", "好，"]), "大家好，");
+        assert_eq!(join_word_texts(["用", "Kepler", "望", "远", "镜"]), "用Kepler望远镜");
+        assert_eq!(join_word_texts(["Hi", ",", "there"]), "Hi, there");
+    }
 }

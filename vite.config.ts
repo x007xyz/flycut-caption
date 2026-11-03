@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import dts from 'vite-plugin-dts'
 import path from 'path'
+import { readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -30,8 +31,13 @@ function hostDiscovery() {
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const isLibrary = mode === 'library'
+  // package.json 是版本号的唯一来源，src/index.ts 导出的 version 由这里注入
+  const { version } = JSON.parse(readFileSync(path.resolve(__dirname, 'package.json'), 'utf8'))
 
   return {
+    define: {
+      __FLYCUT_VERSION__: JSON.stringify(version),
+    },
     plugins: [
       react(),
       tailwindcss(),

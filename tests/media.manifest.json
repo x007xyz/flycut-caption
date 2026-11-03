@@ -1,0 +1,252 @@
+{
+  "description": "真实场景测试视频清单。items 来自 Wikimedia Commons（公有领域或 CC BY）；external 需手动下载；clips 由脚本从源文件切出。用 `pnpm fetch:test-media` 生成到 tests/media/（已 gitignore）。",
+  "items": [
+    {
+      "id": "nasa-kepler-452b-briefing",
+      "dir": "nasa",
+      "lang": "en",
+      "scene": "NASA 新闻发布会，短片段，快速冒烟",
+      "title": "File:NASA-Kepler-452b-press-release-briefing video.webm",
+      "license": "Public domain"
+    },
+    {
+      "id": "nasa-punch-teleconference",
+      "dir": "nasa",
+      "lang": "en",
+      "scene": "NASA 电话媒体会（28 分钟，多人问答，长音频 / VAD）",
+      "title": "File:PUNCH Mission Media Teleconference (SVS14784).webm",
+      "license": "Public domain"
+    },
+    {
+      "id": "nasa-apollo11-prelaunch",
+      "dir": "nasa",
+      "lang": "en",
+      "scene": "1969 年发布会原始录像（老旧音质、噪声）",
+      "title": "File:Apollo 11 Crew Prelaunch Press Conference.webm",
+      "license": "Public domain"
+    },
+    {
+      "id": "zh-cppcc-press-2020",
+      "dir": "zh-press",
+      "lang": "zh",
+      "scene": "全国政协新闻发布会（普通话问答）",
+      "title": "File:2020年5月20日 全国政协十三届三次会议首场新闻发布会在梅地亚新闻中心举行.webm",
+      "license": "CC BY 4.0"
+    },
+    {
+      "id": "zh-mfa-briefing-2021-04-08",
+      "dir": "zh-press",
+      "lang": "zh",
+      "scene": "外交部例行记者会发言人答问（单人语速快）",
+      "title": "File:2021年4月8日 赵立坚历数美国人权“五宗罪”：奉劝美方放下傲慢与偏见.webm",
+      "license": "CC BY 3.0"
+    },
+    {
+      "id": "zh-consulate-ny-press",
+      "dir": "zh-press",
+      "lang": "zh",
+      "scene": "驻纽约总领馆新闻发布会（1080p 短片段）",
+      "title": "File:中国驻纽约总领事黄屏就中国抗击新型肺炎举行新闻发布会.webm",
+      "license": "CC BY 4.0"
+    },
+    {
+      "id": "zh-tw-airport-livestream",
+      "dir": "zh-live",
+      "lang": "zh",
+      "scene": "33 分钟直播原始录像（大量环境声/空白，测 VAD 与空白裁剪）",
+      "title": "File:2022-08-02 重要貴賓機場迎賓直播.webm",
+      "license": "CC BY 3.0"
+    },
+    {
+      "id": "zh-vlog-film-making",
+      "dir": "vlog",
+      "lang": "zh",
+      "scene": "中文 Vlog（中新网，有剪辑，可能带内嵌字幕）",
+      "title": "File:【小新的Vlog】看中国胶片电影制作的幕后故事.webm",
+      "license": "CC BY 3.0"
+    },
+    {
+      "id": "en-vlog-china-shamian",
+      "dir": "vlog",
+      "lang": "en+zh",
+      "scene": "英文 Vlog（外国博主在广州，夹杂中文对话）。原片 4K 4.2GB，取 480p 转码",
+      "title": "File:I Became Famous in China - Facts about China - Shamian Island - China Vlogs.webm",
+      "derivative": "480p",
+      "license": "CC BY 3.0"
+    },
+    {
+      "id": "en-wikimania-education-talk",
+      "dir": "vlog",
+      "lang": "en",
+      "scene": "英文线上讨论直播录像（多口音、多人轮流发言）",
+      "title": "File:Wikimania 2021 – Where to talk about Education Education community participation spaces and more!.webm",
+      "license": "CC BY 3.0"
+    }
+  ],
+  "external": [
+    {
+      "id": "x-isnail-2115609565043597572",
+      "file": "external/x-isnail-2115609565043597572.mp4",
+      "lang": "zh",
+      "scene": "中文视频播客（46 分钟，多人对谈，1080p）",
+      "source": "https://x.com/isnail/status/2115609565043597572",
+      "license": "未授权再分发，仅本地测试",
+      "fetch": "yt-dlp -f \"bv*[height<=1080]+ba/b\" --merge-output-format mp4 -o tests/media/external/x-isnail-2115609565043597572.%(ext)s <source>"
+    }
+  ],
+  "clips": [
+    {
+      "path": "clips/asr/en-apollo11-noisy-3min.webm",
+      "source": "nasa/nasa-apollo11-prelaunch.webm",
+      "start": 300,
+      "duration": 180,
+      "kind": "copy",
+      "note": "1969 年老录音，噪声大"
+    },
+    {
+      "path": "clips/asr/en-punch-phone-3min.webm",
+      "source": "nasa/nasa-punch-teleconference.webm",
+      "start": 400,
+      "duration": 180,
+      "kind": "copy",
+      "note": "电话会议窄带音质"
+    },
+    {
+      "path": "clips/asr/en-wikimania-accents-3min.webm",
+      "source": "vlog/en-wikimania-education-talk.webm",
+      "start": 0,
+      "duration": 180,
+      "kind": "copy",
+      "note": "多口音英文"
+    },
+    {
+      "path": "clips/asr/zh-podcast-3min.mp4",
+      "source": "external/x-isnail-2115609565043597572.mp4",
+      "start": 30,
+      "duration": 180,
+      "kind": "copy",
+      "note": "中文口语播客，语气词多"
+    },
+    {
+      "path": "clips/silence/en-wikimania-gaps-2.5min.webm",
+      "source": "vlog/en-wikimania-education-talk.webm",
+      "start": 700,
+      "duration": 150,
+      "kind": "copy",
+      "note": "轮流发言间 5 处 1.5s+ 停顿"
+    },
+    {
+      "path": "clips/silence/en-punch-tail-2min.webm",
+      "source": "nasa/nasa-punch-teleconference.webm",
+      "start": 1565,
+      "duration": 120,
+      "kind": "copy",
+      "note": "结尾 33s 静音"
+    },
+    {
+      "path": "clips/silence/zh-airport-ambient-4min.webm",
+      "source": "zh-live/zh-tw-airport-livestream.webm",
+      "start": 0,
+      "duration": 240,
+      "kind": "copy",
+      "note": "直播环境声，几乎无人声（ASR 只出 4 句）"
+    },
+    {
+      "path": "clips/silence/zh-airport-no-speech-3.5min.webm",
+      "source": "zh-live/zh-tw-airport-livestream.webm",
+      "start": 940,
+      "duration": 210,
+      "kind": "copy",
+      "note": "完全无人声：sidecar 报“未检测到语音段”并退出 1"
+    },
+    {
+      "path": "clips/dub/zh-mfa-spokesperson-1min.webm",
+      "source": "zh-press/zh-mfa-briefing-2021-04-08.webm",
+      "start": 0,
+      "duration": 60,
+      "kind": "copy",
+      "note": "单人发言，中→英配音"
+    },
+    {
+      "path": "clips/dub/zh-podcast-host-1min.mp4",
+      "source": "external/x-isnail-2115609565043597572.mp4",
+      "start": 30,
+      "duration": 60,
+      "kind": "copy",
+      "note": "口语主播，中→英配音"
+    },
+    {
+      "path": "clips/dub/ref-en-kepler-narrator.wav",
+      "source": "nasa/nasa-kepler-452b-briefing.webm",
+      "start": 0.9,
+      "duration": 8.7,
+      "kind": "ref-wav",
+      "note": "IndexTTS 参考音色（英文旁白）"
+    },
+    {
+      "path": "clips/dub/ref-zh-mfa-spokesperson.wav",
+      "source": "zh-press/zh-mfa-briefing-2021-04-08.webm",
+      "start": 0.3,
+      "duration": 8.2,
+      "kind": "ref-wav",
+      "note": "IndexTTS 参考音色（中文男声）"
+    },
+    {
+      "path": "clips/dub/ref-zh-podcast-host.wav",
+      "source": "external/x-isnail-2115609565043597572.mp4",
+      "start": 32.3,
+      "duration": 7.7,
+      "kind": "ref-wav",
+      "note": "IndexTTS 参考音色（中文口语）"
+    }
+  ],
+  "suites": {
+    "asr": {
+      "goal": "识别准确率、句/字时间戳、长音频性能",
+      "files": [
+        "nasa/nasa-kepler-452b-briefing.webm",
+        "zh-press/zh-mfa-briefing-2021-04-08.webm",
+        "zh-press/zh-consulate-ny-press.webm",
+        "clips/asr/en-apollo11-noisy-3min.webm",
+        "clips/asr/en-punch-phone-3min.webm",
+        "clips/asr/en-wikimania-accents-3min.webm",
+        "clips/asr/zh-podcast-3min.mp4",
+        "nasa/nasa-punch-teleconference.webm",
+        "external/x-isnail-2115609565043597572.mp4"
+      ]
+    },
+    "silence": {
+      "goal": "删除静音（smartCutSilenceThreshold=1.5s，基于 ASR 句间空隙）",
+      "files": [
+        "clips/silence/en-wikimania-gaps-2.5min.webm",
+        "clips/silence/en-punch-tail-2min.webm",
+        "zh-press/zh-cppcc-press-2020.webm",
+        "vlog/en-vlog-china-shamian.webm",
+        "clips/silence/zh-airport-ambient-4min.webm",
+        "clips/silence/zh-airport-no-speech-3.5min.webm",
+        "zh-press/zh-mfa-briefing-2021-04-08.webm"
+      ]
+    },
+    "bilingual": {
+      "goal": "翻译 + 双语字幕显示/导出（含删除后双语导出）",
+      "files": [
+        "nasa/nasa-kepler-452b-briefing.webm",
+        "clips/asr/en-wikimania-accents-3min.webm",
+        "zh-press/zh-consulate-ny-press.webm",
+        "clips/asr/zh-podcast-3min.mp4",
+        "vlog/zh-vlog-film-making.webm"
+      ]
+    },
+    "dubbing": {
+      "goal": "IndexTTS 类语音克隆，把原声替换为另一种语言",
+      "files": [
+        "nasa/nasa-kepler-452b-briefing.webm",
+        "clips/dub/zh-mfa-spokesperson-1min.webm",
+        "clips/dub/zh-podcast-host-1min.mp4",
+        "clips/dub/ref-en-kepler-narrator.wav",
+        "clips/dub/ref-zh-mfa-spokesperson.wav",
+        "clips/dub/ref-zh-podcast-host.wav"
+      ]
+    }
+  }
+}

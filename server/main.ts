@@ -15,8 +15,13 @@ if (!token) {
     token = randomBytes(32).toString('hex'); await writeFile(tokenFile, token, { mode: 0o600, flag: 'wx' });
   }
 }
-const profileArg = process.argv.indexOf('--profile');
-const profile = profileArg > 0 ? process.argv[profileArg + 1] : undefined;
+const argValue = (flag: string) => { const index = process.argv.indexOf(flag); return index > 0 ? process.argv[index + 1] : undefined; };
+const profile = argValue('--profile');
+const webRootArg = argValue('--web-root') ?? process.env.FLYCUT_WEB_ROOT;
+const webRoot = webRootArg ? resolve(webRootArg) : undefined;
+const bind = process.env.FLYCUT_HOST_BIND ?? '127.0.0.1';
+const allowedOrigins = (process.env.FLYCUT_ALLOWED_ORIGINS ?? '').split(',').map(origin => origin.trim().replace(/\/$/, '')).filter(Boolean);
+for (const origin of allowedOrigins) if (new URL(origin).origin !== origin) throw new Error(`FLYCUT_ALLOWED_ORIGINS 只能包含 origin（协议+主机+端口）：${origin}`);
 if (process.argv.includes('--dump-config')) {
   // Prints the composed plugin tree this Host would boot, then exits without taking the lock.
   const resolved = await resolveHostProfile({ home, token: '', port: 0, resourceRoot: resolve(process.env.FLYCUT_RESOURCE_ROOT ?? '.') }, { profile });
@@ -40,7 +45,7 @@ const appData = resolve(process.env.FLYCUT_APP_DATA ?? (process.platform === 'da
   : process.platform === 'win32' ? join(process.env.APPDATA ?? homedir(), 'com.flycut.caption')
   : join(homedir(), '.local/share/com.flycut.caption')));
 const ctx = await createHost({ home, token, appData, port: Number(process.env.FLYCUT_HOST_PORT ?? 8766),
-  resourceRoot: resolve(process.env.FLYCUT_RESOURCE_ROOT ?? '.'), pythonUrl: process.env.FLYCUT_PYTHON_URL,
+  resourceRoot: resolve(process.env.FLYCUT_RESOURCE_ROOT ?? '.'), pythonUrl: process.env.FLYCUT_PYTHON_URL, bind, allowedOrigins, webRoot,
   assetTtlHours: process.env.FLYCUT_ASSET_TTL_HOURS ? Number(process.env.FLYCUT_ASSET_TTL_HOURS) : undefined }, { profile })
   .catch(async error => { await unlink(lockFile).catch(() => undefined); throw error; });
 const address = ctx.httpServer.address() as { port: number };
@@ -49,7 +54,12 @@ const discovery = join(home, 'connection.json');
 await writeFile(discovery, JSON.stringify(info), { mode: 0o600 });
 // Desktop reads readiness from the process pipe; never log the credential.
 if (process.env.FLYCUT_HOST_STDIO === '1') process.stdout.write(JSON.stringify({ type: 'host-ready', ...info }) + '\n');
-else console.log(`FlyCut Host ready at ${info.url}`);
+else console.log(`FlyCut Host ready at ${info.url}${bind === '127.0.0.1' ? '' : ` (listening on ${bind}:${address.port})`}`);
+if (webRoot) console.log(`Serving frontend from ${webRoot}`);
+if (webRoot && !['127.0.0.1', 'localhost', '::1'].includes(bind)) {
+  // The served page hands its token to whoever can load it; access control must sit in front of the Host.
+  console.warn('[security] 前端与连接凭证对所有能访问此端口的客户端开放。请只通过带鉴权的反向代理对外提供服务。');
+}
 let stopping = false;
 async function stop() { if (stopping) return; stopping = true; await ctx.fiber.dispose(); await unlink(discovery).catch(() => undefined); await unlink(lockFile).catch(() => undefined); }
 process.once('SIGINT', () => { void stop().then(() => process.exit()); });

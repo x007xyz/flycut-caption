@@ -1,0 +1,99 @@
+name: ci
+
+# 每次 push 和 PR 跑一遍 docs/code-standards.md 第 1、2 条的检查。
+# scripts/release.mjs 打 tag 前要求目标 commit 在本工作流有一轮已完成且全绿的运行。
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+# 同一分支的新 push 会取消旧运行；被取消的运行不算通过，发版闸门只认 completed + success
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    name: Lint / Types / Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # tsc -b 依赖 core/*/lib 的类型声明，需要先构建 vendored Cordis
+      - name: Build core
+        run: pnpm build:core
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Type check (app)
+        run: pnpm tsc -b --noEmit
+
+      - name: Type check (host)
+        run: pnpm check:host
+
+      - name: Architecture tests
+        run: pnpm test:architecture
+
+      # 依赖模型文件的集成测试在 CI 中会自动 skip，需要在本地验证并在 Verification 中写明
+      - name: Unit tests
+        run: pnpm test
+
+  rust:
+    name: Rust (${{ matrix.label }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 与 release.yml 的发版平台保持一致
+          - os: macos-14
+            label: macos-arm64
+          - os: windows-latest
+            label: windows-x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust target
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            src-tauri
+            src-tauri/sidecars/funasr-asr
+
+      # tauri.conf.json 的 resources 引用了构建时才生成的目录，用占位文件让 build.rs 通过
+      - name: Prepare resource placeholders
+        shell: bash
+        run: |
+          mkdir -p src-tauri/binaries src-tauri/shared_assets src-tauri/host
+          touch src-tauri/binaries/.ci-placeholder src-tauri/shared_assets/.ci-placeholder src-tauri/host/.ci-placeholder
+
+      - name: Cargo check (app)
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+
+      # FSMN VAD 资产缺失时相关测试会 skip
+      - name: Sidecar tests
+        run: cargo test --manifest-path src-tauri/sidecars/funasr-asr/Cargo.toml

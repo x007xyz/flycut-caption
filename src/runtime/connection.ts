@@ -141,5 +141,7 @@ export async function discoverHost(): Promise<HostConnectionOptions> {
   if (explicit) return explicit;
   const response = await fetch('/__flycut/connection', { signal: AbortSignal.timeout(10000) });
   if (!response.ok) throw new Error('无法连接 FlyCut Host。请运行 pnpm dev，或设置 window.__FLYCUT_HOST__。');
-  return response.json() as Promise<HostConnectionOptions>;
+  // A Host that serves this page omits `url`: it is the page's own origin (works behind a reverse proxy).
+  const options = await response.json() as Partial<HostConnectionOptions> & { token: string };
+  return { url: options.url || location.origin, token: options.token };
 }

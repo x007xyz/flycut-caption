@@ -39,8 +39,8 @@ export {
 
 export type { FlyCutCaptionLocale } from './locales'
 
-// Version info
-export const version = '1.0.0'
+// Version info（构建时从 package.json 注入）
+export const version = __FLYCUT_VERSION__
 
 // Component metadata
 export const metadata = {
