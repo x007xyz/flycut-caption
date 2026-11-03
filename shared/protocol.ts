@@ -1,8 +1,7 @@
 import { z } from 'zod';
 import type { SubtitleTranscript, ASRProgress } from '../src/types/subtitle';
 import type { EditorPluginManifest } from '../src/types/plugin';
-import type { ProviderPackage } from '../src/types/provider';
-import type { AllModelsStatus, AvailableModel } from '../src/types/model';
+import { asrRequestSchema, modelRefSchema, type ProviderModels, type ProviderSummary } from './providers';
 
 export const PROTOCOL_VERSION = 2;
 export const rpcRequestSchema = z.object({ type: z.literal('client-request'), rpcId: z.string().min(1),
@@ -13,18 +12,9 @@ export type RpcResponse = { type: 'server-response'; rpcId: string; result:
 export type JobStatus = 'queued' | 'running' | 'complete' | 'error' | 'cancelled';
 export interface JobSnapshot { id: string; status: JobStatus; progress?: ASRProgress; result?: unknown; error?: string; createdAt: string; updatedAt: string }
 
-/** Provider IDs are open strings: any Host plugin may register a new ASR Provider. */
-export const asrInputSchema = z.object({ providerId: z.string().min(1),
-  assetId: z.string().uuid(), modelId: z.string().min(1), language: z.string().default('auto'),
-  device: z.enum(['wasm', 'webgpu']).optional(),
-  executionConfig: z.object({ vadModelId: z.string().optional(), alignModelId: z.string().optional(),
-    timestampMode: z.enum(['auto', 'token', 'segment']).optional() }).optional(),
-  api: z.object({ id: z.string(), name: z.string(), baseUrl: z.string(), model: z.string(), apiKey: z.string().optional(),
-    timestamps: z.enum(['none', 'segment', 'word']), timeoutSeconds: z.number().min(10).max(600) }).optional() });
+/** An ASR request (`{ providerId, modelId }` + language/options) on an uploaded 16 kHz WAV asset. */
+export const asrInputSchema = asrRequestSchema.extend({ assetId: z.string().uuid() });
 export type AsrInput = z.infer<typeof asrInputSchema>;
-export interface AsrProvider { id: string; name: string;
-  prepare?(modelId: string, signal: AbortSignal, report: (progress: ASRProgress) => void): Promise<void>;
-  transcribe(input: AsrInput, audioPath: string, signal: AbortSignal, report: (progress: ASRProgress) => void): Promise<SubtitleTranscript> }
 export const pipelineInputSchema = z.object({ asr: asrInputSchema, steps: z.array(z.object({ id: z.string(),
   providerId: z.string(), capabilityId: z.string(), enabled: z.boolean(), config: z.record(z.string(), z.unknown()).default({}) })).optional() });
 export type PipelineInput = z.infer<typeof pipelineInputSchema>;
@@ -48,19 +38,28 @@ export const agentInputSchema = z.object({ prompt: z.string().min(1).max(100000)
   model: z.object({ baseUrl: z.url(), model: z.string().min(1), apiKey: z.string().optional() }) });
 export type AgentInput = z.infer<typeof agentInputSchema>;
 export interface AgentMessage { role: string; content: unknown; toolCalls?: Array<{ id?: string; name: string; args: unknown }> }
-export const modelIdSchema = z.object({ modelId: z.string().min(1) });
-export const pythonRequestSchema = z.object({ path: z.string(), method: z.enum(['GET', 'POST']).default('GET'), body: z.unknown().optional() });
+export const providerPrepareSchema = modelRefSchema;
 
-export interface ModelScanEntry { path: string; name: string; kind: 'asr' | 'aligner' | 'vad' | 'unsupported'; model: AvailableModel | null; warnings: string[]; registered: boolean }
-export interface ModelScanResult { root: string; entries: ModelScanEntry[]; warnings: string[] }
-export interface ModelEnvironment { modelId: string; modelDir?: string; modelReady: boolean; sidecarReady: boolean; missingModelFiles: string[]; modelError?: string; sidecarError?: string }
+/** A user-added HTTP Provider. `apiKey` is accepted on save but never returned or persisted. */
+export const endpointInputSchema = z.object({
+  name: z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/, '名称只能包含小写字母、数字和 -'),
+  label: z.string().trim().min(1).max(60),
+  protocol: z.enum(['flycut', 'openai']),
+  baseUrl: z.string().url(),
+  apiKey: z.string().max(4096).optional(),
+  /** OpenAI-compatible endpoints only: model names and their timestamp level. */
+  models: z.array(z.object({ id: z.string().min(1).max(100), timestamps: z.enum(['none', 'segment', 'word']) })).max(50).optional(),
+  timeoutSeconds: z.number().min(10).max(600).default(120),
+});
+export type EndpointInput = z.input<typeof endpointInputSchema>;
+export interface EndpointInfo extends Omit<z.infer<typeof endpointInputSchema>, 'apiKey'> { providerId: string; hasApiKey: boolean }
 
 export interface PluginStatus { id: string; source: 'builtin' | 'external'; module?: string; state: string; error?: string }
 
 export interface HostInfo {
   protocolVersion: number; generation: string;
   methods: string[]; events: string[];
-  providers: Array<{ id: string; name: string }>;
+  providers: ProviderSummary[];
   capabilities: Record<string, boolean>;
 }
 
@@ -76,27 +75,20 @@ export interface RpcMethods {
   'jobs.cancel': { input: z.input<typeof jobIdSchema>; output: JobSnapshot };
   /** Releases an uploaded or produced asset once the client no longer needs it. */
   'assets.delete': { input: { assetId: string }; output: { deleted: string } };
-  'providers.list': { input: void; output: Array<{ id: string; name: string }> };
-  'providers.catalog': { input: void; output: ProviderPackage[] };
+  'providers.list': { input: void; output: ProviderSummary[] };
+  'providers.models': { input: void; output: ProviderModels[] };
+  'providers.prepare': { input: z.input<typeof providerPrepareSchema>; output: JobSnapshot };
+  'endpoints.list': { input: void; output: EndpointInfo[] };
+  'endpoints.save': { input: EndpointInput; output: EndpointInfo };
+  'endpoints.remove': { input: { name: string }; output: { removed: string } };
   'editing.list': { input: void; output: EditorPluginManifest[] };
   'agent.tools': { input: void; output: Array<{ name: string; description: string }> };
-  'asr.downloaded': { input: void; output: string[] };
-  'asr.download': { input: z.input<typeof modelIdSchema>; output: JobSnapshot };
   'workflow.start': { input: z.input<typeof pipelineInputSchema>; output: JobSnapshot };
   'agent.start': { input: z.input<typeof agentInputSchema>; output: JobSnapshot };
   'text.start': { input: z.input<typeof textInputSchema>; output: JobSnapshot };
   'export.start': { input: z.input<typeof exportInputSchema>; output: JobSnapshot };
-  'python.request': { input: z.input<typeof pythonRequestSchema>; output: unknown };
   'plugins.list': { input: void; output: { profile: string; layers: string[]; plugins: PluginStatus[] } };
   'plugins.reload': { input: { id: string }; output: PluginStatus };
-  'models.list': { input: void; output: AvailableModel[] };
-  'models.status': { input: void; output: AllModelsStatus };
-  'models.environment': { input: { modelId: string }; output: ModelEnvironment };
-  'models.download': { input: { modelId: string }; output: JobSnapshot };
-  'models.registerCustom': { input: { model: AvailableModel }; output: { id: string } };
-  'models.removeCustom': { input: { modelId: string }; output: { removed: string } };
-  'models.libraryRoot': { input: void; output: string | null };
-  'models.scan': { input: { root: string }; output: ModelScanResult };
 }
 export type RpcMethod = keyof RpcMethods;
 export type RpcInput<M extends RpcMethod> = RpcMethods[M]['input'];

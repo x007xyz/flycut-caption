@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useClientRuntime } from '@/runtime/context';
+import { modelKey } from '@/stores/appStore';
 import { processAudioForASR } from '@/utils/audioUtils';
 import { encodePcmWav } from '../../shared/asr/apiProtocol';
 import type { AgentMessage, AsrInput } from '../../shared/protocol';
@@ -31,9 +32,7 @@ export function AgentPanel() {
         } else buffer = await app.videoFile.file.arrayBuffer();
         const samples = await processAudioForASR(buffer); current.signal.throwIfAborted();
         const assetId = await connection.upload(encodePcmWav(samples)); uploaded = assetId;
-        const apis = stores.asrApi.getState();
-        asr = { providerId: app.asrEngineType, modelId: app.asrEngineType === 'transformers' ? app.webModelId : app.asrModelId,
-          assetId, language: app.language, api: app.asrEngineType === 'api' ? apis.configs.find(item => item.id === apis.selectedId) : undefined };
+        if (app.asrModel) asr = { ...app.asrModel, assetId, language: app.language, options: app.asrOptions[modelKey(app.asrModel)] };
       }
       current.signal.throwIfAborted();
       // Subscribe before starting: events may arrive before the RPC response carries the job id.

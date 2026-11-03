@@ -5,13 +5,14 @@ import { tmpdir } from 'node:os';
 import { readFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { setTimeout } from 'node:timers/promises';
-import { createServer } from 'node:http';
+import { createServer, request } from 'node:http';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { WebSocket } from 'ws';
 import type { Context, Plugin } from '@deepseek-ai/cordis';
 import { createHost } from '../../server/app';
-import { apiAsrPlugin } from '../../server/plugins/asr';
+import { funasrPlugin } from '../../server/plugins/funasr';
+import { QWEN_MODELS } from '../../server/plugins/asr';
 import { z } from 'zod';
 import { encodePcmWav } from '../../shared/asr/apiProtocol';
 import type { JobSnapshot } from '../../shared/protocol';
@@ -19,8 +20,9 @@ import type { JobSnapshot } from '../../shared/protocol';
 const execFileAsync = promisify(execFile);
 
 const fixture = { text: 'hello', chunks: [{ id: 's1', text: 'hello', timestamp: [0, 1] }], language: 'en', duration: 3 };
+const fixtureModels = async () => [{ id: 'fixture', name: 'Fixture', role: 'asr' as const, status: 'ready' as const }];
 const mockProvider: Plugin = { name: 'test-provider', inject: ['providers'], apply(ctx: Context) {
-  ctx.effect(() => ctx.providers.register({ id: 'python-runtime', name: 'Fixture ASR', async transcribe(_input, path, signal, report) {
+  ctx.effect(() => ctx.providers.register({ id: 'fixture-asr', name: 'Fixture ASR', kind: 'builtin', models: fixtureModels, async transcribe(_input, path, signal, report) {
     assert.equal((await readFile(path)).toString(), 'fixture-audio');
     report({ status: 'running', progress: 25 });
     await setTimeout(40, undefined, { signal }); return structuredClone(fixture) as any;
@@ -55,7 +57,7 @@ test('HTTP authentication and WebSocket snapshots; LangGraph executes ASR and pa
   try {
     assert.equal((await fetch(`${host.base}/rpc`, { method: 'POST' })).status, 401);
     const assetId = await host.upload('fixture-audio');
-    const job = await host.call('workflow.start', { asr: { providerId: 'python-runtime', modelId: 'fixture', assetId },
+    const job = await host.call('workflow.start', { asr: { providerId: 'fixture-asr', modelId: 'fixture', assetId },
       steps: [{ id: 'cut', providerId: 'delete-silence', capabilityId: 'delete-silence', enabled: true, config: { threshold: 1 } }] });
     const completed = await host.wait(job.id);
     assert.equal(completed.status, 'complete');
@@ -74,13 +76,13 @@ test('cancellation reaches the actual Provider and plugin unload withdraws regis
   const host = await setup();
   try {
     const assetId = await host.upload('fixture-audio');
-    const job = await host.call('workflow.start', { asr: { providerId: 'python-runtime', modelId: 'fixture', assetId } });
+    const job = await host.call('workflow.start', { asr: { providerId: 'fixture-asr', modelId: 'fixture', assetId } });
     const cancelled = await host.call('jobs.cancel', { id: job.id }); assert.equal(cancelled.status, 'cancelled');
     const fiber = host.ctx.plugin({ name: 'temporary-provider', inject: ['providers'], apply(ctx: Context) {
-      ctx.effect(() => ctx.providers.register({ id: 'api', name: 'Temporary', async transcribe() { throw new Error('unused'); } }));
+      ctx.effect(() => ctx.providers.register({ id: 'temporary', name: 'Temporary', kind: 'builtin', models: fixtureModels }));
     } });
-    await fiber.await(); assert.equal(host.ctx.providers.get('api').name, 'Temporary');
-    await fiber.dispose(); assert.throws(() => host.ctx.providers.get('api'), /unavailable/);
+    await fiber.await(); assert.equal(host.ctx.providers.get('temporary').name, 'Temporary');
+    await fiber.dispose(); assert.throws(() => host.ctx.providers.get('temporary'), /unavailable/);
   } finally { await host.close(); }
 });
 
@@ -88,13 +90,13 @@ test('enabled unsupported pipeline steps fail explicitly rather than silently sk
   const host = await setup();
   try {
     const assetId = await host.upload('fixture-audio');
-    const job = await host.call('workflow.start', { asr: { providerId: 'python-runtime', modelId: 'fixture', assetId },
+    const job = await host.call('workflow.start', { asr: { providerId: 'fixture-asr', modelId: 'fixture', assetId },
       steps: [{ id: 'separate', providerId: 'audio-separator', capabilityId: 'separate-vocals', enabled: true, config: {} }] });
     const settled = await host.wait(job.id); assert.equal(settled.status, 'error'); assert.match(settled.error!, /not available/);
   } finally { await host.close(); }
 });
 
-test('real API Provider uploads PCM WAV and normalizes timestamps through the Host graph', async () => {
+test('OpenAI-compatible endpoint uploads PCM WAV, keeps the key in memory and normalizes timestamps', async () => {
   let calls = 0;
   const upstream = createServer(async (req, res) => {
     assert.equal(req.url, '/v1/audio/transcriptions');
@@ -104,11 +106,14 @@ test('real API Provider uploads PCM WAV and normalizes timestamps through the Ho
     res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ text: 'hello', segments: [{ start: 0, end: 1, text: 'hello' }] }));
   });
   await new Promise<void>(resolve => upstream.listen(0, '127.0.0.1', resolve));
-  const host = await setup([apiAsrPlugin]);
+  const host = await setup();
   try {
     const assetId = await host.upload(encodePcmWav(new Float32Array(16000)));
-    const job = await host.call('workflow.start', { asr: { providerId: 'api', modelId: 'fixture', assetId,
-      api: { id: 'test', name: 'test', baseUrl: `http://127.0.0.1:${(upstream.address() as { port: number }).port}/v1`, model: 'fixture', apiKey: 'fixture-key', timestamps: 'segment', timeoutSeconds: 10 } } });
+    const saved = await host.call('endpoints.save', { name: 'test', label: 'Test API', protocol: 'openai', apiKey: 'fixture-key', timeoutSeconds: 10,
+      baseUrl: `http://127.0.0.1:${(upstream.address() as { port: number }).port}/v1`, models: [{ id: 'fixture', timestamps: 'segment' }] });
+    assert.equal(saved.providerId, 'openai:test'); assert.equal(saved.hasApiKey, true); assert.equal(saved.apiKey, undefined);
+    assert.ok(!(await readFile(join(host.home, 'app-data/endpoints.json'), 'utf8')).includes('fixture-key'));
+    const job = await host.call('workflow.start', { asr: { providerId: 'openai:test', modelId: 'fixture', assetId } });
     const settled = await host.wait(job.id); assert.equal(settled.status, 'complete', settled.error);
     assert.equal((settled.result as any).transcript.chunks[0].text, 'hello'); assert.equal(calls, 1);
     assert.ok(!(await readFile(join(host.home, 'jobs', `${job.id}.json`), 'utf8')).includes('fixture-key'));
@@ -139,7 +144,7 @@ test('LangGraph Agent Loop calls a tool and continues with its result', async ()
 test('restart preserves completed jobs and marks unsettled executions as interrupted', async () => {
   const host = await setup(); const home = host.home;
   const assetId = await host.upload('fixture-audio');
-  const job = await host.call('workflow.start', { asr: { providerId: 'python-runtime', modelId: 'fixture', assetId } });
+  const job = await host.call('workflow.start', { asr: { providerId: 'fixture-asr', modelId: 'fixture', assetId } });
   await host.wait(job.id); await host.ctx.fiber.dispose();
   const interruptedId = crypto.randomUUID();
   await writeFile(join(home, 'jobs', `${interruptedId}.json`), JSON.stringify({ id: interruptedId, status: 'running', createdAt: '', updatedAt: '' }));
@@ -221,7 +226,7 @@ test('plugins register RPC methods, expose events and contribute capabilities wi
 
 test('third-party Provider IDs, editor analyzers and Agent tools extend the Host through registries', async () => {
   const host = await setup([{ name: 'custom-provider', inject: ['providers'], apply(ctx: Context) {
-    ctx.effect(() => ctx.providers.register({ id: 'vendor-asr', name: 'Vendor ASR', async transcribe() { return structuredClone(fixture) as any; } }));
+    ctx.effect(() => ctx.providers.register({ id: 'vendor-asr', name: 'Vendor ASR', kind: 'builtin', models: fixtureModels, async transcribe() { return structuredClone(fixture) as any; } }));
   } }]);
   try {
     const analyzer = host.ctx.plugin({ name: 'custom-analyzer', inject: ['editorPlugins'], apply(ctx: Context) {
@@ -284,7 +289,7 @@ test('Agent streams messages as remote events and policy plugins can intercept t
   } finally { ws.terminate(); await host.close(); await new Promise<void>(resolve => model.close(() => resolve())); }
 });
 
-test('models plugin owns catalog, library scan, custom registration and file-mode downloads', async () => {
+test('registry checks model status, declared options and transcript timing; models service downloads files', async () => {
   const files = new Map([['model.onnx', 'onnx-bytes'], ['tokens.txt', 'a 0']]);
   const mirror = createServer((req, res) => {
     const body = files.get((req.url ?? '').replace('/repo/', ''));
@@ -292,37 +297,100 @@ test('models plugin owns catalog, library scan, custom registration and file-mod
     res.setHeader('Content-Type', 'application/octet-stream'); res.end(body);
   });
   await new Promise<void>(resolve => mirror.listen(0, '127.0.0.1', resolve));
-  const host = await setup();
-  const library = await mkdtemp(join(tmpdir(), 'flycut-library-'));
+  let downloaded = false;
+  const entry = { id: 'fixture-files', files: [{ path: 'model.onnx', sha256: null }, { path: 'tokens.txt', sha256: null }],
+    download_sources: [{ region: 'global', provider: 'fixture', download_mode: 'files', url: `http://127.0.0.1:${(mirror.address() as { port: number }).port}/repo/` }],
+    artifact: { archive_name: '', extract_dir: '', size_mb_estimate: 1 } } as any;
+  const words = { ...fixture, hasWordTimestamps: true, chunks: [{ id: 's1', text: 'hello', timestamp: [0, 1], wordIds: ['w1'] }],
+    wordChunks: [{ id: 'w1', text: 'hello', timestamp: [0.5, 2], sentenceId: 's1' }] };
+  const host = await setup([{ name: 'download-provider', inject: ['providers', 'models'], apply(ctx: Context) {
+    ctx.effect(() => ctx.providers.register({ id: 'local', name: 'Local', kind: 'builtin',
+      async models() { return [{ id: 'm', name: 'M', role: 'asr', status: downloaded ? 'ready' : 'download',
+        options: { mode: { type: 'select', label: 'Mode', options: [{ value: 'a', label: 'A' }] } } }]; },
+      async prepare(_id, signal, report) { await ctx.models.download(entry, signal, report); downloaded = true; },
+      async transcribe() { return structuredClone(words) as any; } }));
+  } }]);
   try {
-    const builtIn = await host.call('models.list');
-    assert.ok(builtIn.length > 0 && builtIn.every((model: any) => !model.custom));
-    const qwen = join(library, 'nested/Qwen3-ASR'); await mkdir(qwen, { recursive: true });
-    await writeFile(join(qwen, 'config.json'), JSON.stringify({ model_type: 'qwen3_asr', thinker_config: {} }));
-    assert.equal((await host.call('models.scan', { root: library })).entries[0].kind, 'unsupported');
-    for (const file of ['model.safetensors', 'preprocessor_config.json', 'tokenizer_config.json', 'vocab.json', 'merges.txt', 'chat_template.json']) await writeFile(join(qwen, file), 'fixture');
-    const scanned = await host.call('models.scan', { root: library });
-    const entry = scanned.entries[0]; assert.equal(entry.kind, 'asr'); assert.equal(entry.model.provider, 'qwen-asr');
-    assert.equal(await host.call('models.libraryRoot'), scanned.root);
-    await host.call('models.registerCustom', { model: entry.model });
-    assert.ok((await host.call('models.scan', { root: library })).entries[0].registered);
-    await assert.rejects(host.call('models.registerCustom', { model: entry.model }), /已存在/);
-    assert.equal((await host.call('models.environment', { modelId: entry.model.id })).modelReady, true);
+    const assetId = await host.upload('fixture-audio');
+    const run = async (asr: object) => host.wait((await host.call('workflow.start', { asr: { providerId: 'local', modelId: 'm', assetId, ...asr } })).id);
+    assert.match((await run({})).error!, /未下载/);
+    const groups = await host.call('providers.models');
+    assert.equal(groups.find((group: any) => group.provider.id === 'local').models[0].status, 'download');
+    const job = await host.wait((await host.call('providers.prepare', { providerId: 'local', modelId: 'm' })).id);
+    assert.equal(job.status, 'complete', job.error);
+    assert.equal(await readFile(join(host.home, 'app-data/models/fixture-files/model.onnx'), 'utf8'), 'onnx-bytes');
+    assert.equal(await host.ctx.models.locate(entry), join(host.home, 'app-data/models/fixture-files'));
+    assert.match((await run({ options: { other: 'x' } })).error!, /不支持选项/);
+    assert.match((await run({ options: { mode: 'b' } })).error!, /无效/);
+    // The word ends after its sentence: the claim is dropped, the sentence survives.
+    const settled = await run({ options: { mode: 'a' } });
+    assert.equal(settled.status, 'complete', settled.error);
+    const transcript = (settled.result as any).transcript;
+    assert.equal(transcript.hasWordTimestamps, false); assert.deepEqual(transcript.wordChunks, []); assert.equal(transcript.chunks[0].wordIds, undefined);
+  } finally { await host.close(); await new Promise<void>(resolve => mirror.close(() => resolve())); }
+});
 
-    const remote = { ...builtIn.find((model: any) => model.family === 'sense_voice'), id: 'custom-remote', name: 'Remote', local_path: null, custom: true,
-      files: [{ path: 'model.onnx', sha256: null }, { path: 'tokens.txt', sha256: null }],
-      recognizer_config: { model_type: 'sense_voice', sense_voice_model: 'model.onnx', tokens: 'tokens.txt' },
-      download_sources: [{ region: 'global', provider: 'fixture', download_mode: 'files', url: `http://127.0.0.1:${(mirror.address() as { port: number }).port}/repo/` }] };
-    await host.call('models.registerCustom', { model: remote });
-    assert.ok(!(await host.call('models.status')).downloaded_model_ids.includes('custom-remote'));
-    const job = await host.call('models.download', { modelId: 'custom-remote' });
-    const settled = await host.wait(job.id); assert.equal(settled.status, 'complete', settled.error);
-    assert.equal(await readFile(join(host.home, 'app-data/models/custom-remote/model.onnx'), 'utf8'), 'onnx-bytes');
-    assert.ok((await host.call('models.status')).downloaded_model_ids.includes('custom-remote'));
-    assert.equal((await host.ctx.models.resolve('custom-remote'))?.path, join(host.home, 'app-data/models/custom-remote'));
-    await host.call('models.removeCustom', { modelId: 'custom-remote' });
-    assert.ok(!(await host.call('models.list')).some((model: any) => model.id === 'custom-remote'));
-  } finally { await host.close(); await rm(library, { recursive: true, force: true }); await new Promise<void>(resolve => mirror.close(() => resolve())); }
+test('FlyCut protocol endpoint: health check, models, escaped options, polling and cancellation', async () => {
+  const seen: { options?: string; cancelled?: boolean; auth?: string } = {};
+  let version = 1; let slow = false;
+  const service = createServer(async (req, res) => {
+    const json = (status: number, body: unknown) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
+    seen.auth = req.headers.authorization;
+    if (req.url === '/v1/health') return json(200, { protocol: 'flycut-provider', version, capabilities: ['asr'] });
+    if (req.url === '/v1/models') return json(200, { models: [{ id: 'remote-1', name: 'Remote', role: 'asr', status: 'ready',
+      options: { hotword: { type: 'string', label: 'Hotword' } } }] });
+    if (req.url === '/v1/asr/jobs') { for await (const chunk of req) void chunk; seen.options = String(req.headers['x-flycut-options']); return json(202, { id: 'job1' }); }
+    if (req.url === '/v1/jobs/job1') return json(200, slow ? { id: 'job1', status: 'running', progress: 10 } : { id: 'job1', status: 'complete', result: fixture });
+    if (req.url === '/v1/jobs/job1/cancel') { seen.cancelled = true; return json(200, { id: 'job1', status: 'cancelled' }); }
+    json(404, { error: 'not found' });
+  });
+  await new Promise<void>(resolve => service.listen(0, '127.0.0.1', resolve));
+  const host = await setup();
+  try {
+    await host.call('endpoints.save', { name: 'gpu', label: 'GPU box', protocol: 'flycut', apiKey: 'k1',
+      baseUrl: `http://127.0.0.1:${(service.address() as { port: number }).port}` });
+    const group = (await host.call('providers.models')).find((item: any) => item.provider.id === 'flycut:gpu');
+    assert.equal(group.provider.kind, 'endpoint'); assert.equal(group.models[0].id, 'remote-1');
+    const assetId = await host.upload('fixture-audio');
+    const start = () => host.call('workflow.start', { asr: { providerId: 'flycut:gpu', modelId: 'remote-1', assetId, language: 'zh', options: { hotword: '飞剪' } } });
+    const done = await host.wait((await start()).id);
+    assert.equal(done.status, 'complete', done.error); assert.equal((done.result as any).transcript.text, 'hello');
+    assert.equal(seen.auth, 'Bearer k1'); assert.deepEqual(JSON.parse(seen.options!), { hotword: '飞剪' }); assert.ok(/^[\x20-\x7e]+$/.test(seen.options!));
+    slow = true;
+    const running = await start(); await setTimeout(200);
+    assert.equal((await host.call('jobs.cancel', { id: running.id })).status, 'cancelled');
+    await setTimeout(50); assert.equal(seen.cancelled, true);
+    // A service speaking another protocol version is refused instead of half-working.
+    version = 2;
+    await host.call('endpoints.save', { name: 'gpu', label: 'GPU box', protocol: 'flycut', baseUrl: `http://127.0.0.1:${(service.address() as { port: number }).port}` });
+    assert.match((await host.call('providers.models')).find((item: any) => item.provider.id === 'flycut:gpu').error, /协议版本不兼容/);
+    assert.deepEqual(await host.call('endpoints.remove', { name: 'gpu' }), { removed: 'gpu' });
+    assert.ok(!(await host.call('providers.list')).some((item: any) => item.id === 'flycut:gpu'));
+  } finally { await host.close(); await new Promise<void>(resolve => service.close(() => resolve())); }
+});
+
+test('Qwen manifest lists single and sharded checkpoints with mirror-first file downloads', () => {
+  const files = (id: string) => QWEN_MODELS.find(item => item.entry.id === id)!.entry.files.map(file => file.path);
+  assert.ok(files('qwen3-asr-0.6b').includes('model.safetensors'));
+  assert.ok(!files('qwen3-asr-1.7b').includes('model.safetensors'));
+  for (const path of ['model.safetensors.index.json', 'model-00001-of-00002.safetensors', 'model-00002-of-00002.safetensors']) assert.ok(files('qwen3-asr-1.7b').includes(path));
+  for (const { entry } of QWEN_MODELS) {
+    assert.ok(entry.download_sources.every(source => source.download_mode === 'files'));
+    assert.equal(entry.download_sources[0].region, 'cn');
+  }
+});
+
+test('built-in FunASR Provider starts python/funasr_service.py and speaks the same protocol', async (t) => {
+  try { await execFileAsync(process.env.FLYCUT_PYTHON ?? 'python3', ['--version']); }
+  catch { t.skip('python3 is not installed in this environment'); return; }
+  const host = await setup([funasrPlugin]);
+  try {
+    const group = (await host.call('providers.models')).find((item: any) => item.provider.id === 'funasr');
+    assert.equal(group.error, undefined);
+    const ids = group.models.map((model: any) => `${model.id}:${model.role}`);
+    for (const id of ['paraformer-zh:asr', 'sensevoice-small:asr', 'fsmn-vad:vad', 'ct-punc:punc', 'cam++:speaker']) assert.ok(ids.includes(id), id);
+    assert.ok(group.models.every((model: any) => ['ready', 'download', 'unavailable'].includes(model.status)));
+  } finally { await host.close(); }
 });
 
 test('assets stream in and out, can be released, and expire after their TTL', async () => {
@@ -350,7 +418,7 @@ test('profile layers disable built-ins, reject unmet dependencies, and hot-reloa
   } };\n`);
   await writePlugin('v1');
   await writeFile(join(home, 'profile.patch.yml'), [
-    '# Harness-style patch layer', 'disable: [asr-python, python]', 'plugins:', '  - id: echo', '    module: echo.mjs', '    config:', '      prefix: p', ''].join('\n'));
+    '# Harness-style patch layer', 'disable: [asr-qwen]', 'plugins:', '  - id: echo', '    module: echo.mjs', '    config:', '      prefix: p', ''].join('\n'));
   const base = { home, token: 'profile-token', port: 0, resourceRoot: resolve('.') };
   await assert.rejects(createHost(base, { patches: [{ source: 'test', patch: { disable: ['providers'] } }] }), /依赖不满足/);
   const ctx = await createHost(base);
@@ -363,13 +431,90 @@ test('profile layers disable built-ins, reject unmet dependencies, and hot-reloa
   try {
     const listed = await call('plugins.list');
     assert.ok(listed.layers[0].endsWith('profile.patch.yml'));
-    assert.ok(!listed.plugins.some((item: any) => item.id === 'python'));
+    assert.ok(!listed.plugins.some((item: any) => item.id === 'asr-qwen'));
     assert.equal(listed.plugins.find((item: any) => item.id === 'echo').state, 'active');
-    assert.ok(!(await call('providers.list')).some((item: any) => item.id === 'python-runtime'));
+    const listedProviders = await call('providers.list');
+    assert.ok(!listedProviders.some((item: any) => item.id === 'qwen-asr') && listedProviders.some((item: any) => item.id === 'sherpa-onnx'));
     assert.deepEqual(await call('echo.say'), { reply: 'v1', prefix: 'p' });
     await writePlugin('v2');
     assert.equal((await call('plugins.reload', { id: 'echo' })).state, 'active');
     assert.deepEqual(await call('echo.say'), { reply: 'v2', prefix: 'p' });
     await assert.rejects(call('plugins.reload', { id: 'gateway' }), /核心插件/);
+  } finally { await ctx.fiber.dispose(); await rm(home, { recursive: true, force: true }); }
+});
+
+/** Raw GET so tests can forge `Host` and `Origin`, which fetch does not let callers set. */
+function rawGet(url: string, headers: Record<string, string> = {}) {
+  return new Promise<{ status: number; headers: Record<string, unknown>; body: string }>((done, fail) => {
+    const req = request(url, { headers }, res => {
+      const chunks: Buffer[] = []; res.on('data', chunk => chunks.push(chunk));
+      res.on('end', () => done({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks).toString('utf8') }));
+    });
+    req.on('error', fail); req.end();
+  });
+}
+
+test('server profile withdraws shutdown, plugin management and private-network endpoints', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'flycut-server-profile-'));
+  const ctx = await createHost({ home, token: 'server-token', port: 0, resourceRoot: resolve('.') }, { profile: 'server', providers: [mockProvider] });
+  const url = `http://127.0.0.1:${(ctx.httpServer.address() as { port: number }).port}`;
+  const call = async (method: string, payload: unknown = {}) => {
+    const response = await fetch(`${url}/rpc`, { method: 'POST', headers: { Authorization: 'Bearer server-token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'client-request', rpcId: crypto.randomUUID(), method, payload }) });
+    const envelope = await response.json(); if (!envelope.result.ok) throw new Error(envelope.result.error.message); return envelope.result.value;
+  };
+  const endpoint = (baseUrl: string) => ({ name: 'x', label: 'X', protocol: 'flycut', baseUrl });
+  try {
+    const info = await call('host.info');
+    for (const method of ['host.shutdown', 'plugins.list', 'plugins.reload']) assert.ok(!info.methods.includes(method), method);
+    assert.ok(info.methods.includes('workflow.start') && info.methods.includes('export.start') && info.methods.includes('endpoints.save'));
+    await assert.rejects(call('host.shutdown'), /Unknown RPC method/);
+    for (const address of ['http://127.0.0.1:9000', 'http://10.0.0.8', 'http://192.168.1.2:80', 'http://[::1]:9000', 'http://localhost:9000']) {
+      await assert.rejects(call('endpoints.save', endpoint(address)), /内网/, address);
+    }
+    assert.equal((await call('endpoints.save', endpoint('https://asr.example.com'))).providerId, 'flycut:x');
+  } finally { await ctx.fiber.dispose(); await rm(home, { recursive: true, force: true }); }
+  const desktopHome = await mkdtemp(join(tmpdir(), 'flycut-desktop-profile-'));
+  const desktop = await createHost({ home: desktopHome, token: 'desktop-token', port: 0, resourceRoot: resolve('.') }, { providers: [mockProvider] });
+  try {
+    const response = await fetch(`http://127.0.0.1:${(desktop.httpServer.address() as { port: number }).port}/rpc`, { method: 'POST',
+      headers: { Authorization: 'Bearer desktop-token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'client-request', rpcId: 'save', method: 'endpoints.save', payload: endpoint('http://127.0.0.1:9000') }) });
+    assert.equal((await response.json()).result.value.providerId, 'flycut:x');
+  } finally { await desktop.fiber.dispose(); await rm(desktopHome, { recursive: true, force: true }); }
+});
+
+test('Host serves the built frontend, a same-origin bootstrap and configured origins', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'flycut-web-root-'));
+  const web = join(home, 'dist'); await mkdir(join(web, 'assets'), { recursive: true });
+  await writeFile(join(web, 'index.html'), '<!doctype html><title>FlyCut</title>');
+  await writeFile(join(web, 'assets', 'index-abc.js'), 'console.log(1)');
+  await writeFile(join(home, 'secret.txt'), 'outside');
+  const ctx = await createHost({ home, token: 'web-token', port: 0, resourceRoot: resolve('.'), webRoot: web,
+    allowedOrigins: ['https://flycut.example.com'] }, { providers: [mockProvider] });
+  const port = (ctx.httpServer.address() as { port: number }).port;
+  const url = `http://127.0.0.1:${port}`;
+  try {
+    const page = await rawGet(`${url}/`);
+    assert.equal(page.status, 200); assert.match(page.body, /FlyCut/); assert.match(String(page.headers['content-type']), /text\/html/);
+    assert.match((await rawGet(`${url}/editor/route`)).body, /FlyCut/);
+    const bundle = await rawGet(`${url}/assets/index-abc.js`);
+    assert.equal(bundle.status, 200); assert.match(String(bundle.headers['content-type']), /javascript/); assert.match(String(bundle.headers['cache-control']), /immutable/);
+    assert.equal((await rawGet(`${url}/assets/missing.js`)).status, 404);
+    assert.equal((await rawGet(`${url}/..%2fsecret.txt`)).status, 404);
+    // Host assets keep their auth even though they share the `/assets/` prefix with bundles.
+    assert.equal((await rawGet(`${url}/assets/${crypto.randomUUID()}`)).status, 401);
+
+    const bootstrap = await rawGet(`${url}/__flycut/connection`);
+    assert.equal(bootstrap.status, 200); assert.deepEqual(JSON.parse(bootstrap.body), { token: 'web-token' });
+    assert.equal((await rawGet(`${url}/__flycut/connection`, { host: `evil.example:${port}` })).status, 403, 'DNS rebinding Host header');
+    assert.equal((await rawGet(`${url}/__flycut/connection`, { origin: 'https://evil.example' })).status, 403);
+    assert.equal((await rawGet(`${url}/__flycut/connection`, { host: 'flycut.example.com', origin: 'https://flycut.example.com' })).status, 200);
+
+    const rpc = (origin: string) => fetch(`${url}/rpc`, { method: 'POST', headers: { Authorization: 'Bearer web-token', 'Content-Type': 'application/json', Origin: origin },
+      body: JSON.stringify({ type: 'client-request', rpcId: 'o', method: 'host.info', payload: {} }) });
+    const allowed = await rpc('https://flycut.example.com');
+    assert.equal(allowed.status, 200); assert.equal(allowed.headers.get('access-control-allow-origin'), 'https://flycut.example.com');
+    assert.equal((await rpc('https://evil.example')).status, 401);
   } finally { await ctx.fiber.dispose(); await rm(home, { recursive: true, force: true }); }
 });

@@ -24,7 +24,7 @@ export const langgraphPlugin = { name: 'flycut-langgraph', inject: ['providers',
     const graph = new StateGraph(PipelineState)
       .addNode('transcribe', async () => {
         signal.throwIfAborted();
-        const transcript = await ctx.providers.get(input.asr.providerId).transcribe(input.asr, ctx.assets.path(input.asr.assetId), signal, report);
+        const transcript = await ctx.providers.transcribe(input.asr, ctx.assets.path(input.asr.assetId), signal, report);
         return { transcript };
       })
       .addNode('analyze', async state => {

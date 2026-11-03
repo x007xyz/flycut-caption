@@ -1,4 +1,3 @@
 export { ASRLanguageSelector } from './ASRLanguageSelector';
-export { ModelDownloadPanel } from './ModelDownloadPanel';
-export { ModelSelectItems } from './ModelSelectItems';
-export { WebModelSelectItems } from './WebModelSelectItems';
+export { ModelOptionsForm } from './ModelOptionsForm';
+export { ModelsPanel } from './ModelsPanel';

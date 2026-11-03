@@ -1,1 +1,1 @@
-export { ASRPanel } from './ASRPanel';
+export { ASRSettingsPanel } from './ASRSettingsPanel';

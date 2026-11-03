@@ -1,101 +1,54 @@
-> 当前 Python Runtime 是 Cordis Host 的内部 worker。前端通过 Host RPC 调用，不再直接连接 8765。下文保留 worker 协议供开发与诊断使用；启用内部令牌时请求必须携带 Authorization。当前架构见 [architecture-current.md](architecture-current.md)。
+# Python Worker
 
-# Python Runtime API
+Python 不是独立的服务端，而是 Host 管理的推理进程。前端只通过 Host RPC 使用它们，不直接连接 Python 端口。Provider 的整体规则见 [subsystems/providers.md](subsystems/providers.md)。
 
-The browser build talks to a local process at `http://127.0.0.1:8765`.
+| 脚本 | Provider | 运行方式 |
+|---|---|---|
+| `python/funasr_service.py` | `funasr` | 常驻 HTTP 服务，实现 [FlyCut Provider 协议 v1](provider-http-protocol.md)：ASR、VAD、标点、说话人识别，模型从 ModelScope 下载并常驻内存 |
+| `python/qwen_asr_runner.py` | `qwen-asr` | 每次识别由 Host 启动一个子进程，stdout 输出一份字幕 JSON；取消即结束进程 |
 
-## Health and models
+sherpa-onnx 模型不经过 Python，由 Host 直接调用 `funasr-asr` sidecar。
 
-```http
-GET /health
-GET /v1/models
-GET /v1/models/discover
-POST /v1/models/register
-Content-Type: application/json
+## 启动与连接
 
-{"id":"custom-qwen3-asr","name":"Qwen3-ASR","provider":"qwen-asr","path":"/models/Qwen3-ASR-0.6B","config":{"device":"auto"}}
-```
+Host 在第一次需要时用随机端口启动 FunASR 服务，并生成仅本次有效的内部令牌（`Authorization: Bearer`）。服务启动时只用标准库，没装 funasr 也能回应，模型会标为不可用并说明缺什么。相关环境变量：
 
-浏览器版不负责选择或上传本机模型。Runtime 启动后直接读取默认目录中的
-`models.json`；Web 只通过 `/v1/models` 读取清单并提交模型 ID。目录和清单位置可通过
-`GET /v1/runtime/config` 查看，但 Web 只把它作为提示展示。
+| 变量 | 作用 |
+|---|---|
+| `FLYCUT_PYTHON` | 启动 FunASR 服务的 Python 解释器，缺省 `python3`（Windows 为 `python`） |
+| `FLYCUT_QWEN_PYTHON` | 运行 Qwen runner 的 Python（需安装 `qwen-asr`），缺省同 `FLYCUT_PYTHON` |
+| `FLYCUT_FUNASR_DEVICE` | FunASR 推理设备，缺省有 CUDA 用 `cuda:0`，否则 `cpu` |
+| `FLYCUT_FUNASR_URL` / `FLYCUT_FUNASR_TOKEN` | 连接已有的 FunASR 服务，不再由 Host 启动 |
+| `FLYCUT_FUNASR_HOME` | FunASR 模型缓存目录，缺省 `<Host home>/funasr` |
 
-桌面客户端可以使用原生目录选择器和 JSON 编辑器修改这些配置。`upload-file` 和
-`commit` 接口仍作为受控导入能力保留给未来的管理工具，不作为 Web 主流程。
-
-更推荐让 Runtime 扫描本机模型根目录。根目录由 `FLYCUT_MODEL_ROOTS` 配置（多个目录用
-系统路径分隔符连接），默认扫描 `~/.flycut-caption/models` 和 `~/models`。浏览器调用
-`GET /v1/models/discover` 得到候选模型，再用候选 ID 登记；绝对路径只在 Runtime 内部
-使用，不返回给 Web UI。
-
-Only model IDs beginning with `custom-` and existing directories are accepted.
-The runtime dispatches `funasr` to the official Python FunASR `AutoModel`,
-`qwen-asr` to the Python Qwen runner and
-`sherpa-onnx` to the packaged `funasr-asr` sidecar (override its path with
-`FLYCUT_FUNASR_SIDECAR`).
-The runtime stores the catalog under `FLYCUT_RUNTIME_HOME` (default:
-`~/.flycut-caption/models.json`).
-
-## Transcription jobs
-
-The request body is a 16 kHz mono WAV. Metadata is carried in headers so the
-runtime has no multipart dependency:
-
-```http
-POST /v1/asr/jobs
-Content-Type: audio/wav
-X-Flycut-Model: custom-qwen3-asr
-X-Flycut-Language: zh
-```
-
-The response is `202` with a job ID. Poll `GET /v1/asr/jobs/{id}` until the
-status is `complete` or `error`; the complete response contains the same
-`SubtitleTranscript` shape used by the browser and Tauri engines.
-
-The service invokes only registered Provider adapters. Model configuration is
-data, and the browser cannot submit shell commands.
-
-## FunASR：选择主模型和配套模型
-
-使用启动 Runtime 的同一 Python 环境安装依赖，并确保 FFmpeg 在 PATH 中（或设置
-`FFMPEG_PATH`）。推荐 Python 3.11，并用虚拟环境避免影响其他 ASR 依赖：
+手动运行 FunASR 服务（开发或部署到 GPU 机器）：
 
 ```sh
 python3.11 -m venv .venv-funasr
 .venv-funasr/bin/python -m pip install -r python/requirements-funasr.txt
-.venv-funasr/bin/python python/funasr_runner.py --check
-.venv-funasr/bin/python python/flycut_runtime.py
+.venv-funasr/bin/python python/funasr_service.py --host 0.0.0.0 --port 9000 --token <随机字符串>
 ```
 
-推理子进程默认继承 Runtime 的 Python 解释器；`FLYCUT_PYTHON` 可以覆盖它。
-`--check` 只验证 FunASR 导入，不会加载权重或验证具体模型组合。
+然后在 Host 上设置 `FLYCUT_FUNASR_URL=http://<机器>:9000`、`FLYCUT_FUNASR_TOKEN=<同一个字符串>`，或者在界面里把它当作 FlyCut Provider 服务添加。
 
-参考 `python/models.funasr.example.json`，将需要的条目合并到
-`~/.flycut-caption/models.json`，并将示例路径替换为实际下载目录。
-每个条目对应一套独立模型组合；界面的「Python Runtime 模型」刷新后即可选择。
-主模型必须是 FunASR Python 格式，例如 Paraformer 或 SenseVoice 的完整 checkpoint，
-不能使用 sherpa-onnx 的 int8 ONNX 目录。
+## 安全
 
-`config` 支持：
+- worker 只接受协议规定的路由，模型 ID 必须来自它自己的 `/v1/models`，不接受客户端传来的路径或命令。
+- FunASR 只从 ModelScope 下载内置列表中的模型，不启用 `trust_remote_code`。
+- 本机托管时监听 `127.0.0.1`；对外部署时务必设置 `--token`。
 
-| 字段 | 用途 |
-| --- | --- |
-| `device` | 默认 `cpu`；也支持 `cuda` / `cuda:N` |
-| `vad_model` | 可选，本地 FSMN-VAD checkpoint 目录 |
-| `punc_model` | 可选，本地 CT-Punc checkpoint 目录 |
-| `spk_model` | 可选，本地 CAM++ checkpoint 目录；需要 VAD |
-| `batch_size_s` | FunASR 批量音频时长，默认 60 秒，上限 600 秒 |
-| `hotword` | 可选，模型支持时使用的热词字符串 |
+## 取消
 
-未设置的辅助模型不会加载。当前适配器只接受本地模型目录，不自动下载模型，
-也不启用 `trust_remote_code`。需要自定义 Python 模型代码的 checkpoint
-（例如部分 Fun-ASR-Nano 版本）尚不在此适配器的支持范围内。
-Paraformer + FSMN-VAD + CT-Punc + CAM++ 是首选验证组合；
-其他主模型不保证支持相同的时间戳或说话人流程。
+Qwen 识别是子进程，取消立即生效。FunASR 模型常驻在服务进程里，`generate` 调用无法中途打断：取消后 Host 立即结束任务，服务端在当前步骤（下载一个模型、识别一个 SenseVoice 片段或整段 Paraformer）结束后丢弃结果，在此之前下一个识别任务会排队等待。
 
-FunASR 的毫秒时间戳转换为字幕协议的秒。`sentence_info[].spk` 保存在句段和字词的
-`speaker` 字段中（例如 `SPEAKER_0`），字幕编辑器显示该编号，不将它写进字幕正文。
-这些编号只在当前录音内有效。请求了说话人模型却未返回说话人结果时，任务明确报错。
+## 时间戳与说话人
 
-只有模型实际返回时间戳且能与全部句段的文本字词对应时，才设置
-`hasWordTimestamps=true`。缺少时间戳时保留粗粒度整段范围；不会通过插值构造逐字时间。
+两个脚本都遵守协议里的结果规则：时间单位是秒；只有模型真实返回且能与文本逐字对应的时间戳才作为字词时间戳，不插值；说话人编号（`SPEAKER_0`）只在当前录音内有效，写在 `speaker` 字段，不写进字幕正文。
+
+## 验证
+
+```bash
+python3 -m unittest discover -s tests -p 'test_*.py'
+```
+
+单元测试不加载模型。真实识别需要安装依赖、下载模型后用 demo 素材跑一遍，见 [subsystems/providers.md](subsystems/providers.md) 的验证要求。

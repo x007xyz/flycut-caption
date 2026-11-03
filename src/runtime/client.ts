@@ -15,9 +15,6 @@ import { FFmpegEngine } from '../services/videoEngines/FFmpegEngine';
 import { isTauriRuntime } from '../utils/runtime';
 import { createAppStore } from '../stores/appStore';
 import { createHistoryStore } from '../stores/historyStore';
-import { createPipelineStore } from '../stores/pipelineStore';
-import { createProviderConfigStore } from '../stores/providerConfigStore';
-import { createASRApiStore } from '../stores/asrApiStore';
 
 /**
  * Typed UI extension points. `shell`, `player` and `subtitle-editor` are exclusive slots;
@@ -77,8 +74,7 @@ export function uiPlugin<K extends keyof UISlots>(name: string, slot: K, compone
 /** Business state lives in the Context: two FlyCut instances on one page do not share a timeline or history. */
 export const storesPlugin = { name: 'flycut-stores', apply(ctx: Context) {
   const app = createAppStore();
-  ctx.provide('stores', { app, history: createHistoryStore(), pipeline: createPipelineStore(),
-    providerConfig: createProviderConfigStore(), asrApi: createASRApiStore() });
+  ctx.provide('stores', { app, history: createHistoryStore() });
   // Per-instance migration and device detection (formerly a root-level StoreInitializer).
   void app.getState().initialize();
 } };

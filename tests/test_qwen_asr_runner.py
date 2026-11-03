@@ -8,7 +8,7 @@ import tempfile
 from types import SimpleNamespace as Obj
 import unittest
 
-spec = importlib.util.spec_from_file_location("qwen_runner", Path(__file__).parents[1] / "src-tauri/python/qwen_asr_runner.py")
+spec = importlib.util.spec_from_file_location("qwen_runner", Path(__file__).parents[1] / "python/qwen_asr_runner.py")
 runner = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runner)
 

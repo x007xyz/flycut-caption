@@ -9,17 +9,25 @@ import type {
   VideoProcessorConfig 
 } from '@/types/video'
 import type { ASRProgress } from '@/types/subtitle'
-import type { ASREngineType } from '@/services/asrService'
+import type { ModelRef, OptionValue } from '../../shared/providers'
 import type { AIModelConfig, AIProgress } from '@/types/ai'
 import { hasWebGPU } from '@/utils/audioUtils'
-import { DEFAULT_MODEL_ID } from '@/types/model'
-import { DEFAULT_WEB_MODEL_ID, getWebAsrModel } from '../../shared/asr/webModels'
-import { isWebAsrModelId } from '@/utils/asrModelId'
+import { getWebAsrModel } from '../../shared/asr/webModels'
 
-// 旧版 model_id（不在当前 manifest 中），升级后需迁移到 DEFAULT_MODEL_ID
-const LEGACY_MODEL_IDS = ['sensevoice-small-int8', 'paraformer-small-int8']
-// 旧版 Web 模型 id（不在当前 Web 清单中），升级后需迁移到 DEFAULT_WEB_MODEL_ID
-const LEGACY_WEB_MODEL_IDS = ['']
+/** Key of a model's saved options in `asrOptions`. */
+export const modelKey = (ref: ModelRef) => `${ref.providerId}/${ref.modelId}`
+
+/** Settings saved before Providers (version 0) named an engine type plus two model fields. */
+export function migrateLegacyModel(state: { asrEngineType?: string; asrModelId?: string; webModelId?: string }): ModelRef | null {
+  if (state.asrEngineType === 'transformers' && state.webModelId && getWebAsrModel(state.webModelId)) {
+    return { providerId: 'transformers', modelId: state.webModelId }
+  }
+  if ((state.asrEngineType === 'funasr-tauri' || state.asrEngineType === 'python-runtime')
+    && state.asrModelId && !state.asrModelId.startsWith('custom-') && !getWebAsrModel(state.asrModelId)) {
+    return { providerId: 'sherpa-onnx', modelId: state.asrModelId }
+  }
+  return null
+}
 
 // 应用状态接口
 export interface AppState {
@@ -43,10 +51,10 @@ export interface AppState {
   // 设置
   language: string
   deviceType: 'webgpu' | 'wasm'
-  asrEngineType: ASREngineType
-  asrModelId: string
-  // Web (Transformers) 引擎使用的模型 id（Web 短 id，例如 'whisper-small'）
-  webModelId: string
+  /** 当前识别模型；null 表示还没选，界面会提示到「设置 → 模型」下载或添加 */
+  asrModel: ModelRef | null
+  /** 每个模型各自保存的选项，键为 `providerId/modelId` */
+  asrOptions: Record<string, Record<string, OptionValue>>
 
   // Aimu 风格设置
   shadow: 'N' | 'S' | 'M' | 'L'
@@ -85,9 +93,8 @@ export interface AppActions {
   // 设置管理
   setLanguage: (language: string) => void
   setDeviceType: (deviceType: 'webgpu' | 'wasm') => void
-  setASREngineType: (asrEngineType: ASREngineType) => void
-  setASRModelId: (asrModelId: string) => void
-  setWebModelId: (webModelId: string) => void
+  setASRModel: (asrModel: ModelRef | null) => void
+  setASROptions: (ref: ModelRef, options: Record<string, OptionValue>) => void
 
   // Aimu 风格设置管理
   setShadow: (shadow: AppState['shadow']) => void
@@ -141,9 +148,8 @@ const initialState: AppState = {
   
   language: 'en',
   deviceType: 'wasm',
-  asrEngineType: 'transformers',
-  asrModelId: DEFAULT_MODEL_ID,
-  webModelId: DEFAULT_WEB_MODEL_ID,
+  asrModel: null,
+  asrOptions: {},
 
   shadow: 'N',
   display: 'Bilingual',
@@ -262,22 +268,16 @@ export const createAppStore = () => createStore<AppState & AppActions>()(
           deviceType
         })),
 
-      setASREngineType: (asrEngineType) =>
+      setASRModel: (asrModel) =>
         set((state) => ({
           ...state,
-          asrEngineType
+          asrModel
         })),
 
-      setASRModelId: (asrModelId) =>
+      setASROptions: (ref, options) =>
         set((state) => ({
           ...state,
-          asrModelId
-        })),
-
-      setWebModelId: (webModelId) =>
-        set((state) => ({
-          ...state,
-          webModelId
+          asrOptions: { ...state.asrOptions, [modelKey(ref)]: options }
         })),
 
       setShadow: (shadow) =>
@@ -362,25 +362,6 @@ export const createAppStore = () => createStore<AppState & AppActions>()(
       
       // 初始化：仅在无已保存配置时自动检测设备
       initialize: async () => {
-        // 兼容迁移：旧版 model_id（不在当前 manifest 中）→ DEFAULT_MODEL_ID
-        set((state) => {
-          if (
-            LEGACY_MODEL_IDS.includes(state.asrModelId)
-            || isWebAsrModelId(state.asrModelId)
-          ) {
-            return { ...state, asrModelId: DEFAULT_MODEL_ID };
-          }
-          return state;
-        });
-        // 兼容迁移：旧版 / 未知 webModelId → DEFAULT_WEB_MODEL_ID
-        set((state) => {
-          const known = getWebAsrModel(state.webModelId);
-          if (!known || LEGACY_WEB_MODEL_IDS.includes(state.webModelId)) {
-            return { ...state, webModelId: DEFAULT_WEB_MODEL_ID };
-          }
-          return state;
-        });
-
         const hasPersistedSettings = localStorage.getItem('app-settings')
         if (hasPersistedSettings) return
         
@@ -404,20 +385,22 @@ export const createAppStore = () => createStore<AppState & AppActions>()(
       partialize: (state) => ({
         language: state.language,
         deviceType: state.deviceType,
-        asrEngineType: state.asrEngineType,
-        asrModelId: state.asrModelId,
-        webModelId: state.webModelId,
+        asrModel: state.asrModel,
+        asrOptions: state.asrOptions,
         shadow: state.shadow,
         display: state.display,
         aiModels: state.aiModels,
         selectedAIModelId: state.selectedAIModelId,
         smartCutSilenceThreshold: state.smartCutSilenceThreshold,
       }),
-      onRehydrateStorage: () => (state) => {
-        if (!state) return;
-        if (isWebAsrModelId(state.asrModelId)) {
-          state.asrModelId = DEFAULT_MODEL_ID;
+      version: 1,
+      migrate: (persisted, version) => {
+        const state = (persisted ?? {}) as Record<string, unknown>
+        if (version < 1) {
+          const { asrEngineType, asrModelId, webModelId, ...rest } = state as Record<string, string | undefined>
+          return { ...rest, asrModel: migrateLegacyModel({ asrEngineType, asrModelId, webModelId }), asrOptions: {} }
         }
+        return state
       },
     }
     ),

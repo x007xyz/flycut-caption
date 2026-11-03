@@ -3,16 +3,10 @@ import { useStore, type StoreApi } from 'zustand';
 import { useClientRuntime } from '@/runtime/context';
 import type { AppState, AppActions } from './appStore';
 import type { HistoryState, HistoryActions } from './historyStore';
-import type { PipelineState } from './pipelineStore';
-import type { ProviderConfigState } from './providerConfigStore';
-import type { ASRApiState } from './asrApiStore';
 
 export interface RuntimeStores {
   app: StoreApi<AppState & AppActions>;
   history: StoreApi<HistoryState & HistoryActions>;
-  pipeline: StoreApi<PipelineState>;
-  providerConfig: StoreApi<ProviderConfigState>;
-  asrApi: StoreApi<ASRApiState>;
 }
 declare module '@deepseek-ai/cordis' { interface Context { stores: RuntimeStores } }
 

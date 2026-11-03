@@ -10,8 +10,9 @@ import { rpcPlugin } from './plugins/rpc';
 import { storagePlugin } from './plugins/storage';
 import { providerRegistryPlugin } from './plugins/providers';
 import { modelsPlugin } from './plugins/models';
-import { pythonPlugin } from './plugins/python';
-import { apiAsrPlugin, pythonAsrPlugin, transformersAsrPlugin } from './plugins/asr';
+import { qwenAsrPlugin, sherpaAsrPlugin, transformersAsrPlugin } from './plugins/asr';
+import { funasrPlugin } from './plugins/funasr';
+import { endpointsPlugin } from './plugins/endpoints';
 import { deleteSilenceEditingPlugin, editingPlugin } from './plugins/editing';
 import { textPlugin } from './plugins/text';
 import { exportPlugin } from './plugins/export';
@@ -28,10 +29,11 @@ export const BUILTINS: Record<string, Builtin> = {
   storage: { plugin: storagePlugin, provides: ['assets', 'jobs'] },
   providers: { plugin: providerRegistryPlugin, provides: ['providers'] },
   models: { plugin: modelsPlugin, provides: ['models'] },
-  python: { plugin: pythonPlugin, provides: ['python'] },
-  'asr-python': { plugin: pythonAsrPlugin, provides: [] },
-  'asr-api': { plugin: apiAsrPlugin, provides: [] },
+  'asr-sherpa': { plugin: sherpaAsrPlugin, provides: [] },
+  'asr-funasr': { plugin: funasrPlugin, provides: [] },
+  'asr-qwen': { plugin: qwenAsrPlugin, provides: [] },
   'asr-transformers': { plugin: transformersAsrPlugin, provides: [] },
+  endpoints: { plugin: endpointsPlugin, provides: [] },
   editing: { plugin: editingPlugin, provides: ['editorPlugins'] },
   'editing-delete-silence': { plugin: deleteSilenceEditingPlugin, provides: [] },
   text: { plugin: textPlugin, provides: ['text'] },
@@ -49,6 +51,12 @@ export const PROFILES: Record<string, string[]> = {
   headless: FULL.filter(id => id !== 'gateway'),
   /** Transport plus jobs only; useful as a base for out-of-tree compositions. */
   minimal: ['rpc', 'plugin-manager', 'storage', 'providers', 'editing', 'gateway'],
+  /** Remote deployment: no plugin management, no remote shutdown, no service addresses inside the server's network. */
+  server: FULL.filter(id => id !== 'plugin-manager'),
+};
+/** Per-profile default plugin configs. A patch's `config.<id>` replaces the whole default for that row. */
+export const PROFILE_CONFIG: Record<string, Record<string, unknown>> = {
+  server: { gateway: { shutdown: false }, endpoints: { privateNetwork: false } },
 };
 
 export const profilePatchSchema = z.object({
@@ -93,14 +101,16 @@ export function resolveProfile(base: string, layers: ProfileLayer[], home: strin
   const patches = layers.map(layer => ({ source: layer.source, patch: profilePatchSchema.parse(layer.patch) }));
   const name = patches.find(item => item.patch.profile)?.patch.profile ?? base;
   const ids = PROFILES[name]; if (!ids) throw new Error(`未知 Profile：${name}（可用：${Object.keys(PROFILES).join('、')}）`);
-  const rows: ResolvedProfile['rows'] = ids.map(id => ({ id, source: 'builtin', provides: BUILTINS[id].provides, plugin: BUILTINS[id].plugin }));
+  const rows: ResolvedProfile['rows'] = ids.map(id => ({ id, source: 'builtin', provides: BUILTINS[id].provides, plugin: BUILTINS[id].plugin,
+    config: PROFILE_CONFIG[name]?.[id] }));
   for (const { source, patch } of patches) {
     for (const id of patch.enable) {
       if (rows.some(row => row.id === id)) continue;
       if (!BUILTINS[id]) throw new Error(`${source}: 未知内置插件 ${id}`);
       // Keep built-in boot order for re-enabled rows.
       const index = FULL.indexOf(id); const before = rows.findIndex(row => row.source === 'builtin' && FULL.indexOf(row.id) > index);
-      rows.splice(before < 0 ? rows.length : before, 0, { id, source: 'builtin', provides: BUILTINS[id].provides, plugin: BUILTINS[id].plugin });
+      rows.splice(before < 0 ? rows.length : before, 0, { id, source: 'builtin', provides: BUILTINS[id].provides, plugin: BUILTINS[id].plugin,
+        config: PROFILE_CONFIG[name]?.[id] });
     }
     for (const id of patch.disable) {
       const index = rows.findIndex(row => row.id === id); if (index < 0) throw new Error(`${source}: 无法停用不存在的插件 ${id}`);

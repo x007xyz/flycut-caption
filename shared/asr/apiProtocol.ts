@@ -1,4 +1,3 @@
-import type { ASRApiConfig } from '../../src/types/asrApi';
 import type { SubtitleChunk, SubtitleTranscript } from '../../src/types/subtitle';
 
 /** 配置 id / 请求关联 id：局域网 HTTP 等非安全上下文没有 crypto.randomUUID。 */
@@ -19,6 +18,9 @@ export function transcriptionEndpoint(baseUrl: string): string {
   if (!url.pathname.endsWith('/audio/transcriptions')) url.pathname += '/audio/transcriptions';
   return url.toString();
 }
+
+/** Settings of an OpenAI-compatible transcription endpoint. */
+export interface ASRApiConfig { name: string; baseUrl: string; model: string; timestamps: 'none' | 'segment' | 'word'; timeoutSeconds: number; apiKey?: string }
 
 export function validateASRApiConfig(config: ASRApiConfig) {
   transcriptionEndpoint(config.baseUrl);

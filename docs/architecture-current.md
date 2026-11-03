@@ -17,9 +17,13 @@
 | `server/main.ts` | 独立 Host 入口、连接发现、进程关闭 |
 | `server/app.ts` | 后端默认插件组合 |
 | `server/plugins/rpc.ts` | RPC 方法注册表、事件白名单、连接 generation/seq |
-| `server/plugins/models.ts` | 模型清单、自定义模型、本地目录扫描、模型下载（原 Tauri 命令） |
+| `server/plugins/providers.ts` | Provider 注册表：`providers.list/models/prepare`，识别前检查模型状态与选项，识别后校验字幕时间戳 |
+| `server/plugins/models.ts` | 内置 Provider 共用的模型文件定位与下载（镜像优先、归档兜底） |
 | `server/plugins/langgraph.ts` | 默认 Workflow 和 Agent Loop 实现 |
-| `server/plugins/asr.ts` | Python/FunASR、Transformers、API ASR 插件 |
+| `server/plugins/asr.ts` | 内置 Provider：sherpa-onnx（直接调用 `funasr-asr` sidecar）、Qwen（调用 `qwen_asr_runner.py`）、Transformers |
+| `server/plugins/funasr.ts` | FunASR Provider：托管或连接 `python/funasr_service.py`，走 HTTP 协议 |
+| `server/plugins/endpoints.ts` | 用户添加的 HTTP Provider（FlyCut 协议 / OpenAI 兼容） |
+| `server/providers/httpProvider.ts` | FlyCut Provider 协议 v1 客户端，内置 FunASR 与用户服务共用 |
 | `server/plugins/text.ts` | 字幕纠错与翻译 Provider |
 | `server/plugins/export.ts` | Host FFmpeg 导出插件、任务进度与结果资产 |
 | `server/plugins/editing.ts` | 编辑分析注册表；每个分析器即一个 Workflow 步骤 |
@@ -72,7 +76,7 @@ flowchart TB
 
 前端：`ctx.ui.register(slot, component, { order })`；`shell`、`player`、`subtitle-editor` 为独占位置，`tools`、`options` 可多贡献。
 
-ASRService 和 AIService 是前端 Context 内的服务（`ctx.asr`、`ctx.ai`），按连接创建，不执行本地模型推理或直接调用模型 API。ASR 支持四个兼容 Provider ID：`python-runtime`、`funasr-tauri`、`transformers`、`api`。其中原生 ID 在 Host 内复用 Python/sidecar 执行通道，不再由前端 invoke 发起推理。
+ASRService 和 AIService 是前端 Context 内的服务（`ctx.asr`、`ctx.ai`），按连接创建，不执行本地模型推理或直接调用模型 API。识别请求只带 `{ providerId, modelId }`、语言和模型声明过的选项；内置 Provider 为 `sherpa-onnx`、`funasr`、`qwen-asr`、`transformers`，用户服务为 `flycut:<名称>` / `openai:<名称>`。规范见 [subsystems/providers.md](subsystems/providers.md)。
 
 Transformers 推理在 Host CPU 上执行，模型缓存在后端。原有浏览器 WASM/WebGPU 模型缓存不作为后端已下载状态；设置页的下载操作现在调用 Host。
 
@@ -101,21 +105,39 @@ Transformers 推理在 Host CPU 上执行，模型缓存在后端。原有浏览
 - `WS /events`：先发送 `host/ready`（含已暴露事件列表）、`jobs/snapshot`，再推送 `{type:'event', generation, seq, name, payload}`；只有经 `ctx.rpc.expose` 的 Cordis 事件会被转发，`job/updated` 也走这一通道。
 - 客户端重连后恢复任务快照；等待任务时也查询状态，覆盖订阅前完成和连接中断。
 - Host 使用 Bearer 凭证、loopback 监听和 Origin 检查；WebSocket 使用同一凭证。
-- Python worker 使用独立的内部凭证，由 Host 启动和管理。
+- FunASR 服务（Python）使用独立的内部凭证，由 Host 启动和管理。
 
-RPC 方法由各插件注册，完整列表见 `shared/protocol.ts` 的 `RpcMethods` 或运行时 `host.info.methods`：`host.*`、`jobs.*`、`providers.list/catalog`、`editing.list`、`agent.tools/start`、`workflow.start`、`text.start`、`export.start`、`asr.download/downloaded`、`models.*`、`python.request`。
+RPC 方法由各插件注册，完整列表见 `shared/protocol.ts` 的 `RpcMethods` 或运行时 `host.info.methods`：`host.*`、`jobs.*`、`providers.list/models/prepare`、`endpoints.list/save/remove`、`editing.list`、`agent.tools/start`、`workflow.start`、`text.start`、`export.start`。
 
 视频导出由 `export` Cordis 插件执行。前端上传源媒体并提交当前编辑器生成的保留片段、字幕和编码选项；Host 通过任务协议运行 FFmpeg，返回结果资产。Web 端下载资产后写入用户选择的位置；桌面端由外壳命令 `save_host_asset` 把资产直接复制到原生保存对话框选定的路径，字节不经过 WebView。
 
-模型管理（清单、下载状态、下载、自定义模型登记/移除、本地目录扫描）由 `models` 插件提供，原 Rust 实现已移除；原生目录选择仍由外壳提供，扫描与登记走 RPC。前端仍负责导出对话框、参数选择、进度展示和取消操作。
+模型清单由各 Provider 自己提供，Host 通过 `providers.models` 汇总；下载走 `providers.prepare`。用户手写模型清单和本地目录扫描已移除，自己的模型通过 HTTP Provider 接入。前端仍负责导出对话框、参数选择、进度展示和取消操作。
 
 开发服务器通过仅限本机的 `/__flycut/connection` 提供连接引导；桌面通过 `ensure_host` 返回连接信息。嵌入式 React 使用者可在创建组件前提供 `window.__FLYCUT_HOST__ = {url,token}`。凭证不应写入可公开发布的静态文件。
+
+## 部署形态
+
+同一份前端构建（`pnpm build` → `dist/`）和 Host 构建（`pnpm build:host` → `dist-host/`）支持三种形态：
+
+| 形态 | 启动 | Profile | 连接引导 |
+|---|---|---|---|
+| 桌面客户端 | `pnpm tauri:dev` / 安装包 | `desktop` | `ensure_host` |
+| 本机 Web + 后端 | `pnpm serve` | `web` | Host 托管 `dist/`，同源 `/__flycut/connection` |
+| 服务端部署 | `pnpm serve:server` + 下列环境变量 | `server` | 同上，经反向代理 |
+
+- `--web-root <dir>`（或 `FLYCUT_WEB_ROOT`）让 Gateway 托管前端：静态文件、SPA 回退，以及只返回 `{token}` 的 `/__flycut/connection`，前端用页面自身的 origin 作为 Host 地址。Vite 产物位于 `/assets/<name>`，Host 资产是 `/assets/<uuid>`，两者靠 UUID 区分，资产接口仍需鉴权。
+- `FLYCUT_HOST_BIND`：监听地址，默认 `127.0.0.1`。容器或反向代理部署时设为 `0.0.0.0`。
+- `FLYCUT_ALLOWED_ORIGINS`：逗号分隔的额外浏览器 origin，例如 `https://flycut.example.com`。连接引导只回应 Host 头为 loopback 或这些 origin 的主机，用来挡住 DNS rebinding。
+- `FLYCUT_HOST_TOKEN`：固定凭证，不设置则沿用 `<home>/auth.token`。
+- `server` Profile 在 `web` 的基础上去掉 `plugin-manager`（`plugins.list/reload`），通过插件默认配置关闭 `host.shutdown`（`gateway: {shutdown: false}`），并拒绝回环和内网地址的用户服务（`endpoints: {privateNetwork: false}`），避免 Host 被当作访问服务器内网的跳板。补丁的 `config.<id>` 会整体替换这些默认值。
+
+服务端模式是**单租户**：页面会把凭证交给任何能加载它的客户端，所有持有凭证的人共享任务、资产和模型。对外提供服务时必须在 Host 前面放一层带鉴权的反向代理（Basic Auth、SSO 等），不要直接暴露端口；Host 在非 loopback 地址托管前端时会打印警告。多用户隔离不在当前范围内。
 
 ## Profile 与插件管理
 
 Host 的插件组合由 `server/profile.ts` 解析，分层顺序与 Harness 一致：
 
-1. 基础 Profile：`desktop`/`web`（全部）、`headless`（无网关）、`minimal`（传输与任务）。用 `--profile` 或 `FLYCUT_PROFILE` 选择。
+1. 基础 Profile：`desktop`/`web`（全部）、`server`（远程部署，见「部署形态」）、`headless`（无网关）、`minimal`（传输与任务）。用 `--profile` 或 `FLYCUT_PROFILE` 选择。
 2. `<Host home>/profile.patch.yml`（也可用 `.yaml` 或 `.json`，三者只能有一个）。
 3. `FLYCUT_PROFILE_PATCH` 指向的补丁文件（可用路径分隔符列多个，按扩展名解析 YAML 或 JSON）。
 4. `createHost(config, { patches })` 的程序化补丁。
@@ -146,12 +168,14 @@ pnpm dev:web             # 单独启动前端，需要已有 Host
 pnpm build               # 前端生产构建
 pnpm build:host          # Host 构建
 pnpm package:host        # 部署 Host 生产依赖，复制当前平台 Node 到 Tauri 资源
+pnpm serve               # 构建后：Host 托管 dist/，本机 Web + 后端
+pnpm serve:server        # 构建后：server Profile，配合 FLYCUT_HOST_BIND / FLYCUT_ALLOWED_ORIGINS
 pnpm tauri:dev
 ```
 
-首次桌面打包需要先完成项目原有的 sidecar、FFmpeg 和共享资源准备。`package:host` 使用当前机器的 Node 可执行文件，须在目标平台构建。Python 解释器及模型依赖仍按原有本地环境配置，可通过 `FLYCUT_PYTHON` 指定。
+首次桌面打包需要先完成项目原有的 sidecar、FFmpeg 和共享资源准备。`package:host` 使用当前机器的 Node 可执行文件，须在目标平台构建。Python 解释器及模型依赖仍按本地环境配置：FunASR 用 `FLYCUT_PYTHON`，Qwen 用 `FLYCUT_QWEN_PYTHON`（缺省同 `FLYCUT_PYTHON`）。
 
-Host 默认 home：`~/.flycut-caption/host`。可用 `FLYCUT_HOST_HOME`、`FLYCUT_HOST_PORT`、`FLYCUT_RESOURCE_ROOT`、`FLYCUT_APP_DATA` 覆盖。桌面使用应用数据目录。仅在需要接已有 Python worker 时设置 `FLYCUT_PYTHON_URL` 与可选 `FLYCUT_PYTHON_TOKEN`。
+Host 默认 home：`~/.flycut-caption/host`。可用 `FLYCUT_HOST_HOME`、`FLYCUT_HOST_PORT`、`FLYCUT_RESOURCE_ROOT`、`FLYCUT_APP_DATA` 覆盖。桌面使用应用数据目录。要连接已有的 FunASR 服务（例如 GPU 机器）时设置 `FLYCUT_FUNASR_URL` 与可选 `FLYCUT_FUNASR_TOKEN`。
 
 ## 验证
 
@@ -164,16 +188,16 @@ pnpm build
 pnpm build:lib
 pnpm build:funasr-sidecar
 cargo check --manifest-path src-tauri/Cargo.toml
-python3 -m unittest discover -s tests -p 'test_*runner.py'
+python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
-架构测试覆盖真实 HTTP/WebSocket、鉴权、Provider 注销、取消、LangGraph 工作流、模型工具循环、API 音频上传、持久化与中断标记。测试中的模型 API 使用本地 fixture，避免调用付费服务。
+架构测试覆盖真实 HTTP/WebSocket、鉴权、Provider 注销与模型/选项/时间戳校验、FlyCut 协议服务（含取消与版本检查）、真实启动 `funasr_service.py`、取消、LangGraph 工作流、模型工具循环、API 音频上传、持久化与中断标记。测试中的模型 API 使用本地 fixture，避免调用付费服务。
 
 ## 当前保留的编辑能力
 
 字幕交互、撤销重做、播放与导出参数选择仍使用前端编辑器实现。前端界面已纳入 Cordis，ASR、模型管理、文本模型请求、编排和 FFmpeg 导出已转交独立 Host。浏览器端的 WebAV/FFmpeg 引擎只在 Web 端作为显式回退；桌面只使用 Host 导出。
 
-业务状态：`app`、`history`、`pipeline`、`providerConfig`、`asrApi` 五个 store 由前端 `stores` 插件按 Context 创建（`ctx.stores`），组件仍用 `useAppStore(selector)` 等 hook 读取，回调中用 `useRuntimeStoreApi(key).getState()`。同一页面的多个 FlyCut 实例互不共享时间轴和历史。主题与消息中心属于外层界面，仍是全局 store。
+业务状态：`app`、`history` 两个 store 由前端 `stores` 插件按 Context 创建（`ctx.stores`），组件仍用 `useAppStore(selector)` 等 hook 读取，回调中用 `useRuntimeStoreApi(key).getState()`。同一页面的多个 FlyCut 实例互不共享时间轴和历史。主题与消息中心属于外层界面，仍是全局 store。
 
 视频导出引擎由 `ctx.videoEngines` 注册表提供：Host 引擎优先级最高；Web 端另注册 WebAV/FFmpeg 回退，桌面端只注册 Host。
 

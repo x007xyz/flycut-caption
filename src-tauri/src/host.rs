@@ -62,7 +62,6 @@ fn start_host(app: AppHandle) -> Result<HostConnection, String> {
     command.arg(script).current_dir(&resource_root)
         .env("FLYCUT_RESOURCE_ROOT", &resource_root).env("FLYCUT_APP_DATA", &app_data)
         .env("FLYCUT_HOST_HOME", &home).env("FLYCUT_HOST_PORT", "0").env("FLYCUT_HOST_STDIO", "1")
-        .env("FLYCUT_RUNTIME_HOME", app_data.join("python-runtime"))
         .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::inherit());
     let binary_root = if resource.join("binaries").is_dir() { resource.join("binaries") } else { project.join("src-tauri/binaries") };
     command.env("FLYCUT_FUNASR_SIDECAR", binary_root.join(if cfg!(windows) { "funasr-asr.exe" } else { "funasr-asr" }));

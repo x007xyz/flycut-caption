@@ -12,6 +12,21 @@
 - **RPC 不接收任意本地路径。** 桌面媒体通过 `/assets` 上传给 Host。来源：`docs/subsystems/funasr-tauri.md`。
 - **FFmpeg 随安装包内置。** 优先使用 `src-tauri/binaries` 中的副本，不依赖用户系统里装的 FFmpeg。来源：`scripts/fetch-ffmpeg.sh`。
 
+### 模型 Provider
+
+来源：维护者 2026-11-02 确认。规范细节见 [subsystems/providers.md](subsystems/providers.md)。
+
+- **一个 Provider 对应一个推理后端。** 例如 sherpa-onnx、FunASR、Qwen、某个 HTTP 服务。同一后端的运行环境、模型下载和鉴权配置只有一份，不按能力拆成多个 Provider。
+- **Provider 声明能力，调用按能力分开。** 一个 Provider 可以同时提供 ASR、VAD、标点、说话人识别、对齐、TTS 中的若干项，没有的能力就不声明，不写抛 "not supported" 的空实现。流水线每一步各自选择 Provider，不要求所有步骤来自同一个 Provider。
+- **调用统一使用 `{ providerId, modelId }`（`ModelRef`）。** 前端、流水线、Agent 工具都只传 `ModelRef` 和该模型声明过的选项，不再有引擎类型（`ASREngineType`）、`webModelId` 之类的平行字段，也不在调用方按 Provider 写分支。
+- **模型清单属于 Provider。** 每个 Provider 通过 `models()` 返回自己的模型和能力（角色、语言、时间戳级别、可选项、就绪状态）。Host 只汇总，不维护跨 Provider 的全局清单；界面上的语言、时间戳、选项都从这里读取。
+- **只有两种接入方式。**
+  1. **Provider 插件**：写在代码里、随版本发布，由维护者开发。内置模型就是插件 Provider 自带的模型，下载、加载由 Provider 自己负责。
+  2. **HTTP Provider**：用户自己运行一个实现 [FlyCut Provider 协议](provider-http-protocol.md) 的服务（或 OpenAI 兼容服务），在界面里填地址即可接入，不需要改 FlyCut 代码。
+- **不再支持用户手写模型文件清单。** 用户填写 `files`、`family`、`recognizer_config` 的自定义模型、本地模型目录扫描登记都移除。用户自己的模型一律通过 HTTP Provider 接入。原因：这套方式只能接入已有后端支持的格式，却带来大量校验代码和本地路径安全面。
+- **FunASR 是完整的 Provider，通过 HTTP 协议调用。** FunASR 服务实现 FlyCut Provider 协议，提供 ASR、VAD、标点、说话人识别；Host 可以在本机托管它，也可以连接远程（例如 GPU 服务器）上的同一个服务。内置的 FunASR 和用户接入的 HTTP Provider 走同一套协议客户端。
+- **Provider 的能力声明不能直接打开破坏性编辑。** 字词级剪切只看识别结果里是否有通过校验的字词时间戳，不看 Provider 或模型的声明。
+
 ## 产品定位与优先级
 
 FlyCut Caption 是**字幕优先**的视频工具，长期目标是成为剪辑视频的 Agent。功能按下面的顺序建设，排在前面的能力是后面能力的地基：前面的没做稳之前，不为后面的功能牺牲它，也不跳级开发。
@@ -30,7 +45,7 @@ FlyCut Caption 是**字幕优先**的视频工具，长期目标是成为剪辑�
 
 - **字幕是一切功能的数据基础。** 特效、翻译、剪辑 Agent 都读写同一份带时间戳的字幕（`SubtitleTranscript`：句子级 `chunks` + 可选字词级 `wordChunks`），不另建平行的数据源。原因：编辑、裁剪、导出和后续 Agent 都依赖同一套时间映射，分叉就会不同步。
 - **识别结果可以逐条核对和修改。** ASR、AI 纠错、翻译产出的都是可编辑字幕，不直接写死进成片。原因：识别和翻译都会出错，用户要能在导出前改。
-- **ASR 引擎可以切换。** 本地（FunASR / Whisper）、Python runtime、自定义 API 都要保留，新功能不能只在其中一种引擎上可用。
+- **ASR Provider 可以切换。** 本地 Provider（sherpa-onnx、FunASR、Qwen、Transformers）和用户接入的 HTTP Provider 都要保留，新功能不能只在其中一种 Provider 上可用。
 - **字幕可以单独导出。** SRT / VTT / JSON / ASS 导出和硬烧 MP4 并存，不能为了视频导出砍掉纯字幕导出。
 
 ### P1 字幕特效

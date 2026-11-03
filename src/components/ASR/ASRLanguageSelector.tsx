@@ -28,6 +28,8 @@ interface ASRLanguageSelectorProps {
   disabled?: boolean;
   /** 由当前模型决定：可选 / 固定 / 自动检测 */
   mode?: ModelLanguageMode;
+  /** 可选语言代码（来自模型声明）；缺省为 Whisper 全部语言 */
+  options?: string[];
   className?: string;
   placeholder?: string;
 }
@@ -64,6 +66,7 @@ export function ASRLanguageSelector({
   onLanguageChange,
   disabled = false,
   mode = 'selectable',
+  options,
   className,
   placeholder = '搜索语音识别语言...',
 }: ASRLanguageSelectorProps) {
@@ -80,13 +83,12 @@ export function ASRLanguageSelector({
   const displayName = getAsrLanguageDisplayName(language);
 
   const filteredLanguages = useMemo(() => {
-    const allLanguages = Object.entries(WHISPER_LANGUAGES).map(([code, name]) => ({
-      code,
-      name,
-    }));
+    const allLanguages = options
+      ? options.map((code) => ({ code, name: getAsrLanguageDisplayName(code) }))
+      : Object.entries(WHISPER_LANGUAGES).map(([code, name]) => ({ code, name }));
 
     if (!searchTerm) {
-      const commonOrder = ['en', 'zh', 'ja', 'ko', 'fr', 'es', 'de', 'ru', 'it', 'pt'];
+      const commonOrder = ['auto', 'en', 'zh', 'ja', 'ko', 'fr', 'es', 'de', 'ru', 'it', 'pt'];
       return allLanguages.sort((a, b) => {
         const aIndex = commonOrder.indexOf(a.code);
         const bIndex = commonOrder.indexOf(b.code);
@@ -114,7 +116,7 @@ export function ASRLanguageSelector({
 
         return a.name.localeCompare(b.name);
       });
-  }, [searchTerm]);
+  }, [searchTerm, options]);
 
   const updateDropdownPosition = useCallback(() => {
     if (!triggerRef.current) return;

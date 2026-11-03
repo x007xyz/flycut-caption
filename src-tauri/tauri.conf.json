@@ -41,11 +41,10 @@
     ],
     "resources": [
       "../models.json",
-      "../python/flycut_runtime.py",
       "../python/qwen_asr_runner.py",
       "binaries/*",
       "shared_assets/**/*",
-      "../python/funasr_runner.py",
+      "../python/funasr_service.py",
       "host/**/*"
     ]
   }

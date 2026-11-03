@@ -1,286 +1,136 @@
-import { ASRSourceSelector } from '@/components/ASR/ASRSourceSelector';
-import { PythonRuntimePanel } from '@/components/ASR/PythonRuntimePanel';
-import { MODEL_CATALOG_CHANGED_EVENT } from '@/services/customModelCatalog';
 // ASR 识别设置面板 - 放在播放器下方"选项"标签页
-// 浏览器端仅展示 Web 模型；Tauri 桌面端仅展示 FunASR 模型。下载请到设置弹窗。
+// 模型、语言、选项都来自 Host 的 providers.models；下载和添加服务在设置弹窗的「模型」里。
 
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { AlertCircle, BrainCircuit, Download, Globe, Loader2, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useAppStore } from '@/stores/appStore';
-import { useShowInfo } from '@/stores/messageStore';
-import { ASRLanguageSelector, ModelSelectItems, WebModelSelectItems } from '@/components/ASR';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { BrainCircuit, Globe, Cpu, AlertCircle, Settings } from 'lucide-react';
-import type { AvailableModel } from '@/types/model';
-import { getWebAsrModel } from '../../../shared/asr/webModels';
-import { getRuntimeAsrEngineType, isTauriRuntime } from '@/utils/runtime';
-import { useActiveModelTimestamp } from '@/hooks/useActiveModelTimestamp';
-import { useActiveModelLanguageConfig } from '@/hooks/useActiveModelLanguageConfig';
-import { shouldAdvertiseWordLevelDelete } from '@/utils/wordLevelEdit';
-import { WEB_MODELS_DOWNLOADED_EVENT } from '@/services/webModelCache';
+import { modelKey, useAppStore } from '@/stores/appStore';
+import { useRuntimeStoreApi } from '@/stores/runtimeStore';
+import { ASRLanguageSelector, ModelOptionsForm } from '@/components/ASR';
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { findModel, notifyProviderModelsChanged, useProviderModels } from '@/hooks/useProviderModels';
+import { getModelLanguageConfig, resolveLanguageForModel } from '@/utils/modelLanguageConfig';
 import { useClientRuntime } from '@/runtime/context';
+import type { ModelInfo, ModelRef } from '../../../shared/providers';
 
 interface ASRSettingsPanelProps {
   className?: string;
   onOpenSettings?: () => void;
 }
 
+const STATUS_SUFFIX: Record<ModelInfo['status'], string> = { ready: '', download: '（需下载）', unavailable: '（不可用）' };
+const parseKey = (key: string): ModelRef => { const index = key.lastIndexOf('/'); return { providerId: key.slice(0, index), modelId: key.slice(index + 1) }; };
+
 export function ASRSettingsPanel({ className, onOpenSettings }: ASRSettingsPanelProps) {
-  const { connection, asr: asrService } = useClientRuntime();
+  const { asr } = useClientRuntime();
+  const app = useRuntimeStoreApi('app');
   const language = useAppStore((s) => s.language);
-  const asrEngineType = useAppStore((s) => s.asrEngineType);
-  const asrModelId = useAppStore((s) => s.asrModelId);
-  const webModelId = useAppStore((s) => s.webModelId);
+  const asrModel = useAppStore((s) => s.asrModel);
+  const asrOptions = useAppStore((s) => s.asrOptions);
   const isLoading = useAppStore((s) => s.isLoading);
+  const { groups, loading, error } = useProviderModels();
+  const [download, setDownload] = useState<{ busy: boolean; message?: string }>({ busy: false });
 
-  const setLanguage = useAppStore((s) => s.setLanguage);
-  const setASREngineType = useAppStore((s) => s.setASREngineType);
-  const setASRModelId = useAppStore((s) => s.setASRModelId);
-  const setWebModelId = useAppStore((s) => s.setWebModelId);
+  const asrGroups = groups.map(group => ({ ...group, models: group.models.filter(model => model.role === 'asr') })).filter(group => group.models.length);
+  const active = findModel(groups, asrModel);
+  const languageConfig = getModelLanguageConfig(active?.model);
 
-  const showInfo = useShowInfo();
+  const selectModel = (ref: ModelRef) => {
+    const state = app.getState();
+    state.setASRModel(ref);
+    const next = findModel(groups, ref);
+    if (next) state.setLanguage(resolveLanguageForModel(getModelLanguageConfig(next.model), state.language));
+  };
 
-  const [isTauri, setIsTauri] = useState(false);
-  const [downloadedModels, setDownloadedModels] = useState<string[]>([]);
-  const [downloadedWebModels, setDownloadedWebModels] = useState<string[]>([]);
-  const [allModels, setAllModels] = useState<AvailableModel[]>([]);
-  const activeModelTimestamp = useActiveModelTimestamp();
-  const languageConfig = useActiveModelLanguageConfig();
-  const supportsWordLevelDelete = shouldAdvertiseWordLevelDelete(activeModelTimestamp);
-
+  // First run (or the saved model disappeared): pick a ready model, recommended first.
   useEffect(() => {
-    const tauri = isTauriRuntime();
-    setIsTauri(tauri);
-
-    const expectedEngine = asrEngineType === 'api' || asrEngineType === 'python-runtime' ? asrEngineType : getRuntimeAsrEngineType();
-    if (asrEngineType !== expectedEngine) {
-      setASREngineType(expectedEngine);
+    if (loading || active) return;
+    const ready = asrGroups.flatMap(group => group.models.filter(model => model.status === 'ready').map(model => ({ group, model })));
+    const pick = ready.find(item => item.model.recommended) ?? ready[0];
+    if (pick && (!asrModel || !groups.some(group => group.provider.id === asrModel.providerId && !group.error))) {
+      selectModel({ providerId: pick.group.provider.id, modelId: pick.model.id });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, groups]);
 
-    if (!tauri) {
-      asrService.checkAllWebModelsDownloaded()
-        .then(setDownloadedWebModels)
-        .catch((err) => console.error('Failed to check web models:', err));
-      return;
+  const startDownload = async () => {
+    if (!asrModel) return;
+    setDownload({ busy: true, message: '准备下载...' });
+    try {
+      await asr.prepareModel(asrModel, progress => setDownload({ busy: true,
+        message: [progress.data, progress.progress !== undefined ? `${Math.round(progress.progress)}%` : ''].filter(Boolean).join(' ') }));
+      setDownload({ busy: false }); notifyProviderModelsChanged();
+    } catch (reason) {
+      setDownload({ busy: false, message: reason instanceof Error ? reason.message : String(reason) });
     }
+  };
 
-    connection.call('models.status')
-      .then((status) => setDownloadedModels(status.downloaded_model_ids))
-      .catch((err) => console.error('Failed to check models:', err));
-    connection.call('models.list')
-      .then((list) => setAllModels(list))
-      .catch((err) => console.error('Failed to list available models:', err));
-  }, [asrEngineType, setASREngineType, webModelId, asrService, connection]);
+  const providerError = asrModel && groups.find(group => group.provider.id === asrModel.providerId)?.error;
 
-  useEffect(() => {
-    if (isTauri) return;
-    const refresh = () => {
-      asrService.checkAllWebModelsDownloaded()
-        .then(setDownloadedWebModels)
-        .catch(() => {});
-    };
-    refresh();
-    window.addEventListener(WEB_MODELS_DOWNLOADED_EVENT, refresh);
-    window.addEventListener('focus', refresh);
-    return () => {
-      window.removeEventListener(WEB_MODELS_DOWNLOADED_EVENT, refresh);
-      window.removeEventListener('focus', refresh);
-    };
-  }, [isTauri, asrService]);
-
-  useEffect(() => {
-    if (!isTauri) return;
-    const handler = () => {
-      connection.call('models.status')
-        .then((status) => setDownloadedModels(status.downloaded_model_ids))
-        .catch(() => {});
-      connection.call('models.list')
-        .then((list) => setAllModels(list))
-        .catch(() => {});
-    };
-    window.addEventListener('focus', handler);
-    window.addEventListener(MODEL_CATALOG_CHANGED_EVENT, handler);
-    return () => {
-      window.removeEventListener('focus', handler);
-      window.removeEventListener(MODEL_CATALOG_CHANGED_EVENT, handler);
-    };
-  }, [isTauri, connection]);
-
-  const changeLanguage = useCallback(
-    (newLanguage: string) => {
-      setLanguage(newLanguage);
-    },
-    [setLanguage],
-  );
-
-  const changeFunasrModel = useCallback(
-    (modelId: string) => {
-      setASRModelId(modelId);
-      const modelName = allModels.find((m) => m.id === modelId)?.name || modelId;
-      showInfo('模型切换成功', `已切换到 ${modelName}`);
-    },
-    [setASRModelId, showInfo, allModels],
-  );
-
-  const changeWebModel = useCallback(
-    (modelId: string) => {
-      setWebModelId(modelId);
-      asrService.setWebModel(modelId);
-      const meta = getWebAsrModel(modelId);
-      showInfo('模型切换成功', `已切换到 ${meta?.name || modelId}`);
-    },
-    [setWebModelId, showInfo, asrService],
-  );
-
-  const currentModelDownloaded = downloadedModels.includes(asrModelId);
-  const currentWebModelDownloaded = downloadedWebModels.includes(webModelId);
-
-  const downloadHint = (label: string) => (
-    <div className="flex items-center gap-2 p-1.5 border rounded-md bg-amber-50 dark:bg-amber-950/20 text-xs">
-      <AlertCircle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
-      <span className="text-amber-700 dark:text-amber-400 flex-1">{label}</span>
-      {onOpenSettings && (
-        <button
-          type="button"
-          onClick={onOpenSettings}
-          className="flex items-center gap-1 text-amber-600 dark:text-amber-400 hover:underline font-medium shrink-0"
-        >
-          <Settings className="h-3 w-3" />
-          <span>去下载</span>
-        </button>
-      )}
-    </div>
-  );
-
-  const sourceSelector = <ASRSourceSelector onOpenSettings={onOpenSettings} />;
-  if (asrEngineType === 'api') return <div className={cn('space-y-3', className)}>
-    {sourceSelector}
-    <ASRLanguageSelector language={language} onLanguageChange={changeLanguage} disabled={isLoading} mode="selectable" />
-    <p className="text-xs text-muted-foreground">音频将发送至所选 API 服务。时间戳和按词精剪能力以实际返回结果为准。</p>
-  </div>;
-  if (asrEngineType === 'python-runtime') return <div className={cn('space-y-3', className)}>
-    {sourceSelector}
-    <PythonRuntimePanel />
-    <ASRLanguageSelector language={language} onLanguageChange={changeLanguage} disabled={isLoading} mode="selectable" />
-    <p className="text-xs text-muted-foreground">音频通过 FlyCut Host 交给 Python worker，模型与推理保留在本机。</p>
-  </div>;
-  // —— 浏览器端：仅 Web 模型 ——
-  if (!isTauri) {
-    return (
-      <div className={cn('space-y-3', className)}>
-        {sourceSelector}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1">
-            <label className="flex items-center space-x-1.5 text-xs font-medium text-muted-foreground">
-              <Globe className="h-3.5 w-3.5" />
-              <span>识别语言</span>
-            </label>
-            <ASRLanguageSelector
-              language={language}
-              onLanguageChange={changeLanguage}
-              disabled={isLoading}
-              mode={languageConfig.mode}
-              placeholder="搜索语言..."
-            />
-          </div>
-
-          <div className="space-y-1">
-            <label className="flex items-center space-x-1.5 text-xs font-medium text-muted-foreground">
-              <Cpu className="h-3.5 w-3.5" />
-              <span>计算设备</span>
-            </label>
-            <div className="h-8 rounded-md border px-3 py-1.5 text-xs">CPU · FlyCut Host</div>
-          </div>
-        </div>
-
-        <div className="space-y-1">
-          <label className="flex items-center space-x-1.5 text-xs font-medium text-muted-foreground">
-            <BrainCircuit className="h-3.5 w-3.5" />
-            <span>Transformers 识别模型</span>
-          </label>
-          {downloadedWebModels.length > 0 ? (
-            <Select
-              value={
-                currentWebModelDownloaded
-                  ? webModelId
-                  : (downloadedWebModels[0] ?? webModelId)
-              }
-              onValueChange={(v) => changeWebModel(v)}
-              disabled={isLoading}
-            >
-              <SelectTrigger size="sm" className="w-full text-xs h-8">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <WebModelSelectItems downloadedModelIds={downloadedWebModels} />
-              </SelectContent>
-            </Select>
-          ) : (
-            downloadHint('Host 尚未下载模型')
-          )}
-          {downloadedWebModels.length > 0 && !currentWebModelDownloaded
-            && downloadHint('当前模型尚未下载，识别前需先下载')}
-          {supportsWordLevelDelete && (
-            <p className="text-[11px] text-muted-foreground">
-              该模型支持字词级时间戳，识别后可按字词删除并精剪视频。
-            </p>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // —— Tauri 桌面端：仅 FunASR 模型 ——
   return (
     <div className={cn('space-y-3', className)}>
-      {sourceSelector}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1">
-          <label className="flex items-center space-x-1.5 text-xs font-medium text-muted-foreground">
-            <Globe className="h-3.5 w-3.5" />
-            <span>识别语言</span>
-          </label>
-          <ASRLanguageSelector
-            language={language}
-            onLanguageChange={changeLanguage}
-            disabled={isLoading}
-            mode={languageConfig.mode}
-            placeholder="搜索语言..."
-          />
-        </div>
-
-        <div className="space-y-1">
+      <div className="space-y-1">
+        <div className="flex items-center justify-between">
           <label className="flex items-center space-x-1.5 text-xs font-medium text-muted-foreground">
             <BrainCircuit className="h-3.5 w-3.5" />
-            <span>桌面端识别模型</span>
+            <span>识别模型</span>
           </label>
-          {downloadedModels.length > 0 ? (
-            <Select
-              value={asrModelId}
-              onValueChange={(v) => changeFunasrModel(v)}
-              disabled={isLoading}
-            >
-              <SelectTrigger size="sm" className="w-full text-xs h-8">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <ModelSelectItems
-                  allModels={allModels}
-                  downloadedModelIds={downloadedModels}
-                />
-                {!currentModelDownloaded && <SelectItem value={asrModelId} disabled>当前模型尚未下载</SelectItem>}
-              </SelectContent>
-            </Select>
-          ) : (
-            downloadHint('未下载桌面端模型')
-          )}
-          {supportsWordLevelDelete && (
-            <p className="text-[11px] text-muted-foreground">
-              该模型已验证字词级时间戳（token_timestamp_verified），识别后可按字词删除。
-            </p>
+          {onOpenSettings && (
+            <button type="button" onClick={onOpenSettings} className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline">
+              <Settings className="h-3 w-3" />管理模型
+            </button>
           )}
         </div>
+        {loading && !groups.length ? (
+          <div className="flex h-8 items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" />读取模型列表...</div>
+        ) : asrGroups.length ? (
+          <Select value={asrModel ? modelKey(asrModel) : undefined} onValueChange={(value) => selectModel(parseKey(value))} disabled={isLoading}>
+            <SelectTrigger size="sm" className="h-8 w-full text-xs"><SelectValue placeholder="选择识别模型" /></SelectTrigger>
+            <SelectContent>
+              {asrGroups.map(group => (
+                <SelectGroup key={group.provider.id}>
+                  <SelectLabel className="text-[11px]">{group.provider.name}</SelectLabel>
+                  {group.models.map(model => (
+                    <SelectItem key={model.id} value={modelKey({ providerId: group.provider.id, modelId: model.id })} disabled={model.status === 'unavailable'}>
+                      {model.name}{STATUS_SUFFIX[model.status]}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <p className="text-xs text-muted-foreground">没有可用的识别模型。{error ?? '请在「设置 → 模型」中下载模型或添加服务。'}</p>
+        )}
+        {providerError && <p className="flex items-start gap-1 text-[11px] text-destructive"><AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />{providerError}</p>}
+        {active?.model.status === 'download' && (
+          <div className="flex items-center gap-2 text-[11px]">
+            <button type="button" disabled={download.busy} onClick={startDownload} className="inline-flex items-center gap-1 text-primary hover:underline disabled:opacity-60">
+              {download.busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}下载此模型{active.model.size ? `（${active.model.size}）` : ''}
+            </button>
+            {download.message && <span className="truncate text-muted-foreground">{download.message}</span>}
+          </div>
+        )}
+        {active?.model.status === 'unavailable' && active.model.reason && <p className="text-[11px] text-destructive">{active.model.reason}</p>}
+        {active?.model.description && <p className="text-[11px] text-muted-foreground">{active.model.description}</p>}
+        {active?.model.timestampLevel === 'word' && (
+          <p className="text-[11px] text-muted-foreground">该模型通常输出字词级时间戳，识别后可按字词删除并精剪（以实际识别结果为准）。</p>
+        )}
       </div>
+
+      <div className="space-y-1">
+        <label className="flex items-center space-x-1.5 text-xs font-medium text-muted-foreground">
+          <Globe className="h-3.5 w-3.5" />
+          <span>识别语言</span>
+        </label>
+        <ASRLanguageSelector language={language} onLanguageChange={(value) => app.getState().setLanguage(value)} disabled={isLoading}
+          mode={languageConfig.mode} options={languageConfig.options} placeholder="搜索语言..." />
+      </div>
+
+      {asrModel && active?.model.options && (
+        <ModelOptionsForm fields={active.model.options} values={asrOptions[modelKey(asrModel)] ?? {}} disabled={isLoading}
+          onChange={(values) => app.getState().setASROptions(asrModel, values)} />
+      )}
     </div>
   );
 }

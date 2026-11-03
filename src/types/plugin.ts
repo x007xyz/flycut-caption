@@ -1,4 +1,4 @@
-import type { ProviderConfigField } from '@/types/provider';
+import type { OptionField } from '../../shared/providers';
 
 export type ExtensionKind = 'provider' | 'editor-action' | 'analyzer' | 'exporter';
 
@@ -11,7 +11,7 @@ export interface EditorPluginManifest {
   status: 'available' | 'planned';
   input: string[];
   output: string[];
-  configFields?: Record<string, ProviderConfigField>;
+  configFields?: Record<string, OptionField>;
 }
 
 export interface EditorAnalysisInput {

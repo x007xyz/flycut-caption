@@ -1,11 +1,13 @@
-import type { AsrProvider, JobSnapshot, PipelineInput, PipelineResult, ExportInput, AgentInput, TextInput } from '../shared/protocol';
-import type { ASRProgress } from '../src/types/subtitle';
+import type { JobSnapshot, PipelineInput, PipelineResult, ExportInput, AgentInput, TextInput } from '../shared/protocol';
+import type { AsrRequest, ModelInfo, ModelRef, ProviderKind, ProviderModels, ProviderSummary } from '../shared/providers';
+import type { ASRProgress, SubtitleTranscript } from '../src/types/subtitle';
 import type { Server } from 'node:http';
 import type { EditorPlugin } from '../src/types/plugin';
-import type { ProviderPackage } from '../src/types/provider';
 import type { z } from 'zod';
 
-export interface HostConfig { home: string; port: number; token: string; resourceRoot: string; pythonUrl?: string;
+export interface HostConfig { home: string; port: number; token: string; resourceRoot: string; 
+  /** Existing FunASR Provider service; when unset the Host starts `python/funasr_service.py` itself. */
+  funasrUrl?: string;
   /** User model catalog and downloads (desktop app data dir). Defaults to `<home>/app-data`. */
   appData?: string;
   /** Assets unused for this long are deleted (default 24). */
@@ -17,13 +19,29 @@ export interface HostConfig { home: string; port: number; token: string; resourc
   /** Built frontend (`dist/`) served by the Host together with the connection bootstrap. */
   webRoot?: string }
 export type ProgressReporter = (progress: ASRProgress) => void;
+/**
+ * One inference backend. Capabilities are optional methods: implement only what the backend does.
+ * Rules: docs/subsystems/providers.md.
+ */
+export interface Provider {
+  id: string;
+  name: string;
+  kind: ProviderKind;
+  models(signal?: AbortSignal): Promise<ModelInfo[]>;
+  /** Downloads or prepares a model whose status is `download`. */
+  prepare?(modelId: string, signal: AbortSignal, report: ProgressReporter): Promise<void>;
+  /** `audioPath` is a 16 kHz mono PCM16 WAV. The registry validates the result. */
+  transcribe?(request: AsrRequest, audioPath: string, signal: AbortSignal, report: ProgressReporter): Promise<SubtitleTranscript>;
+}
 export interface ProviderRegistry {
-  register(provider: AsrProvider): () => void;
-  get(id: string): AsrProvider;
-  list(): Array<{ id: string; name: string }>;
-  /** Adds a declarative catalog entry (settings / pipeline UIs). Call inside `ctx.effect`. */
-  describe(pkg: ProviderPackage): () => void;
-  catalog(): ProviderPackage[];
+  register(provider: Provider): () => void;
+  get(id: string): Provider;
+  list(): ProviderSummary[];
+  /** Every Provider's models; one failing Provider is reported in its group, not thrown. */
+  models(): Promise<ProviderModels[]>;
+  /** Looks up the model, checks its declared options, runs the Provider and validates the transcript. */
+  transcribe(request: AsrRequest, audioPath: string, signal: AbortSignal, report: ProgressReporter): Promise<SubtitleTranscript>;
+  prepare(ref: ModelRef, signal: AbortSignal, report: ProgressReporter): Promise<void>;
 }
 export interface JobService {
   create(run: (signal: AbortSignal, report: ProgressReporter, id: string) => Promise<unknown>): JobSnapshot;
@@ -42,7 +60,6 @@ export interface AssetService {
   path(id: string): string;
   delete(id: string): Promise<void>;
 }
-export interface PythonService { request(path: string, init?: RequestInit): Promise<Response> }
 export interface WorkflowService {
   start(input: PipelineInput): JobSnapshot;
   /** Runs inside an existing job (used by Agent tools) without creating a second job. */
@@ -69,7 +86,6 @@ declare module '@deepseek-ai/cordis' {
     providers: ProviderRegistry;
     jobs: JobService;
     assets: AssetService;
-    python: PythonService;
     workflows: WorkflowService;
     agents: AgentService;
     agentTools: AgentToolRegistry;

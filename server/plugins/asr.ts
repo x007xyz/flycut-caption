@@ -1,15 +1,23 @@
 import type { Context } from '@deepseek-ai/cordis';
-import { readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { setTimeout } from 'node:timers/promises';
-import { modelIdSchema, type AsrProvider } from '../../shared/protocol';
-import { PROVIDER_PACKAGES } from '../../shared/providerCatalog';
-import type { SubtitleTranscript } from '../../src/types/subtitle';
-import { validateASRApiConfig, normalizeASRApiResponse, mergeASRApiTranscripts, transcriptionEndpoint } from '../../shared/asr/apiProtocol';
-import { getWebAsrModel } from '../../shared/asr/webModels';
+import { access, readFile, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import type { ModelInfo, OptionField } from '../../shared/providers';
+import { normalizeASRApiResponse } from '../../shared/asr/apiProtocol';
+import { getWebAsrModel, WEB_ASR_MODELS } from '../../shared/asr/webModels';
+import { WHISPER_LANGUAGES } from '../../src/constants/languages';
+import type { ManifestModel } from './models';
+import type { Provider } from '../services';
+import { runJson } from '../providers/process';
 
+const exists = (path: string) => access(path).then(() => true, () => false);
+const sizeText = (mb: number | null | undefined) => mb ? (mb >= 1000 ? `${(mb / 1000).toFixed(1)} GB` : `${mb} MB`) : undefined;
+/** Manifest languages use `multi` for "many, detected automatically". */
+const languages = (model: ManifestModel) => {
+  const list = model.languages.filter(code => code !== 'multi');
+  return model.languages.includes('multi') || model.recognizer_config.language === 'auto' ? ['auto', ...list] : list;
+};
 
-function wavSamples(bytes: Buffer) {
+export function wavSamples(bytes: Buffer) {
   if (bytes.toString('ascii', 0, 4) !== 'RIFF' || bytes.toString('ascii', 8, 12) !== 'WAVE') throw new Error('Expected PCM WAV audio');
   let offset = 12, sampleRate = 0, channels = 0, bits = 0, format = 0;
   while (offset + 8 <= bytes.length) {
@@ -27,75 +35,112 @@ function wavSamples(bytes: Buffer) {
   throw new Error('Missing WAV data');
 }
 
-export const pythonAsrPlugin = { name: 'flycut-asr-python', inject: ['providers', 'python', 'models'], apply(ctx: Context) {
-  const provider: AsrProvider = { id: 'python-runtime', name: 'Python Runtime (Qwen / FunASR / sherpa-onnx)',
-    async transcribe(input, audioPath, signal, report) {
-      report({ status: 'loading', data: '检查后端模型...' });
-      const modelResponse = await ctx.python.request('/v1/models', { signal });
-      const catalog = await modelResponse.json() as { models: Array<{ id: string }> };
-      if (!catalog.models.some(model => model.id === input.modelId)) {
-        const resolved = await ctx.models.resolve(input.modelId);
-        if (!resolved) throw new Error(`模型未下载：${input.modelId}`);
-        const { model, path } = resolved;
-        const registered = await ctx.python.request('/v1/models/register', { method: 'POST', signal,
-          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: model.id, name: model.name,
-            provider: model.provider || 'sherpa-onnx', family: model.family, path, config: model.recognizer_config }) });
-        if (!registered.ok) throw new Error(`模型登记失败：${await registered.text()}`);
+/** sherpa-onnx ONNX models from `models.json`, run by the native `funasr-asr` sidecar. */
+export const sherpaAsrPlugin = { name: 'flycut-asr-sherpa', inject: ['providers', 'models', 'hostConfig'], apply(ctx: Context) {
+  const root = ctx.hostConfig.resourceRoot;
+  const sidecar = process.env.FLYCUT_FUNASR_SIDECAR ?? join(root, 'src-tauri/binaries', process.platform === 'win32' ? 'funasr-asr.exe' : 'funasr-asr');
+  let manifest: Promise<ManifestModel[]> | undefined;
+  const entries = () => manifest ??= (async () => {
+    for (const file of [join(root, 'models.json'), join(root, 'src-tauri/models.json')]) {
+      if (await exists(file)) {
+        const models = (JSON.parse(await readFile(file, 'utf8')) as { models: ManifestModel[] }).models;
+        return models.filter(model => model.enabled && (model.provider ?? 'sherpa-onnx') === 'sherpa-onnx');
       }
-      const bytes = await readFile(audioPath);
-      const created = await ctx.python.request('/v1/asr/jobs', { method: 'POST', body: bytes, signal,
-        headers: { 'Content-Type': 'audio/wav', 'X-Flycut-Model': input.modelId, 'X-Flycut-Language': input.language,
-          'X-Flycut-Execution': JSON.stringify(input.executionConfig ?? {}) } });
-      const data = await created.json() as { id?: string; error?: string };
-      if (!created.ok || !data.id) throw new Error(data.error || 'Cannot create Python ASR job');
-      try {
-        while (true) {
-          signal.throwIfAborted();
-          const response = await ctx.python.request(`/v1/asr/jobs/${data.id}`, { signal });
-          const job = await response.json() as { status: string; progress: number; result?: SubtitleTranscript; error?: string };
-          if (!response.ok) throw new Error(job.error || 'Python job lookup failed');
-          if (job.status === 'complete' && job.result) return job.result;
-          if (job.status === 'error' || job.status === 'cancelled') throw new Error(job.error || job.status);
-          report({ status: 'running', progress: job.progress, data: `后端识别：${job.status}` });
-          await setTimeout(500, undefined, { signal });
-        }
-      } finally {
-        if (signal.aborted) await ctx.python.request(`/v1/asr/jobs/${data.id}/cancel`, { method: 'POST' }).catch(() => undefined);
-      }
-    },
+    }
+    throw new Error('找不到 models.json 模型清单');
+  })().catch(error => { manifest = undefined; throw error; });
+  /** Bundled FSMN VAD (`pnpm fetch:shared-assets`): packaged next to `binaries/`, in development under `src-tauri/`. */
+  async function vadDir() {
+    for (const dir of [join(dirname(sidecar), '../shared_assets/funasr-fsmn-vad'), join(root, 'src-tauri/shared_assets/funasr-fsmn-vad')]) {
+      if (await exists(join(dir, 'model.onnx'))) return dir;
+    }
+  }
+  const find = async (modelId: string) => {
+    const model = (await entries()).find(item => item.id === modelId);
+    if (!model) throw new Error(`Unknown sherpa-onnx model: ${modelId}`);
+    return model;
   };
+  const provider: Provider = { id: 'sherpa-onnx', name: 'sherpa-onnx（本地）', kind: 'builtin',
+    async models() {
+      const binary = await exists(sidecar); const vad = !!await vadDir();
+      return Promise.all((await entries()).map(async (model): Promise<ModelInfo> => {
+        const options: Record<string, OptionField> = {};
+        if (vad) options.vad = { type: 'select', label: 'VAD 分段', default: 'fsmn',
+          description: '长音频建议开启：先按语音活动切分再识别', options: [{ value: 'fsmn', label: 'FSMN-VAD' }, { value: 'none', label: '不使用' }] };
+        if (model.timestamp.token_timestamp_verified) options.timestamps = { type: 'select', label: '时间戳', default: 'auto',
+          options: [{ value: 'auto', label: '自动（字级优先）' }, { value: 'segment', label: '只要句段' }] };
+        return { id: model.id, name: model.name, role: 'asr', description: model.description, languages: languages(model),
+          timestampLevel: model.timestamp.token_timestamp_verified ? 'word' : 'segment', size: sizeText(model.artifact.size_mb_estimate),
+          recommended: model.recommended, options,
+          ...!binary ? { status: 'unavailable', reason: `找不到 funasr-asr 识别程序，请运行 pnpm build:funasr-sidecar（${sidecar}）` }
+            : { status: await ctx.models.locate(model) ? 'ready' : 'download' } };
+      }));
+    },
+    async prepare(modelId, signal, report) { await ctx.models.download(await find(modelId), signal, report); },
+    async transcribe(request, audioPath, signal, report) {
+      const model = await find(request.modelId);
+      const dir = await ctx.models.locate(model); if (!dir) throw new Error(`模型未下载：${model.name}`);
+      const vad = request.options?.vad !== 'none' ? await vadDir() : undefined;
+      report({ status: 'running', data: `sherpa-onnx 识别中：${model.name}` });
+      return await runJson(sidecar, ['--input', audioPath, '--model', dir, '--model-type', model.family,
+        '--recognizer-config', JSON.stringify(model.recognizer_config), ...vad ? ['--vad-type', 'fsmn', '--vad-dir', vad] : ['--vad-type', 'none'],
+        '--language', request.language, '--timestamp-mode', request.options?.timestamps === 'segment' ? 'segment' : 'auto', '--output-json'], signal) as never;
+    } };
   ctx.effect(() => ctx.providers.register(provider));
-  ctx.effect(() => ctx.providers.register({ ...provider, id: 'funasr-tauri', name: 'Native ASR (Host Python / sherpa-onnx)' }));
-  for (const id of ['funasr-local', 'qwen-asr', 'audio-separator']) ctx.effect(() => ctx.providers.describe(PROVIDER_PACKAGES[id]));
 } };
 
-export const apiAsrPlugin = { name: 'flycut-asr-api', inject: ['providers'], apply(ctx: Context) {
-  ctx.effect(() => ctx.providers.describe(PROVIDER_PACKAGES['openai-compatible']));
-  ctx.effect(() => ctx.providers.register({ id: 'api', name: 'OpenAI-compatible ASR API', async transcribe(input, audioPath, signal, report) {
-    if (!input.api) throw new Error('Missing ASR API configuration');
-    const config = input.api; validateASRApiConfig(config);
-    const samples = wavSamples(await readFile(audioPath));
-    const parts: SubtitleTranscript[] = [];
-    for (let offset = 0; offset < samples.length; offset += 16000 * 300) {
-      signal.throwIfAborted();
-      const audio = samples.subarray(offset, offset + 16000 * 300);
-      const { encodePcmWav } = await import('../../shared/asr/apiProtocol');
-      const form = new FormData(); form.append('file', encodePcmWav(audio), 'audio.wav');
-      form.append('model', config.model); form.append('response_format', config.timestamps === 'none' ? 'json' : 'verbose_json');
-      if (input.language !== 'auto') form.append('language', input.language);
-      if (config.timestamps !== 'none') form.append('timestamp_granularities[]', 'segment');
-      if (config.timestamps === 'word') form.append('timestamp_granularities[]', 'word');
-      report({ status: 'running', progress: offset / samples.length * 100, data: '后端正在调用 ASR API...' });
-      const response = await fetch(transcriptionEndpoint(config.baseUrl), { method: 'POST', body: form, redirect: 'error',
-        signal: AbortSignal.any([signal, AbortSignal.timeout(config.timeoutSeconds * 1000)]),
-        headers: config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {} });
-      if (!response.ok) throw new Error(`ASR API HTTP ${response.status}; no automatic retry`);
-      const text = await response.text(); if (text.length > 16_000_000) throw new Error('ASR API response exceeds 16 MB');
-      parts.push(normalizeASRApiResponse(JSON.parse(text), audio.length / 16000, offset / 16000, `api-${parts.length}`));
-    }
-    if (!parts.length) throw new Error('Empty audio');
-    return mergeASRApiTranscripts(parts, samples.length / 16000);
-  } }));
+const QWEN_FILES = ['chat_template.json', 'config.json', 'generation_config.json', 'merges.txt', 'preprocessor_config.json', 'tokenizer_config.json', 'vocab.json'];
+const qwenEntry = (id: string, repo: string, name: string, sizeMb: number, weights: string[]): ManifestModel => ({
+  id, name, provider: 'qwen-asr', family: 'qwen_asr', enabled: true, recommended: false, languages: ['multi'], description: '', mode: 'offline',
+  supports_subtitle: true, timestamp: { level: 'segment', token_timestamp_verified: false },
+  artifact: { archive_name: '', extract_dir: '', size_mb_estimate: sizeMb }, recognizer_config: { model_type: 'qwen_asr', tokens: '' },
+  files: [...QWEN_FILES, ...weights].map(path => ({ path, sha256: null })),
+  download_sources: [
+    { region: 'cn', provider: 'modelscope', download_mode: 'files', url: `https://www.modelscope.cn/models/Qwen/${repo}/resolve/master/` },
+    { region: 'global', provider: 'huggingface', download_mode: 'files', url: `https://huggingface.co/Qwen/${repo}/resolve/main/` }],
+});
+export const QWEN_MODELS = [
+  { entry: qwenEntry('qwen3-asr-0.6b', 'Qwen3-ASR-0.6B', 'Qwen3-ASR 0.6B', 1890, ['model.safetensors']), role: 'asr' as const },
+  { entry: qwenEntry('qwen3-asr-1.7b', 'Qwen3-ASR-1.7B', 'Qwen3-ASR 1.7B', 4700,
+    ['model-00001-of-00002.safetensors', 'model-00002-of-00002.safetensors', 'model.safetensors.index.json']), role: 'asr' as const },
+  { entry: qwenEntry('qwen3-forced-aligner-0.6b', 'Qwen3-ForcedAligner-0.6B', 'Qwen3 ForcedAligner 0.6B', 1840, ['model.safetensors']), role: 'align' as const },
+];
+
+/** Qwen3-ASR through the official `qwen-asr` package (`python/qwen_asr_runner.py`, one process per job). */
+export const qwenAsrPlugin = { name: 'flycut-asr-qwen', inject: ['providers', 'models', 'hostConfig'], apply(ctx: Context) {
+  const runner = join(ctx.hostConfig.resourceRoot, 'python/qwen_asr_runner.py');
+  const python = process.env.FLYCUT_QWEN_PYTHON ?? process.env.FLYCUT_PYTHON ?? (process.platform === 'win32' ? 'python' : 'python3');
+  const find = (modelId: string) => {
+    const model = QWEN_MODELS.find(item => item.entry.id === modelId);
+    if (!model) throw new Error(`Unknown Qwen model: ${modelId}`);
+    return model.entry;
+  };
+  const options: Record<string, OptionField> = {
+    aligner: { type: 'select', label: '字词对齐', default: 'none', description: '需要先下载 ForcedAligner；开启后才有字级时间戳',
+      options: [{ value: 'none', label: '不使用（每 25 秒一段）' }, { value: 'qwen3-forced-aligner-0.6b', label: 'Qwen3 ForcedAligner 0.6B' }] },
+    device: { type: 'select', label: '设备', default: 'auto',
+      options: ['auto', 'cpu', 'mps', 'cuda:0'].map(value => ({ value, label: value })) },
+  };
+  const provider: Provider = { id: 'qwen-asr', name: 'Qwen ASR（本地 Python）', kind: 'builtin',
+    models: () => Promise.all(QWEN_MODELS.map(async ({ entry, role }): Promise<ModelInfo> => ({
+      id: entry.id, name: entry.name, role, size: sizeText(entry.artifact.size_mb_estimate), status: await ctx.models.locate(entry) ? 'ready' : 'download',
+      ...role === 'asr' ? { languages: ['auto', 'zh', 'en', 'yue', 'ja', 'ko'], timestampLevel: 'segment' as const, options,
+        description: `需要安装 qwen-asr 的 Python 环境（${python}，可用 FLYCUT_QWEN_PYTHON 指定）` }
+        : { description: '为 Qwen3-ASR 提供字词级时间戳' } }))),
+    async prepare(modelId, signal, report) { await ctx.models.download(find(modelId), signal, report); },
+    async transcribe(request, audioPath, signal, report) {
+      const model = find(request.modelId);
+      const dir = await ctx.models.locate(model); if (!dir) throw new Error(`模型未下载：${model.name}`);
+      const config: Record<string, unknown> = { device: request.options?.device ?? 'auto' };
+      if (request.options?.aligner && request.options.aligner !== 'none') {
+        const aligner = await ctx.models.locate(find(String(request.options.aligner)));
+        if (!aligner) throw new Error('请先下载 Qwen3 ForcedAligner，或把字词对齐设为不使用');
+        config.forced_aligner = aligner;
+      }
+      report({ status: 'running', data: `Qwen 识别中：${model.name}` });
+      return await runJson(python, [runner, '--model', dir, '--input', audioPath, '--language', request.language, '--config', JSON.stringify(config)], signal) as never;
+    } };
+  ctx.effect(() => ctx.providers.register(provider));
 } };
 
 type WebModel = NonNullable<ReturnType<typeof getWebAsrModel>>;
@@ -120,39 +165,41 @@ async function loadRecognizer(model: WebModel) {
   return load('q8');
 }
 
-export const transformersAsrPlugin = { name: 'flycut-asr-transformers', inject: ['providers', 'jobs', 'rpc', 'hostConfig'], apply(ctx: Context) {
+export const transformersAsrPlugin = { name: 'flycut-asr-transformers', inject: ['providers', 'hostConfig'], apply(ctx: Context) {
   const downloadedFile = join(ctx.hostConfig.home, 'downloaded-models.json');
   async function downloaded(): Promise<string[]> {
     try { return JSON.parse(await readFile(downloadedFile, 'utf8')); }
     catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []; throw error; }
   }
-  ctx.effect(() => ctx.providers.describe(PROVIDER_PACKAGES['transformers-web']));
-  ctx.effect(() => ctx.rpc.register('asr.downloaded', undefined, downloaded));
-  ctx.effect(() => ctx.rpc.register('asr.download', modelIdSchema, ({ modelId }) => ctx.jobs.create(async (signal, report) => {
-    const provider = ctx.providers.get('transformers'); if (!provider.prepare) throw new Error('Model download is unavailable');
-    await provider.prepare(modelId, signal, report);
-    await writeFile(downloadedFile, JSON.stringify([...new Set([...await downloaded(), modelId])])); return { modelId };
-  })));
-  ctx.effect(() => ctx.providers.register({ id: 'transformers', name: 'Transformers (Host CPU)',
+  const find = (modelId: string) => { const model = getWebAsrModel(modelId); if (!model) throw new Error('Unknown Transformers model'); return model; };
+  ctx.effect(() => ctx.providers.register({ id: 'transformers', name: 'Transformers.js（Host CPU）', kind: 'builtin',
+    async models() {
+      const ready = new Set(await downloaded());
+      return WEB_ASR_MODELS.map(model => ({ id: model.id, name: model.name, role: 'asr', description: model.description,
+        languages: model.languages.includes('multi') ? ['auto', ...Object.keys(WHISPER_LANGUAGES)] : model.languages, timestampLevel: 'segment', size: model.sizeHint,
+        recommended: model.recommended, status: ready.has(model.id) ? 'ready' : 'download' }));
+    },
     async prepare(modelId, signal, report) {
-      const model = getWebAsrModel(modelId); if (!model) throw new Error('Unknown Transformers model');
+      const model = find(modelId);
       signal.throwIfAborted();
       report({ status: 'loading', purpose: 'download', data: '后端正在下载 Transformers 模型...' });
       const recognizer = await loadRecognizer(model);
       await recognizer.dispose(); signal.throwIfAborted();
-    }, async transcribe(input, audioPath, signal, report) {
-    const model = getWebAsrModel(input.modelId); if (!model) throw new Error('Unknown Transformers model');
-    const samples = wavSamples(await readFile(audioPath)); signal.throwIfAborted();
-    report({ status: 'loading', data: '后端加载 Transformers 模型（CPU）...' });
-    const recognizer = await loadRecognizer(model);
-    try {
-      signal.throwIfAborted();
-      const raw = await recognizer(samples, { return_timestamps: true,
-        ...(model.family === 'whisper' ? { chunk_length_s: 30, ...(input.language !== 'auto' ? { language: input.language } : {}) } : {}) });
-      signal.throwIfAborted();
-      const output = Array.isArray(raw) ? raw[0] : raw;
-      return normalizeASRApiResponse({ text: output.text, segments: output.chunks?.map(chunk => ({ text: chunk.text,
-        start: chunk.timestamp[0] ?? 0, end: chunk.timestamp[1] ?? samples.length / 16000 })) }, samples.length / 16000);
-    } finally { await recognizer.dispose(); }
-  } }));
+      await writeFile(downloadedFile, JSON.stringify([...new Set([...await downloaded(), modelId])]));
+    },
+    async transcribe(request, audioPath, signal, report) {
+      const model = find(request.modelId);
+      const samples = wavSamples(await readFile(audioPath)); signal.throwIfAborted();
+      report({ status: 'loading', data: '后端加载 Transformers 模型（CPU）...' });
+      const recognizer = await loadRecognizer(model);
+      try {
+        signal.throwIfAborted();
+        const raw = await recognizer(samples, { return_timestamps: true,
+          ...(model.family === 'whisper' ? { chunk_length_s: 30, ...(request.language !== 'auto' ? { language: request.language } : {}) } : {}) });
+        signal.throwIfAborted();
+        const output = Array.isArray(raw) ? raw[0] : raw;
+        return normalizeASRApiResponse({ text: output.text, segments: output.chunks?.map(chunk => ({ text: chunk.text,
+          start: chunk.timestamp[0] ?? 0, end: chunk.timestamp[1] ?? samples.length / 16000 })) }, samples.length / 16000);
+      } finally { await recognizer.dispose(); }
+    } }));
 } };

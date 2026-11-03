@@ -1,27 +1,55 @@
 import type { Context } from '@deepseek-ai/cordis';
-import type { AsrProvider } from '../../shared/protocol';
-import type { ProviderPackage } from '../../src/types/provider';
-import type { ProviderRegistry } from '../services';
+import { providerPrepareSchema } from '../../shared/protocol';
+import { checkOptions, type ModelInfo, type ProviderModels } from '../../shared/providers';
+import { validateTranscript } from '../../shared/asr/transcript';
+import type { Provider, ProviderRegistry } from '../services';
 
-export const providerRegistryPlugin = { name: 'flycut-provider-registry', inject: ['rpc'], apply(ctx: Context) {
-  const providers = new Map<string, AsrProvider>();
-  const packages = new Map<string, ProviderPackage>();
+const MODELS_TIMEOUT_MS = 10_000;
+
+export const providerRegistryPlugin = { name: 'flycut-provider-registry', inject: ['rpc', 'jobs'], apply(ctx: Context) {
+  const providers = new Map<string, Provider>();
+  const get = (id: string) => { const provider = providers.get(id); if (!provider) throw new Error(`Provider unavailable: ${id}`); return provider; };
+  async function model(provider: Provider, modelId: string, signal?: AbortSignal): Promise<ModelInfo> {
+    const found = (await provider.models(signal)).find(item => item.id === modelId);
+    if (!found) throw new Error(`${provider.name} 没有模型 ${modelId}`);
+    return found;
+  }
   const registry: ProviderRegistry = {
     register(provider) {
       if (providers.has(provider.id)) throw new Error(`Duplicate Provider: ${provider.id}`);
       providers.set(provider.id, provider);
       return () => { if (providers.get(provider.id) === provider) providers.delete(provider.id); };
     },
-    get(id) { const provider = providers.get(id); if (!provider) throw new Error(`Provider unavailable: ${id}`); return provider; },
-    list: () => [...providers.values()].map(({ id, name }) => ({ id, name })),
-    describe(pkg) {
-      if (packages.has(pkg.id)) throw new Error(`Duplicate Provider package: ${pkg.id}`);
-      packages.set(pkg.id, pkg);
-      return () => { if (packages.get(pkg.id) === pkg) packages.delete(pkg.id); };
+    get,
+    list: () => [...providers.values()].map(({ id, name, kind }) => ({ id, name, kind })),
+    models: () => Promise.all([...providers.values()].map(async (provider): Promise<ProviderModels> => {
+      const summary = { id: provider.id, name: provider.name, kind: provider.kind };
+      try { return { provider: summary, models: await provider.models(AbortSignal.timeout(MODELS_TIMEOUT_MS)) }; }
+      catch (error) { return { provider: summary, models: [], error: error instanceof Error ? error.message : String(error) }; }
+    })),
+    async transcribe(request, audioPath, signal, report) {
+      const provider = get(request.providerId);
+      if (!provider.transcribe) throw new Error(`${provider.name} 不提供语音识别`);
+      const info = await model(provider, request.modelId, signal);
+      if (info.role !== 'asr') throw new Error(`${info.name} 不是识别模型`);
+      if (info.status === 'download') throw new Error(`模型未下载：${info.name}`);
+      if (info.status === 'unavailable') throw new Error(`${info.name} 不可用：${info.reason ?? '未知原因'}`);
+      checkOptions(info, request.options);
+      return validateTranscript(await provider.transcribe(request, audioPath, signal, report));
     },
-    catalog: () => [...packages.values()].map(pkg => structuredClone(pkg)),
+    async prepare(ref, signal, report) {
+      const provider = get(ref.providerId);
+      const info = await model(provider, ref.modelId, signal);
+      if (info.status === 'ready') return;
+      if (info.status === 'unavailable' || !provider.prepare) throw new Error(`${info.name} 不能下载：${info.reason ?? 'Provider 不支持下载'}`);
+      await provider.prepare(ref.modelId, signal, report);
+    },
   };
   ctx.provide('providers', registry);
   ctx.effect(() => ctx.rpc.register('providers.list', undefined, () => registry.list()));
-  ctx.effect(() => ctx.rpc.register('providers.catalog', undefined, () => registry.catalog()));
+  ctx.effect(() => ctx.rpc.register('providers.models', undefined, () => registry.models()));
+  ctx.effect(() => ctx.rpc.register('providers.prepare', providerPrepareSchema, ref => {
+    get(ref.providerId);
+    return ctx.jobs.create(async (signal, report) => { await registry.prepare(ref, signal, report); return ref; });
+  }));
 } };
