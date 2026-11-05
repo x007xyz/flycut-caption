@@ -5,6 +5,38 @@ export interface OpenAICompatibleEngineConfig {
   temperature?: number
 }
 
+/**
+ * 校验模型返回的逐条结果：每个输入 id 恰好对应一条非空文本。
+ * 缺条、重复、未知 id、空文本都抛错，不用原文填补，避免用户以为已经处理过。
+ */
+export function validateItemResults(items: AISubtitleItem[], parsed: unknown[]): AISubtitleItem[] {
+  const expected = new Set(items.map((item) => item.id))
+  const texts = new Map<string, string>()
+  const duplicate: string[] = []
+  const unknown: string[] = []
+  const empty: string[] = []
+  for (const entry of parsed) {
+    const raw = entry && typeof entry === 'object' ? (entry as { id?: unknown; text?: unknown }) : {}
+    const id = raw.id === undefined || raw.id === null ? '' : String(raw.id)
+    if (!expected.has(id)) { unknown.push(id || '(无 id)'); continue }
+    if (texts.has(id)) { duplicate.push(id); continue }
+    texts.set(id, typeof raw.text === 'string' ? raw.text : '')
+  }
+  const missing = items.filter((item) => !texts.has(item.id)).map((item) => item.id)
+  for (const item of items) {
+    const text = texts.get(item.id)
+    if (text !== undefined && !text.trim() && item.text.trim()) empty.push(item.id)
+  }
+  const problems = [
+    missing.length && `缺少 ${missing.length} 条（id: ${missing.slice(0, 5).join(', ')}）`,
+    duplicate.length && `重复 ${duplicate.length} 条（id: ${duplicate.slice(0, 5).join(', ')}）`,
+    unknown.length && `多出 ${unknown.length} 条未知 id（${unknown.slice(0, 5).join(', ')}）`,
+    empty.length && `空文本 ${empty.length} 条（id: ${empty.slice(0, 5).join(', ')}）`,
+  ].filter(Boolean)
+  if (problems.length) throw new Error(`AI 返回结果校验失败：${problems.join('；')}`)
+  return items.map((item) => ({ id: item.id, text: texts.get(item.id)! }))
+}
+
 export class OpenAICompatibleEngine {
   private signal?: AbortSignal
   setAbortSignal(signal: AbortSignal) { this.signal = signal }
@@ -60,11 +92,7 @@ export class OpenAICompatibleEngine {
     })
 
     const parsed = await this.requestAll(items, model, system)
-    const map = new Map(parsed.map((entry) => [entry.id, entry.text]))
-    const results = items.map((item) => ({
-      id: item.id,
-      text: typeof map.get(item.id) === 'string' ? map.get(item.id)! : item.text,
-    }))
+    const results = validateItemResults(items, parsed)
 
     this.report({ status: 'complete', progress: 100, data: `${stageLabel}完成` })
     return results
@@ -74,7 +102,7 @@ export class OpenAICompatibleEngine {
     items: AISubtitleItem[],
     model: AIModelConfig,
     system: string,
-  ): Promise<{ id: string; text: string }[]> {
+  ): Promise<unknown[]> {
     const userContent = JSON.stringify(
       items.map((item) => ({ id: item.id, text: item.text })),
     )
@@ -118,7 +146,7 @@ export class OpenAICompatibleEngine {
         `AI 返回条数不一致：期望 ${items.length}，实际 ${parsed.length}（可能超出模型上下文或输出长度限制）`,
       )
     }
-    return parsed as { id: string; text: string }[]
+    return parsed
   }
 
   /**
