@@ -45,7 +45,7 @@ export function WorkstationHeader({ media, mergedConfig, onLanguageChange, onOpe
           <a href="https://www.aimu-app.com/" target="_blank" rel="noreferrer" className="-ml-1 rounded px-1 py-1 hover:text-primary transition-colors">
             <BrandLogo label={t('components.workstation.appName')} />
           </a>
-          <span className="text-[10px] px-1.5 py-0.5 bg-primary/10 text-primary rounded font-mono">v2.0.0</span>
+          <span className="text-[10px] px-1.5 py-0.5 bg-primary/10 text-primary rounded font-mono">v{__FLYCUT_VERSION__}</span>
         </div>
 
         <div className="h-4 w-px bg-border mx-2"></div>
