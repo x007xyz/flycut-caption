@@ -10,7 +10,7 @@ approved_at: 2026-11-05
 
 ## UI / UX
 
-界面状态和交互见 [03-ux.md](03-ux.md)（原型阶段留下的记录，原型入口已删除）。`src/components/Project/` 的展示组件保留，本节写它们怎么接到真实数据：
+界面状态和文案以 PRD 的 AC-11 到 AC-27 为准（2026-11-05 从原型记录 [03-ux.md](03-ux.md) 整理进 PRD）。`src/components/Project/` 的展示组件保留，本节写它们怎么接到真实数据：
 
 | 原型组件 | 数据来源 | 动作 |
 |---|---|---|
@@ -114,19 +114,19 @@ Web 端重新打开项目时，视频要从 Host 流式播放，需要支持 HTT
 
 按顺序做，每项从 Host 到界面打通、带测试，做完提交一次并勾选。第 1 项定下共用契约（`shared/projects.ts`、`RpcMethods`、ADR-0001 的存储格式），E-02/6、E-02/7、E-02/8 只能在此基础上扩展。
 
-- [ ] 1. **新建、转写、重新打开（桌面端）**：`shared/projects.ts` 和 `RpcMethods` 声明；`projects` 插件的 `create` / `open` / `list` / `saveTranscript`（串行写、`.tmp` → `rename`、`revision`）和 `AssetService.claim`；ADR-0002 的 `link_project_media` 与外壳登记接口，含三项安全测试；前端 `projectService`、`projectStore`、`ProjectsApp` 与 hash 路由；首页接真实数据，打开项目写入 stores、不触发 ASR。（AC-1、AC-2、AC-5、AC-6）
-- [ ] 2. **自动保存**：样式对和画幅移进 store；`projects.saveEdits`；`useProjectAutosave`（1.5 秒停顿、`Cmd/Ctrl+S`、单请求在途）；编辑器顶栏 `ProjectBreadcrumb` + `SaveStatusIndicator`（「已保存」3 秒后淡出）。（AC-3）
-- [ ] 3. **保存失败与离开保护**：退避重试；回首页 / 打开别的项目前等待保存，失败弹 `UnsavedChangesDialog`；桌面 `onCloseRequested`，Web `beforeunload`。（AC-4）
-- [ ] 4. **版本冲突**：`baseRevision` 校验与 `SaveResult.conflict`；暂停自动保存 + `SaveConflictDialog`；`force` 覆盖和 `projects.duplicate`。（AC-9）
-- [ ] 5. **媒体丢失与格式版本**：打开时校验媒体，`MediaMissingBanner` + `projects.relinkMedia`；`server/projects/migrations.ts`，更新的版本返回 `newer-version` 并显示 `ProjectOpenErrorDialog`。（AC-7、AC-8）
-- [ ] 6. **项目封面**：新建时 FFmpeg 截封面帧、ffprobe 取时长；`projects.thumbnail` 与前端按 `projectId + revision` 缓存；截图失败显示占位图。（AC-5）
+- [ ] 1. **新建、转写、重新打开（桌面端）**：`shared/projects.ts` 和 `RpcMethods` 声明；`projects` 插件的 `create` / `open` / `list` / `saveTranscript`（串行写、`.tmp` → `rename`、`revision`）和 `AssetService.claim`；ADR-0002 的 `link_project_media` 与外壳登记接口，含三项安全测试；前端 `projectService`、`projectStore`、`ProjectsApp` 与 hash 路由；首页接真实数据，打开项目写入 stores、不触发 ASR。（AC-1、AC-2、AC-5、AC-6、AC-11–AC-18、AC-19 的面包屑和返回）
+- [ ] 2. **自动保存**：样式对和画幅移进 store；`projects.saveEdits`；`useProjectAutosave`（1.5 秒停顿、`Cmd/Ctrl+S`、单请求在途）；编辑器顶栏 `ProjectBreadcrumb` + `SaveStatusIndicator`（「已保存」3 秒后淡出）。（AC-3、AC-19–AC-21）
+- [ ] 3. **保存失败与离开保护**：退避重试；回首页 / 打开别的项目前等待保存，失败弹 `UnsavedChangesDialog`；桌面 `onCloseRequested`，Web `beforeunload`。（AC-4、AC-22、AC-24）
+- [ ] 4. **版本冲突**：`baseRevision` 校验与 `SaveResult.conflict`；暂停自动保存 + `SaveConflictDialog`；`force` 覆盖和 `projects.duplicate`。（AC-9、AC-23、AC-25）
+- [ ] 5. **媒体丢失与格式版本**：打开时校验媒体，`MediaMissingBanner` + `projects.relinkMedia`；`server/projects/migrations.ts`，更新的版本返回 `newer-version` 并显示 `ProjectOpenErrorDialog`。（AC-7、AC-8、AC-26、AC-27）
+- [ ] 6. **项目封面**：新建时 FFmpeg 截封面帧、ffprobe 取时长；`projects.thumbnail` 与前端按 `projectId + revision` 缓存；截图失败显示占位图。（AC-5、AC-14）
 - [ ] 7. **Web 端**：Gateway 的插件 HTTP 路由机制（带鉴权的 GET）；`/projects/<id>/media/<videoId>` 支持 Range；Web 端新建、打开、自动保存走同一套 RPC。（AC-10）
 - [ ] 8. **回归与压测**：60 分钟视频连续编辑的写入次数和耗时；预览、导出、样式预设的回归；补齐端到端测试的截图。
 
 ## 验证计划
 
 - **每一项**：`pnpm lint`、`pnpm tsc -b --noEmit`、`pnpm check:host`、`pnpm test`、`pnpm test:architecture`；Host 侧的新逻辑配 Host 测试（含写入中断时 `.tmp` 不影响打开）。
-- **端到端测试**：`tests/e2e/features/F-0002.spec.ts`，随对应清单项一起提交。覆盖首页（加载中、出错、空、有项目、搜索无结果、拖入、正在打开）、编辑器保存状态（已保存、未保存、保存中、失败、冲突）、各对话框（未保存离开、冲突、版本过新）、媒体丢失横幅，明暗主题各一遍；Host 请求用 `page.route` 构造。
+- **端到端测试**：`tests/e2e/features/F-0002.spec.ts`，随对应清单项一起提交。AC-11 到 AC-27 每条至少一个测试，测试名带 AC 编号；明暗主题各一遍，断言 PRD 写明的文案和可操作的控件，并用 `shot()` 截图。Host 请求用 `page.route` 构造（加载中：挂起 `projects.list`；出错：返回错误；冲突：`saveEdits` 返回 `conflict`；版本过新：`open` 返回 `newer-version`；媒体丢失：`open` 返回 `media.status: 'missing'`）；AC-24 的桌面端关闭窗口在 Tauri 下手动验证。
 - **真实使用验证**（`pnpm tauri:dev`）：AC-2 用内置 sherpa-onnx 和一个 HTTP Provider 各跑一遍；AC-6 调小 `assetTtlHours` 并重启 Host；AC-7 移走原文件；AC-9 两个窗口同时打开一个项目；AC-10 用 `pnpm dev` 在浏览器里走一遍新建、编辑、重新打开。
 
 ## 验收标准覆盖
@@ -143,6 +143,12 @@ Web 端重新打开项目时，视频要从 Host 流式播放，需要支持 HTT
 | AC-8 | `formatVersion` 逐级迁移；更新的版本返回 `newer-version` 且不写文件 |
 | AC-9 | 项目级 `revision` + `baseRevision`；`SaveResult.conflict` → 暂停自动保存 + `SaveConflictDialog`；`force` / `duplicate` |
 | AC-10 | Web 端同一套 RPC；媒体走支持 Range 的项目媒体地址；`pnpm dev` 连本机 Host 验证 |
+| AC-11–AC-18 | `ProjectsHome` / `ProjectCard` 接 `projectStore` 的 `status`、`projects`、`openingId`、`creating`；拖入遮罩、搜索、视图切换是页面本地状态；创建成功的提示用现有 toast |
+| AC-19–AC-23 | `ProjectBreadcrumb` + `SaveStatusIndicator` 接 `projectStore.save`；「已保存」用 `fadeAfterMs` 淡出；快捷键文字按平台取 ⌘S / Ctrl+S |
+| AC-24 | `UnsavedChangesDialog`；桌面 `onCloseRequested`，Web 关标签页用 `beforeunload`，应用内离开与桌面一致 |
+| AC-25 | `SaveConflictDialog`：`force` 重存 / `projects.duplicate` / 取消保持暂停 |
+| AC-26 | `ProjectOpenErrorDialog`，`projects.open` 返回 `newer-version` 时显示，停留在首页 |
+| AC-27 | 播放器区域内的 `MediaMissingBanner` + `projects.relinkMedia`；媒体丢失时禁用导出视频 |
 
 ## 未决问题
 

@@ -66,6 +66,38 @@ approved_at: 2026-11-05
 - **AC-9**：当同一项目在两个窗口中打开，其中一个已保存后另一个再保存（包括自动保存）时，系统应检测到版本冲突、暂停该窗口的自动保存并提示用户（例如「项目已在别处修改，覆盖 / 另存为新项目 / 取消」），不静默覆盖。
 - **AC-10**：在 Web 端（开发模式，`pnpm dev` 连接本机 Host）下，AC-2、AC-3、AC-5 应同样成立，使用与桌面端相同的 RPC 和数据格式；桌面端保存的项目在连接同一 Host 的 Web 端能打开。
 
+### 界面状态
+
+> 2026-11-05 补充：需求流程取消了交互原型阶段，界面状态改由 PRD 的 AC 把关。下面 AC-11 到 AC-27 从原型记录（[03-ux.md](03-ux.md)）和 `src/locales/{zh_CN,en_US}.ts` 的 `components.project` 整理而来，是 AC-3、AC-4、AC-5、AC-7、AC-8、AC-9 在界面上的细化，不增加范围。
+
+以下各条在桌面端和 Web 端都成立（AC-24 注明的除外），明暗主题、中英文界面下都要成立；文案写成「中文 / English」，`{…}` 是占位符。E-02/6 的控件（排序、卡片「更多」菜单、重命名、删除、项目详情页）本需求不显示。
+
+**我的项目（首页）**
+
+- **AC-11 加载中**：读取项目列表期间，项目区显示卡片骨架屏（读屏标签「正在读取项目… / Loading projects…」），不显示项目数量；新建区（拖入、「选择文件」、「用示例视频试试」）照常可用。
+- **AC-12 读取失败**：读取项目列表失败时（例如 Host 未响应），项目区显示「读取项目失败 / Couldn't load projects」和「没能连接到 FlyCut Host，请稍后重试 / Couldn't reach FlyCut Host. Please try again.」以及「重试」按钮；点击「重试」重新读取，并回到加载中状态。
+- **AC-13 空**：没有任何项目时，显示「还没有项目 / No projects yet」和「拖入一个视频或音频，就会自动创建项目，转写和修改都会自动保存。 / Drop a video or audio file to create a project. Transcripts and edits are saved automatically.」，新建区是唯一的操作入口。
+- **AC-14 有项目**：标题显示「我的项目 / My projects」和「{count} 个项目 / {count} projects」。网格视图每张卡片显示缩略图（截图失败时显示占位图）、名称、视频时长、最后修改时间（1 分钟内显示「刚刚 / just now」）；正在转写的项目在缩略图底部显示进度条和「转写中 {progress}% / Transcribing {progress}%」，媒体不可用的项目显示「媒体丢失 / Media missing」。列表视图显示名称、视频、时长、修改时间、状态五列。网格 / 列表的选择在重新打开应用后保持。
+- **AC-15 搜索无结果**：在「搜索项目 / Search projects」框输入后实时按名称过滤；没有匹配时显示「没有找到「{query}」相关的项目 / No projects match "{query}"」；清空搜索框恢复完整列表。
+- **AC-16 拖入文件**：把文件拖到窗口上时，整页显示遮罩和「松开即可创建项目 / Release to create a project」；拖出窗口后遮罩消失，不创建项目。
+- **AC-17 正在创建**：松开文件、点「选择文件 / Choose file」选好文件或点「用示例视频试试 / Try a sample video」后，新建区显示转圈，「选择文件」不可点击；创建成功后提示「已创建项目「{name}」 / Created project "{name}"」并进入编辑器。
+- **AC-18 正在打开**：点击某个项目后，该卡片显示转圈和「正在打开… / Opening…」，其他卡片变灰且不可点击，直到进入编辑器或出现 AC-26 的对话框。
+
+**编辑器顶栏**
+
+- **AC-19 已保存**：顶栏品牌后显示「‹ 我的项目 / My projects」和项目名；保存成功后显示「已保存 · {time} / Saved · {time}」约 3 秒再淡出。点击「我的项目」返回首页（有未写入的修改时按 AC-4、AC-24 处理）。
+- **AC-20 有未保存的修改**：修改后、开始保存前显示「有未保存的修改 / Unsaved changes」，悬停提示「立即保存（{shortcut}） / Save now ({shortcut})」（macOS 为 ⌘S，其他平台为 Ctrl+S），点击立即保存。
+- **AC-21 保存中**：保存请求进行中显示「保存中… / Saving…」。
+- **AC-22 保存失败**：保存失败后显示「保存失败，重试中 / Save failed, retrying」，一直显示到保存成功；点击立即重试。
+- **AC-23 保存已暂停**：检测到版本冲突后显示「保存已暂停 / Saving paused」和「处理冲突 / Resolve」，悬停说明「项目在另一个窗口或设备上被修改，为避免覆盖已暂停自动保存 / The project was changed in another window or device. Auto-save is paused to avoid overwriting it.」；点击「处理冲突」打开 AC-25 的对话框。
+
+**对话框与提示**
+
+- **AC-24 未保存离开**：桌面端在 AC-4 的情况下弹出对话框，标题「还有修改没有保存 / Some changes are not saved」，说明「自动保存失败，关闭后这些修改会丢失。 / Auto-save failed. These changes will be lost if you close now.」，按钮「重试保存 / Retry save」「放弃修改 / Discard changes」「取消」；重试期间按钮显示「正在重试… / Retrying…」且三个按钮都不可点击，重试成功后继续原来的离开操作。Web 端关闭标签页时只能显示浏览器自带的离开确认框；在应用内返回首页或打开别的项目时，与桌面端相同。
+- **AC-25 版本冲突**：对话框标题「项目已在别处修改 / Project changed elsewhere」，说明「「{name}」在另一个窗口或设备上于 {time} 保存过。为避免覆盖对方的修改，自动保存已暂停。 / "{name}" was saved in another window or device at {time}. Auto-save is paused so their changes are not overwritten.」，提示「另存为新项目会保留两边的修改。 / Saving as a new project keeps both versions.」，按钮「用我的版本覆盖 / Overwrite with mine」「另存为新项目 / Save as new project」「取消」。覆盖后恢复自动保存；另存为新项目后进入新项目，原项目不变；取消后保持 AC-23 的状态。
+- **AC-26 版本过新**：打开格式版本更新的项目时，停留在首页并弹出对话框，标题「无法打开这个项目 / Can't open this project」，说明「「{name}」是用更新版本的 FlyCut 保存的。请升级后再打开，项目文件不会被改动。 / "{name}" was saved by a newer version of FlyCut. Update FlyCut to open it; the project files are left unchanged.」，只有「关闭」按钮。
+- **AC-27 媒体丢失**：进入媒体不可用的项目时，播放器区域显示「找不到这个项目的视频文件 / Can't find this project's video」、「原文件「{file}」可能已被移动或删除。字幕仍可查看、编辑和导出字幕文件。 / The file "{file}" may have been moved or deleted. Subtitles can still be viewed, edited and exported.」和「重新选择文件 / Choose file again」；字幕列表照常可编辑，导出视频不可用；重新选择文件成功后横幅消失、视频可以播放。
+
 ## 成功指标
 
 暂无匿名统计（E-08/5 未决定），以下靠维护者自用和用户反馈观察：
@@ -76,7 +108,9 @@ approved_at: 2026-11-05
 
 ## 拆分检查
 
-10 条验收标准；「做」里的各项都服务于「保存并重新打开」这一件事，单独拆出来都无法独立发布。不需要拆分。
+10 条行为验收标准（AC-1 到 AC-10）；「做」里的各项都服务于「保存并重新打开」这一件事，单独拆出来都无法独立发布。不需要拆分。
+
+AC-11 到 AC-27 是界面状态，按流程要求每个状态一条，都是前 10 条在界面上的细化，不是新的功能，不计入「约 10 条」的拆分判断（2026-11-05 补充）。
 
 ## 依赖与影响
 
