@@ -92,6 +92,42 @@
       "source": "https://x.com/isnail/status/2115609565043597572",
       "license": "未授权再分发，仅本地测试",
       "fetch": "yt-dlp -f \"bv*[height<=1080]+ba/b\" --merge-output-format mp4 -o tests/media/external/x-isnail-2115609565043597572.%(ext)s <source>"
+    },
+    {
+      "id": "bili-BV1Rex26dEWF",
+      "file": "external/bili-BV1Rex26dEWF.mp4",
+      "lang": "zh",
+      "scene": "中文单人口播（20 分钟，单机位室内，虚拟形象遮脸，画面已烧录字幕，成片已粗剪过，480p）",
+      "source": "https://www.bilibili.com/video/BV1Rex26dEWF/",
+      "license": "未授权再分发，仅本地测试",
+      "fetch": "node scripts/fetch-bilibili.mjs BV1Rex26dEWF tests/media/external/bili-BV1Rex26dEWF.mp4"
+    },
+    {
+      "id": "coscup-BWgFrY91F_I",
+      "file": "external/coscup-BWgFrY91F_I.mp4",
+      "lang": "zh",
+      "scene": "COSCUP 2026 华语演讲（28.5 分钟，单人、整场未剪辑、台湾口音，夹杂英文术语，语气词多；画面为幻灯片 + 讲者小窗 + 现场即时字幕；末尾约 2 分钟可能是问答）。标题：open-slide：從騎車時的靈感到衝上 GitHub Trending",
+      "source": "https://www.youtube.com/watch?v=BWgFrY91F_I",
+      "license": "CC BY（YouTube「Creative Commons Attribution license (reuse allowed)」，2026-11-05 在视频页核对）；署名：COSCUP",
+      "fetch": "yt-dlp --remote-components ejs:github --cookies-from-browser <浏览器> -f \"bv*[height<=720]+ba/b\" --merge-output-format mp4 -o \"tests/media/external/coscup-%(id)s.%(ext)s\" <source>（YouTube 未登录会被人机验证拦截，需用自己浏览器的 cookies）"
+    },
+    {
+      "id": "coscup-3UegVxMFyeo",
+      "file": "external/coscup-3UegVxMFyeo.mp4",
+      "lang": "zh",
+      "scene": "COSCUP 2026 华语演讲（31.4 分钟，单人、整场未剪辑、台湾口音，中英混说较多；画面为幻灯片 + 讲者小窗 + 现场即时字幕）。标题：AI模型的文化盲區─探討AI測試標準的開源現況觀察與難題",
+      "source": "https://www.youtube.com/watch?v=3UegVxMFyeo",
+      "license": "CC BY（YouTube「Creative Commons Attribution license (reuse allowed)」，2026-11-05 在视频页核对）；署名：COSCUP",
+      "fetch": "yt-dlp --remote-components ejs:github --cookies-from-browser <浏览器> -f \"bv*[height<=720]+ba/b\" --merge-output-format mp4 -o \"tests/media/external/coscup-%(id)s.%(ext)s\" <source>（YouTube 未登录会被人机验证拦截，需用自己浏览器的 cookies）"
+    },
+    {
+      "id": "coscup-bTc722zFo7o",
+      "file": "external/coscup-bTc722zFo7o.mp4",
+      "lang": "en",
+      "scene": "COSCUP 2026 英文演讲（28 分钟，单人、整场未剪辑，非母语英语；标题是中文但讲英文，不进中文评测）。标题：Agent 很方便，但有些 PR 我還是想自己寫",
+      "source": "https://www.youtube.com/watch?v=bTc722zFo7o",
+      "license": "CC BY（YouTube「Creative Commons Attribution license (reuse allowed)」，2026-11-05 在视频页核对）；署名：COSCUP",
+      "fetch": "yt-dlp --remote-components ejs:github --cookies-from-browser <浏览器> -f \"bv*[height<=720]+ba/b\" --merge-output-format mp4 -o \"tests/media/external/coscup-%(id)s.%(ext)s\" <source>（YouTube 未登录会被人机验证拦截，需用自己浏览器的 cookies）"
     }
   ],
   "clips": [

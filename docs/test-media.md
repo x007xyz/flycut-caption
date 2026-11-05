@@ -26,6 +26,10 @@ pnpm fetch:test-media
 | `clips/asr/zh-podcast-3min.mp4` | zh | 3 分钟 | 口语、语气词、数字（6 位数 / 1 万块） |
 | `nasa/nasa-punch-teleconference.webm` | en | 28 分钟 | 长音频性能、多人问答 |
 | `external/x-isnail-2115609565043597572.mp4` | zh | 46 分钟 | 长音频性能、多人对谈 |
+| `external/bili-BV1Rex26dEWF.mp4` | zh | 20 分钟 | 单人口播、口语；成片已粗剪，停顿少；画面烧录了字幕 |
+| `external/coscup-BWgFrY91F_I.mp4` | zh | 28.5 分钟 | 单人演讲、整场未剪辑、台湾口音、语气词多，CC BY（F-0001 主样本） |
+| `external/coscup-3UegVxMFyeo.mp4` | zh | 31.4 分钟 | 单人演讲、整场未剪辑、台湾口音、中英混说，CC BY（F-0001 主样本） |
+| `external/coscup-bTc722zFo7o.mp4` | en | 28 分钟 | 单人演讲、非母语英语，CC BY；标题是中文但讲英文 |
 
 用这批素材发现并已修复的问题（sidecar 的 `assemble_word_chunks` / `join_word_texts`，前端的 `shared/text/joinWords.ts`）：
 
@@ -63,7 +67,7 @@ pnpm fetch:test-media
 
 建议的流程：先删除几句话或一段静音，再导出双语的 SRT 和 MP4，检查主字幕和副字幕的时间轴是否仍然对齐。
 
-目前缺少真正的中英混说素材：`en-vlog-china-shamian` 里的中文很少，识别出来也是乱码，不适合拿来测这一项。
+中英混说素材：`external/coscup-3UegVxMFyeo.mp4`（中文为主、夹杂较多英文术语）。`en-vlog-china-shamian` 里的中文很少，识别出来也是乱码，不适合拿来测这一项。
 
 ## 4. 换语言配音（IndexTTS 类）
 
