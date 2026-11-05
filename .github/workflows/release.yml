@@ -104,53 +104,8 @@ jobs:
             src-tauri/target/release/bundle/**/*.AppImage
           if-no-files-found: error
 
-  publish-npm:
-    name: Publish to npm
-    # 仅在 tag 触发时发布到 npm；手动触发跳过
-    # 与桌面端 build/release 解耦：npm 失败不应阻塞 GitHub Release
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check NPM_TOKEN
-        # setup-node 的 registry-url 会写 .npmrc 读取 NODE_AUTH_TOKEN；
-        # 未配置 secrets.NPM_TOKEN 时 npm publish 会报 ENEEDAUTH
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          if [ -z "$NODE_AUTH_TOKEN" ]; then
-            echo "::error::仓库 Secrets 未配置 NPM_TOKEN，无法发布到 npm。"
-            echo "请到 Settings → Secrets and variables → Actions 添加 NPM_TOKEN"
-            echo "（npm Automation / Granular Access Token，需有 @flycut 作用域发布权限）"
-            exit 1
-          fi
-
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
-          registry-url: https://registry.npmjs.org
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Publish to npm
-        # prepublishOnly 钩子会自动跑 lint + build:lib 生成 dist/
-        run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
   release:
     name: Publish Release
-    # 只依赖桌面端构建；npm 发布失败不影响创建 GitHub Release
     needs: [build]
     # 仅在 tag 触发时发布到 Release；手动触发只产出 artifact
     if: startsWith(github.ref, 'refs/tags/v')
