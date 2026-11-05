@@ -4,6 +4,7 @@ import type { SubtitleChunk } from '@/types/subtitle';
 import { buildBurnAssContent, buildBurnTextSubtitleContent } from '@/subtitle/burnAss';
 import type { RemoteConnection } from '@/runtime/connection';
 import { isTauriRuntime } from '@/utils/runtime';
+import { loadMediaBlob } from '@/utils/mediaSource';
 
 export class HostExportEngine implements IVideoProcessingEngine {
   readonly name = 'FlyCut Host FFmpeg';
@@ -25,15 +26,8 @@ export class HostExportEngine implements IVideoProcessingEngine {
 
   async initialize(videoFile: VideoFile, onProgress?: (progress: VideoProcessingProgress) => void) {
     this.onProgress = onProgress;
-    // Desktop files opened through the native picker carry a path and an empty File placeholder.
-    let source: Blob = videoFile.file;
-    if (videoFile.path && !videoFile.file.size && isTauriRuntime()) {
-      const { convertFileSrc } = await import('@tauri-apps/api/core');
-      const response = await fetch(convertFileSrc(videoFile.path));
-      if (!response.ok) throw new Error('无法读取所选媒体文件');
-      source = await response.blob();
-    }
-    this.assetId = await this.connection.upload(source);
+    // Desktop paths and Host project media carry an empty File placeholder; read the bytes from where they live.
+    this.assetId = await this.connection.upload(await loadMediaBlob(videoFile));
     this.report('analyzing', 2, '媒体已上传到 Host');
   }
 

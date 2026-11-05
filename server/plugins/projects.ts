@@ -1,13 +1,14 @@
 import type { Context } from '@deepseek-ai/cordis';
 import { randomUUID } from 'node:crypto';
+import { spawn } from 'node:child_process';
 import { createReadStream } from 'node:fs';
-import { stat } from 'node:fs/promises';
-import { basename } from 'node:path';
+import { access, readFile, rename, rm, stat } from 'node:fs/promises';
+import { basename, join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { z } from 'zod';
 import {
-  duplicateSchema, projectCreateSchema, projectOpenSchema, relinkSchema, saveEditsSchema, saveTranscriptSchema, shellLinkSchema,
+  duplicateSchema, projectCreateSchema, projectOpenSchema, relinkSchema, saveEditsSchema, saveTranscriptSchema, shellLinkSchema, thumbnailSchema,
   type ProjectMedia, type ProjectOpenResult, type ProjectPlayback, type ProjectVideo, type SaveResult,
 } from '../../shared/projects';
 import { fingerprintFile, ProjectStore } from '../projects/store';
@@ -50,6 +51,24 @@ async function sendFile(req: IncomingMessage, res: ServerResponse, file: string,
   if (req.method === 'HEAD' || size === 0) { res.end(); return; }
   // Players abort ranged reads all the time; that is not a server error once headers are out.
   await pipeline(createReadStream(file, { start, end }), res).catch(() => res.destroy());
+}
+
+/** Runs FFmpeg and returns its stderr (FFmpeg prints stream info there). Rejects on a non-zero exit. */
+function runFfmpeg(ffmpeg: string, args: string[], timeoutMs = 30_000): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(ffmpeg, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+    let stderr = '';
+    child.stderr.on('data', chunk => { if (stderr.length < 64 * 1024) stderr += String(chunk); });
+    const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs);
+    child.on('error', error => { clearTimeout(timer); reject(error); });
+    child.on('close', code => { clearTimeout(timer); if (code === 0) resolve(stderr); else reject(Object.assign(new Error(`ffmpeg exited with ${code}`), { stderr })); });
+  });
+}
+
+/** `Duration: 00:03:21.45` in FFmpeg's input summary. */
+export function parseFfmpegDuration(stderr: string): number | undefined {
+  const match = /Duration:\s*(\d+):(\d{2}):(\d{2}(?:\.\d+)?)/.exec(stderr);
+  return match ? Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]) : undefined;
 }
 
 /**
@@ -101,12 +120,57 @@ export const projectsPlugin = { name: 'flycut-projects', inject: ['hostConfig', 
       return { status: 'saved', revision: project.revision, updatedAt: project.updatedAt };
     });
 
+  const bundledFfmpeg = join(ctx.hostConfig.resourceRoot, 'binaries', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
+  const ffmpegPath = async () => process.env.FFMPEG_PATH || await access(bundledFfmpeg).then(() => bundledFfmpeg).catch(() => 'ffmpeg');
+  const mediaPath = (projectId: string, media: ProjectMedia) => media.kind === 'stored' ? store.mediaFile(projectId, media.file) : media.path;
+
+  /**
+   * Cover frame (3 s in, or the first frame for shorter clips, 320 px wide) and the real duration (AC-14).
+   * Runs after the project exists; failures only mean the card shows a placeholder. Not a user edit: the revision stays.
+   */
+  const captureCover = async (projectId: string, videoId: string) => {
+    const project = await store.read(projectId);
+    const video = project.videos.find(item => item.id === videoId); if (!video) return;
+    const source = mediaPath(projectId, video.media);
+    const ffmpeg = await ffmpegPath();
+    const probe = await runFfmpeg(ffmpeg, ['-hide_banner', '-i', source, '-f', 'null', '-t', '0', '-']).catch(error => String((error as { stderr?: string }).stderr ?? ''));
+    const duration = parseFfmpegDuration(probe);
+    const target = join(store.videoDir(projectId, videoId), 'thumbnail.jpg');
+    const temporary = `${target}.${randomUUID()}.tmp.jpg`;
+    const at = duration !== undefined && duration < 3 ? 0 : 3;
+    try {
+      await runFfmpeg(ffmpeg, ['-hide_banner', '-y', '-ss', String(at), '-i', source, '-frames:v', '1', '-vf', 'scale=320:-2', '-q:v', '4', temporary]);
+      await rename(temporary, target);
+    } catch (error) { await rm(temporary, { force: true }); console.warn(`[projects] 截取封面失败（${projectId}）：`, error instanceof Error ? error.message : error); }
+    if (duration && Math.abs(duration - video.durationSeconds) > 0.5) {
+      await store.exclusive(projectId, async () => {
+        const latest = await store.read(projectId);
+        const item = latest.videos.find(entry => entry.id === videoId);
+        if (item) { item.durationSeconds = duration; await store.writeProject(latest); }
+      });
+    }
+  };
+  /** Covers being captured right now; tests and shutdown can wait for them. */
+  const covers = new Set<Promise<void>>();
+  const queueCover = (projectId: string, videoId: string) => {
+    const task = captureCover(projectId, videoId).catch(() => undefined).finally(() => covers.delete(task));
+    covers.add(task);
+  };
+  ctx.effect(() => () => { void Promise.allSettled([...covers]); });
+
+  ctx.effect(() => ctx.rpc.register('projects.thumbnail', thumbnailSchema, async ({ projectId, videoId }) => {
+    const file = join(store.videoDir(projectId, videoId), 'thumbnail.jpg');
+    const bytes = await readFile(file).catch(() => undefined);
+    return { dataUrl: bytes ? `data:image/jpeg;base64,${bytes.toString('base64')}` : null };
+  }));
+
   ctx.effect(() => ctx.rpc.register('projects.list', undefined, () => store.list((id, media) => mediaStatus(id, media))));
 
   ctx.effect(() => ctx.rpc.register('projects.create', projectCreateSchema, async input => {
     const project = await store.create({ name: input.name, video: { name: input.videoName, durationSeconds: input.durationSeconds },
       media: (projectId, videoId) => resolveMedia(projectId, videoId, input.media, input.videoName) });
     if ('mediaRef' in input.media) registered.delete(input.media.mediaRef);
+    queueCover(project.id, project.videos[0].id);
     return { projectId: project.id, videoId: project.videos[0].id, revision: project.revision, project };
   }));
 
@@ -159,7 +223,7 @@ export const projectsPlugin = { name: 'flycut-projects', inject: ['hostConfig', 
       const name = 'mediaRef' in source ? basename(registered.get(source.mediaRef)?.path ?? video.name) : video.name;
       video.media = await resolveMedia(projectId, videoId, source, name);
       if ('mediaRef' in source) registered.delete(source.mediaRef);
-    })));
+    }).then(result => { queueCover(projectId, videoId); return result; })));
 
   // Project media for players: Range requests, same token as RPC.
   ctx.effect(() => ctx.rpc.route({ method: 'GET', pattern: MEDIA_ROUTE, auth: 'client', async handle(req, res, match) {

@@ -1,5 +1,6 @@
 import { Combinator, MP4Clip, OffscreenSprite } from '@webav/av-cliper';
 import type { VideoSegment, VideoFile, VideoProcessingProgress } from '@/types/video';
+import { loadMediaBlob } from '@/utils/mediaSource';
 
 export interface ProcessingOptions {
   format?: 'mp4' | 'webm';
@@ -22,7 +23,7 @@ export class VideoProcessor {
       this.reportProgress('analyzing', 0, '正在初始化视频处理器...');
       
       // 创建视频片段 - 将File转换为ReadableStream
-      const fileStream = videoFile.file.stream();
+      const fileStream = (await loadMediaBlob(videoFile)).stream();
       this.videoClip = new MP4Clip(fileStream);
       await this.videoClip.ready;
 

@@ -65,15 +65,28 @@ function ProjectsHomePage({ version }: { version: string }) {
     return () => { disposed = true; unlisten?.(); };
   }, [handlePaths]);
 
+  // 封面按需读取（AC-14）；读不到就保持占位图
+  const [covers, setCovers] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let cancelled = false;
+    for (const item of items) {
+      if (!item.hasThumbnail || !item.videoId) continue;
+      void projects.thumbnail(item.id, item.videoId, item.revision).then(url => {
+        if (!cancelled && url) setCovers(previous => previous[item.id] === url ? previous : { ...previous, [item.id]: url });
+      });
+    }
+    return () => { cancelled = true; };
+  }, [items, projects]);
+
   const changeView = (next: ProjectsView) => { setView(next); try { localStorage.setItem(VIEW_KEY, next); } catch { /* 只是界面偏好 */ } };
   const summaries = useMemo<ProjectSummary[]>(() => {
     const needle = query.trim().toLowerCase();
     return items.filter(item => !needle || item.name.toLowerCase().includes(needle)).map(item => ({
       id: item.id, name: item.name, durationSeconds: item.durationSeconds, createdAt: item.createdAt, updatedAt: item.updatedAt,
-      videoCount: item.videoCount, mediaMissing: item.mediaMissing || undefined,
+      videoCount: item.videoCount, mediaMissing: item.mediaMissing || undefined, thumbnailUrl: covers[item.id],
       transcribing: transcribing?.projectId === item.id ? { progress: Math.round(transcribing.progress) } : undefined,
     }));
-  }, [items, query, transcribing]);
+  }, [items, query, transcribing, covers]);
 
   return (
     <ProjectsShell version={version} onOpenSettings={() => setSettingsOpen(true)}>

@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createHost } from '../../server/app';
 import { migrateProject } from '../../server/projects/migrations';
+import { parseFfmpegDuration } from '../../server/plugins/projects';
+import { spawnSync } from 'node:child_process';
 
 const TOKEN = 'test-credential';
 const SHELL = 'shell-secret';
@@ -223,4 +225,37 @@ test('F-0002/AC-7: choosing the file again restores playback and keeps the edits
     assert.deepEqual(opened.media, { status: 'ok', name: 'new-place.mp4', playback: { kind: 'path', path: moved } });
     assert.equal(opened.edits.chunks[0].text, '改过');
   } finally { await host.close(); }
+});
+
+const hasFfmpeg = spawnSync(process.env.FFMPEG_PATH || 'ffmpeg', ['-version']).status === 0;
+
+test('F-0002/AC-14: a new project gets a cover frame and its real duration; a file FFmpeg cannot read gets a placeholder', { skip: !hasFfmpeg && 'ffmpeg not installed' }, async () => {
+  const host = await setup();
+  const until = async <T>(read: () => Promise<T>, done: (value: T) => boolean) => {
+    for (let i = 0; i < 100; i++) { const value = await read(); if (done(value)) return value; await new Promise(resolve => setTimeout(resolve, 100)); }
+    return read();
+  };
+  try {
+    const assetId = (await (await fetch(`${host.base}/assets`, { method: 'POST', headers: { Authorization: `Bearer ${TOKEN}` },
+      body: await readFile(resolve('src/assets/demo.mp4')) })).json()).assetId;
+    // The client's duration probe can be wrong or missing; the Host corrects it without bumping the revision.
+    const { projectId, videoId } = await host.call('projects.create', { name: 'demo', videoName: 'demo.mp4', durationSeconds: 0, media: { assetId, mimeType: 'video/mp4' } });
+    const cover = await until(() => host.call('projects.thumbnail', { projectId, videoId }), value => !!value.dataUrl);
+    assert.match(cover.dataUrl, /^data:image\/jpeg;base64,\/9j\//);
+    const [item] = await until(() => host.call('projects.list'), list => list[0]?.durationSeconds > 0);
+    assert.ok(Math.abs(item.durationSeconds - 201) < 2, `duration ${item.durationSeconds}`);
+    assert.equal(item.hasThumbnail, true); assert.equal(item.revision, 1);
+
+    const junk = await host.upload('not a video');
+    const broken = await host.call('projects.create', { name: 'junk', videoName: 'junk.mp4', media: { assetId: junk } });
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    assert.deepEqual(await host.call('projects.thumbnail', { projectId: broken.projectId, videoId: broken.videoId }), { dataUrl: null });
+    assert.equal((await host.call('projects.open', { projectId: broken.projectId })).status, 'ok');
+  } finally { await host.close(); }
+});
+
+test('F-0002/AC-14: FFmpeg durations parse', () => {
+  assert.equal(parseFfmpegDuration('  Duration: 00:03:21.45, start: 0.000000, bitrate: 836 kb/s'), 201.45);
+  assert.equal(parseFfmpegDuration('  Duration: 01:00:00.00,'), 3600);
+  assert.equal(parseFfmpegDuration('Duration: N/A'), undefined);
 });

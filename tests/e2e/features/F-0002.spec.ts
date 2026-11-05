@@ -156,6 +156,18 @@ for (const theme of THEMES) {
   });
 }
 
+test('F-0002/AC-14 有封面的项目显示封面，读不到时显示占位图', async ({ page }) => {
+  // 1×1 的 JPEG
+  const jpeg = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=';
+  const host = await openHome(page, 'light', {
+    'projects.list': () => [projectItem(ONE, '有封面', { hasThumbnail: true }), projectItem(TWO, '封面坏了', { hasThumbnail: true })],
+    'projects.thumbnail': ({ projectId }: { projectId: string }) => ({ dataUrl: projectId === ONE ? jpeg : null }),
+  });
+  await expect(page.getByRole('button', { name: /有封面/ }).locator('img')).toHaveAttribute('src', jpeg);
+  await expect(page.getByRole('button', { name: /封面坏了/ }).locator('img')).toHaveCount(0);
+  expect(host.calls.filter(call => call.method === 'projects.thumbnail')).toHaveLength(2);
+});
+
 test('F-0002/AC-12 RPC 报错与网络失败一样显示读取失败', async ({ page }) => {
   await openHome(page, 'light', { 'projects.list': () => { throw new RpcError('disk full'); } });
   await expect(page.getByText('读取项目失败')).toBeVisible();

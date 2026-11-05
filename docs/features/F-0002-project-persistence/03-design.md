@@ -119,7 +119,7 @@ Web 端重新打开项目时，视频要从 Host 流式播放，需要支持 HTT
 - [x] 3. **保存失败与离开保护**：退避重试；回首页 / 打开别的项目前等待保存，失败弹 `UnsavedChangesDialog`；桌面 `onCloseRequested`，Web `beforeunload`。（AC-4、AC-22、AC-24）
 - [x] 4. **版本冲突**：`baseRevision` 校验与 `SaveResult.conflict`；暂停自动保存 + `SaveConflictDialog`；`force` 覆盖和 `projects.duplicate`。（AC-9、AC-23、AC-25）
 - [x] 5. **媒体丢失与格式版本**：打开时校验媒体，`MediaMissingBanner` + `projects.relinkMedia`；`server/projects/migrations.ts`，更新的版本返回 `newer-version` 并显示 `ProjectOpenErrorDialog`。（AC-7、AC-8、AC-26、AC-27）
-- [ ] 6. **项目封面**：新建时 FFmpeg 截封面帧、ffprobe 取时长；`projects.thumbnail` 与前端按 `projectId + revision` 缓存；截图失败显示占位图。（AC-5、AC-14）
+- [x] 6. **项目封面**：新建时 FFmpeg 截封面帧、ffprobe 取时长；`projects.thumbnail` 与前端按 `projectId + revision` 缓存；截图失败显示占位图。（AC-5、AC-14）
 - [ ] 7. **Web 端**：Gateway 的插件 HTTP 路由机制（带鉴权的 GET）；`/projects/<id>/media/<videoId>` 支持 Range；Web 端新建、打开、自动保存走同一套 RPC。（AC-10）
 - [ ] 8. **回归与压测**：60 分钟视频连续编辑的写入次数和耗时；预览、导出、样式预设的回归；补齐端到端测试的截图。
 

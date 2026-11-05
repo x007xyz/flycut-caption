@@ -23,6 +23,7 @@ interface SubtitleStruct {
   text: string;  // 字幕文本
 }
 import type { VideoFile, VideoSegment, VideoProcessingProgress } from '@/types/video';
+import { loadMediaBlob } from '@/utils/mediaSource';
 
 export class WebAVEngine implements IVideoProcessingEngine {
   readonly name = 'WebAV';
@@ -104,7 +105,7 @@ export class WebAVEngine implements IVideoProcessingEngine {
       this.reportProgress('initializing', 0, '初始化 WebAV 引擎...');
 
       // 使用原始工作方式：直接从文件创建stream
-      const fileStream = videoFile.file.stream();
+      const fileStream = (await loadMediaBlob(videoFile)).stream();
       this.videoClip = new MP4Clip(fileStream);
       await this.videoClip.ready;
 

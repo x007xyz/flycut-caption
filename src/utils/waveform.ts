@@ -1,11 +1,14 @@
 import type { VideoFile } from '@/types/video';
+import { isPlaceholderMedia, loadMediaBlob } from '@/utils/mediaSource';
 
 const waveformDecodeLimitBytes = 180 * 1024 * 1024;
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
 export async function extractWaveformPeaks(videoFile: VideoFile): Promise<number[] | null> {
   if (typeof window === 'undefined') return null;
-  if (!videoFile.file.size || videoFile.file.size > waveformDecodeLimitBytes) return null;
+  // 占位媒体（桌面路径、Host 项目媒体）按记录的大小判断，大小未知时不读，避免把大文件整份读进内存
+  const knownSize = videoFile.file.size || (isPlaceholderMedia(videoFile) ? videoFile.size : 0);
+  if (!knownSize || knownSize > waveformDecodeLimitBytes) return null;
 
   const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
   if (!AudioContextClass) return null;
@@ -13,7 +16,9 @@ export async function extractWaveformPeaks(videoFile: VideoFile): Promise<number
   const audioContext = new AudioContextClass();
 
   try {
-    const arrayBuffer = await videoFile.file.arrayBuffer();
+    const blob = await loadMediaBlob(videoFile);
+    if (blob.size > waveformDecodeLimitBytes) return null;
+    const arrayBuffer = await blob.arrayBuffer();
     const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
     const sampleCount = Math.round(clamp(audioBuffer.duration * 24, 320, 2400));
     const blockSize = Math.max(1, Math.floor(audioBuffer.length / sampleCount));

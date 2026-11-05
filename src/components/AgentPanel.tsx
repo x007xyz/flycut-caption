@@ -5,6 +5,7 @@ import { processAudioForASR } from '@/utils/audioUtils';
 import { encodePcmWav } from '../../shared/asr/apiProtocol';
 import type { AgentMessage, AsrInput } from '../../shared/protocol';
 import { Button } from '@/components/ui/button';
+import { loadMediaBuffer } from '@/utils/mediaSource';
 
 export function AgentPanel() {
   const { connection, stores } = useClientRuntime();
@@ -25,11 +26,7 @@ export function AgentPanel() {
     try {
       let asr: AsrInput | undefined;
       if (app.videoFile) {
-        let buffer: ArrayBuffer;
-        if (app.videoFile.path && !app.videoFile.file.size) {
-          const { convertFileSrc } = await import('@tauri-apps/api/core');
-          buffer = await fetch(convertFileSrc(app.videoFile.path)).then(response => response.arrayBuffer());
-        } else buffer = await app.videoFile.file.arrayBuffer();
+        const buffer = await loadMediaBuffer(app.videoFile);
         const samples = await processAudioForASR(buffer); current.signal.throwIfAborted();
         const assetId = await connection.upload(encodePcmWav(samples)); uploaded = assetId;
         if (app.asrModel) asr = { ...app.asrModel, assetId, language: app.language, options: app.asrOptions[modelKey(app.asrModel)] };

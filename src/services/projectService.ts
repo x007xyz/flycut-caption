@@ -94,6 +94,18 @@ export class ProjectService {
 
   retryList() { this.state.set({ listStatus: 'loading', projects: [] }); return this.refresh(); }
 
+  /** 封面（AC-14）：按 `projectId + revision` 缓存，项目改过之后重新取。没有封面时返回 null，卡片显示占位图。 */
+  private thumbnails = new Map<string, Promise<string | null>>();
+  thumbnail(projectId: string, videoId: string, revision: number): Promise<string | null> {
+    const key = `${projectId}:${revision}`;
+    let cached = this.thumbnails.get(key);
+    if (!cached) {
+      cached = this.connection.call('projects.thumbnail', { projectId, videoId }).then(result => result.dataUrl, () => null);
+      this.thumbnails.set(key, cached);
+    }
+    return cached;
+  }
+
   /** 拖入、选择文件或示例视频：在 Host 上建项目并进入编辑器（AC-1、AC-17）。 */
   async createFromMedia(videoFile: VideoFile): Promise<{ projectId: string; videoId: string; name: string } | null> {
     const { set } = this.state;
@@ -123,7 +135,7 @@ export class ProjectService {
       const result: ProjectOpenResult = await this.connection.call('projects.open', { projectId, videoId });
       if (result.status === 'newer-version') { set({ newerVersion: { name: result.name } }); this.navigate({ name: 'home' }); return; }
       const { project, video, transcript, edits, media } = result;
-      const videoFile = media.status === 'ok' && media.playback ? this.playbackFile(media.playback, media.name, video.durationSeconds) : null;
+      const videoFile = media.status === 'ok' && media.playback ? this.playbackFile(media.playback, media.name, video.durationSeconds, video.media.size) : null;
       if (videoFile) this.owners.set(videoFile, { projectId, videoId: video.id });
       this.loadEditor({ projectId, videoId: video.id, name: project.name, revision: project.revision, hasTranscript: video.hasTranscript,
         media: { status: media.status, name: media.name } }, videoFile, transcript ? mergeEdits(transcript as unknown as SubtitleTranscript, edits) : undefined,
@@ -300,7 +312,7 @@ export class ProjectService {
     const result = await this.enqueue(() => this.connection.call('projects.relinkMedia', { projectId: current.projectId, videoId: current.videoId, media }));
     const opened = await this.connection.call('projects.open', { projectId: current.projectId, videoId: current.videoId });
     if (opened.status !== 'ok' || opened.media.status !== 'ok' || !opened.media.playback) throw new Error('重新选择的文件仍无法使用');
-    const playable = this.playbackFile(opened.media.playback, opened.media.name, opened.video.durationSeconds);
+    const playable = this.playbackFile(opened.media.playback, opened.media.name, opened.video.durationSeconds, opened.video.media.size);
     this.owners.set(playable, { projectId: current.projectId, videoId: current.videoId });
     this.state.set({ current: { ...this.state.current!, revision: result.revision, media: { status: 'ok', name: opened.media.name } } });
     // 只换媒体，不动字幕和阶段
@@ -366,12 +378,13 @@ export class ProjectService {
     return { assetId: await this.connection.upload(videoFile.file), mimeType: videoFile.type };
   }
 
-  private playbackFile(playback: ProjectPlayback, name: string, duration: number): VideoFile {
+  /** `size` 来自项目记录：波形等功能据此决定要不要整份读取媒体。 */
+  private playbackFile(playback: ProjectPlayback, name: string, duration: number, size: number): VideoFile {
     const type = mimeFromName(name);
     if (playback.kind === 'path') {
-      return { file: new File([], name, { type }), url: tauriFileUrl(playback.path), duration, size: 0, type, name, path: playback.path };
+      return { file: new File([], name, { type }), url: tauriFileUrl(playback.path), duration, size, type, name, path: playback.path };
     }
-    return { file: new File([], name, { type }), url: this.connection.resourceUrl(playback.path), duration, size: 0, type, name, remotePath: playback.path };
+    return { file: new File([], name, { type }), url: this.connection.resourceUrl(playback.path), duration, size, type, name, remotePath: playback.path };
   }
 
   private leaveEditor() {

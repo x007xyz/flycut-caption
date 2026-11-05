@@ -6,6 +6,7 @@ import { useTranslation } from '@/contexts/LocaleProvider';
 import type { ASRProgress, SubtitleChunk } from '@/types/subtitle';
 import type { VideoFile } from '@/types/video';
 import { useClientRuntime } from '@/runtime/context';
+import { loadMediaBuffer } from '@/utils/mediaSource';
 
 export interface UseASRReturn { isASRLoading: boolean; asrProgress: ASRProgress | null; startASR: (videoFile: VideoFile) => Promise<void> }
 export function useASR(options: { onSubtitleGenerated?: (subtitles: SubtitleChunk[]) => void } = {}): UseASRReturn {
@@ -25,18 +26,8 @@ export function useASR(options: { onSubtitleGenerated?: (subtitles: SubtitleChun
     active.current = true; app.setLoading(true);
     try {
       if (!app.asrModel) throw new Error('请先在「设置 → 模型」中下载或添加一个识别模型');
-      let buffer: ArrayBuffer;
-      if (videoFile.remotePath && !videoFile.file.size) {
-        // Media stored in a Host project (F-0002): read it back over the project media route.
-        const response = await fetch(videoFile.url);
-        if (!response.ok) throw new Error('无法读取项目媒体');
-        buffer = await response.arrayBuffer();
-      } else if (videoFile.path && !videoFile.file.size) {
-        const { convertFileSrc } = await import('@tauri-apps/api/core');
-        const response = await fetch(convertFileSrc(videoFile.path));
-        if (!response.ok) throw new Error('无法读取本地媒体');
-        buffer = await response.arrayBuffer();
-      } else buffer = await videoFile.file.arrayBuffer();
+      // Browser files, desktop paths and Host project media (F-0002)
+      const buffer = await loadMediaBuffer(videoFile);
       const transcript = await asrService.transcribeAudio(buffer, { ...app.asrModel, language: app.language,
         options: app.asrOptions[modelKey(app.asrModel)] });
       // Project mode saves the result to the project the video belongs to (F-0002/AC-2).
