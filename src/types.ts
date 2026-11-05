@@ -91,6 +91,8 @@ export interface FlyCutCaptionProps {
   onLanguageChange?: (language: string) => void
   /** Extra content in the workstation header after the brand, e.g. project breadcrumb and save status */
   headerSlot?: ReactNode
+  /** Replaces the empty player (upload / sample buttons) while no media is loaded, e.g. a "media missing" banner */
+  playerPlaceholder?: ReactNode
   /**
    * Takes over every file the user chooses, drops or loads as a sample (project mode creates a project first).
    * `VideoFile.path` is set for desktop files picked in the native dialog.

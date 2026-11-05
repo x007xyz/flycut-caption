@@ -104,7 +104,9 @@ export const saveTranscriptSchema = z.object({ projectId: projectIdSchema, video
   model: modelRefSchema.optional(), durationSeconds: z.number().min(0).optional() });
 export const saveEditsSchema = z.object({ projectId: projectIdSchema, videoId: z.uuid(), edits: projectEditsSchema,
   baseRevision: z.number().int().min(0), force: z.boolean().default(false) });
-export const duplicateSchema = z.object({ projectId: projectIdSchema, videoId: z.uuid(), edits: projectEditsSchema.optional() });
+/** Save as new project (AC-25): copies the project, then writes `edits` (this window's version) into the copy. */
+export const duplicateSchema = z.object({ projectId: projectIdSchema, videoId: z.uuid(), name: z.string().trim().min(1).max(200),
+  edits: projectEditsSchema.optional() });
 export const relinkSchema = z.object({ projectId: projectIdSchema, videoId: z.uuid(), media: mediaSourceSchema });
 export const thumbnailSchema = z.object({ projectId: projectIdSchema, videoId: z.uuid() });
 /** Desktop shell only (`/shell/projects/media`): registers a file the user picked. */

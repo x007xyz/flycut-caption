@@ -115,10 +115,10 @@ Web 端重新打开项目时，视频要从 Host 流式播放，需要支持 HTT
 按顺序做，每项从 Host 到界面打通、带测试，做完提交一次并勾选。第 1 项定下共用契约（`shared/projects.ts`、`RpcMethods`、ADR-0001 的存储格式），E-02/6、E-02/7、E-02/8 只能在此基础上扩展。
 
 - [x] 1. **新建、转写、重新打开（桌面端）**：`shared/projects.ts` 和 `RpcMethods` 声明；`projects` 插件的 `create` / `open` / `list` / `saveTranscript`（串行写、`.tmp` → `rename`、`revision`）和 `AssetService.claim`；ADR-0002 的 `link_project_media` 与外壳登记接口，含三项安全测试；前端 `projectService`、`projectStore`、`ProjectsApp` 与 hash 路由；首页接真实数据，打开项目写入 stores、不触发 ASR。（AC-1、AC-2、AC-5、AC-6、AC-11–AC-18、AC-19 的面包屑和返回）
-- [ ] 2. **自动保存**：样式对和画幅移进 store；`projects.saveEdits`；`useProjectAutosave`（1.5 秒停顿、`Cmd/Ctrl+S`、单请求在途）；编辑器顶栏 `ProjectBreadcrumb` + `SaveStatusIndicator`（「已保存」3 秒后淡出）。（AC-3、AC-19–AC-21）
-- [ ] 3. **保存失败与离开保护**：退避重试；回首页 / 打开别的项目前等待保存，失败弹 `UnsavedChangesDialog`；桌面 `onCloseRequested`，Web `beforeunload`。（AC-4、AC-22、AC-24）
-- [ ] 4. **版本冲突**：`baseRevision` 校验与 `SaveResult.conflict`；暂停自动保存 + `SaveConflictDialog`；`force` 覆盖和 `projects.duplicate`。（AC-9、AC-23、AC-25）
-- [ ] 5. **媒体丢失与格式版本**：打开时校验媒体，`MediaMissingBanner` + `projects.relinkMedia`；`server/projects/migrations.ts`，更新的版本返回 `newer-version` 并显示 `ProjectOpenErrorDialog`。（AC-7、AC-8、AC-26、AC-27）
+- [x] 2. **自动保存**：样式对和画幅移进 store；`projects.saveEdits`；`useProjectAutosave`（1.5 秒停顿、`Cmd/Ctrl+S`、单请求在途）；编辑器顶栏 `ProjectBreadcrumb` + `SaveStatusIndicator`（「已保存」3 秒后淡出）。（AC-3、AC-19–AC-21）
+- [x] 3. **保存失败与离开保护**：退避重试；回首页 / 打开别的项目前等待保存，失败弹 `UnsavedChangesDialog`；桌面 `onCloseRequested`，Web `beforeunload`。（AC-4、AC-22、AC-24）
+- [x] 4. **版本冲突**：`baseRevision` 校验与 `SaveResult.conflict`；暂停自动保存 + `SaveConflictDialog`；`force` 覆盖和 `projects.duplicate`。（AC-9、AC-23、AC-25）
+- [x] 5. **媒体丢失与格式版本**：打开时校验媒体，`MediaMissingBanner` + `projects.relinkMedia`；`server/projects/migrations.ts`，更新的版本返回 `newer-version` 并显示 `ProjectOpenErrorDialog`。（AC-7、AC-8、AC-26、AC-27）
 - [ ] 6. **项目封面**：新建时 FFmpeg 截封面帧、ffprobe 取时长；`projects.thumbnail` 与前端按 `projectId + revision` 缓存；截图失败显示占位图。（AC-5、AC-14）
 - [ ] 7. **Web 端**：Gateway 的插件 HTTP 路由机制（带鉴权的 GET）；`/projects/<id>/media/<videoId>` 支持 Range；Web 端新建、打开、自动保存走同一套 RPC。（AC-10）
 - [ ] 8. **回归与压测**：60 分钟视频连续编辑的写入次数和耗时；预览、导出、样式预设的回归；补齐端到端测试的截图。

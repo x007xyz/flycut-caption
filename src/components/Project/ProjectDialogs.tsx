@@ -20,7 +20,7 @@ export interface UnsavedChangesDialogProps {
 export function UnsavedChangesDialog({ open, retrying, onRetry, onDiscard, onCancel }: UnsavedChangesDialogProps) {
   const { t, tp } = useProjectText();
   return (
-    <Dialog open={open} onOpenChange={next => { if (!next) onCancel(); }}>
+    <Dialog open={open} onOpenChange={next => { if (!next && !retrying) onCancel(); }}>
       <DialogContent showCloseButton={false} className="sm:max-w-md">
         <DialogHeader className="flex-row items-start gap-3 px-6 pt-6">
           <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-aimu-coral" />
@@ -30,7 +30,8 @@ export function UnsavedChangesDialog({ open, retrying, onRetry, onDiscard, onCan
           </div>
         </DialogHeader>
         <DialogFooter className="px-6 pt-4 pb-6">
-          <Button variant="ghost" onClick={onCancel}>{t('common.cancel')}</Button>
+          {/* AC-24：重试期间三个按钮都不可点 */}
+          <Button variant="ghost" onClick={onCancel} disabled={retrying}>{t('common.cancel')}</Button>
           <Button variant="outline" className="text-aimu-coral" onClick={onDiscard} disabled={retrying}>{tp('unsavedDiscard')}</Button>
           <Button onClick={onRetry} disabled={retrying}>
             {retrying && <Loader2 className="h-4 w-4 animate-spin" />}{retrying ? tp('unsavedRetrying') : tp('unsavedRetry')}
@@ -97,7 +98,7 @@ export function ProjectOpenErrorDialog({ open, projectName, onClose }: ProjectOp
           </div>
         </DialogHeader>
         <DialogFooter className="px-6 pt-4 pb-6">
-          <Button onClick={onClose}>{t('common.ok')}</Button>
+          <Button onClick={onClose}>{t('common.close')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

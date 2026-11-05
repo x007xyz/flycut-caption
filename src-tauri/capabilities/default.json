@@ -5,6 +5,7 @@
   "permissions": [
     "core:default",
     "core:path:default",
-    "core:event:default"
+    "core:event:default",
+    "core:window:allow-destroy"
   ]
 }

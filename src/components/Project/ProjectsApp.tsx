@@ -1,6 +1,6 @@
 // 项目模式的应用（F-0002）：同一个前端 Runtime 里，按地址栏在「我的项目」和编辑器之间切换。
 // 展示组件在同目录；这里只负责接 `ctx.projects` 和 `stores.project`。
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { LocaleProvider } from '@/contexts/LocaleProvider';
 import { ClientRuntime, PluginSlot } from '@/runtime/ui';
@@ -9,7 +9,7 @@ import { ThemeInitializer } from '@/components/ThemeInitializer';
 import { ToastContainer } from '@/components/MessageCenter';
 import { SettingsDialog } from '@/components/ProcessingPanel/SettingsDialog';
 import { FlyCutCaptionContent } from '@/FlyCutCaption';
-import { useMediaLoader } from '@/hooks/useMediaLoader';
+import { useMediaLoader, videoFileFromFile } from '@/hooks/useMediaLoader';
 import { useProjectStore } from '@/stores/projectStore';
 import { useThemeStore } from '@/stores/themeStore';
 import { projectsClientPlugin } from '@/services/projectService';
@@ -19,9 +19,9 @@ import type { VideoFile } from '@/types/video';
 import { ProjectsShell } from './ProjectsShell';
 import { ProjectsHome } from './ProjectsHome';
 import { ProjectBreadcrumb } from './ProjectBreadcrumb';
-import { ProjectOpenErrorDialog } from './ProjectDialogs';
+import { MediaMissingBanner, ProjectOpenErrorDialog, SaveConflictDialog, UnsavedChangesDialog } from './ProjectDialogs';
 import type { ProjectSummary, ProjectsView } from './types';
-import { fill, saveShortcutLabel } from './format';
+import { fill, isMacPlatform, saveShortcutLabel } from './format';
 import { useProjectText } from './useProjectText';
 
 const CLIENT_PLUGINS = [projectsClientPlugin];
@@ -89,15 +89,102 @@ function ProjectsHomePage({ version }: { version: string }) {
   );
 }
 
+/** 「已保存」显示多久后淡出（AC-19，维护者 2026-11-05 选定约 3 秒） */
+const SAVED_FADE_MS = 3000;
+
 function EditorBreadcrumb() {
   const { projects } = useClientRuntime();
   const current = useProjectStore(state => state.current);
   const save = useProjectStore(state => state.save);
   if (!current) return null;
   return (
-    <ProjectBreadcrumb projectName={current.name} status={save.status} savedAt={save.savedAt} shortcut={saveShortcutLabel}
-      onBack={() => projects.goHome()} onSaveNow={() => projects.saveNow()} onRetry={() => projects.saveNow()}
+    <ProjectBreadcrumb projectName={current.name} status={save.status} savedAt={save.savedAt} shortcut={saveShortcutLabel} fadeAfterMs={SAVED_FADE_MS}
+      onBack={() => { void projects.goHome(); }} onSaveNow={() => { void projects.flush(); }} onRetry={() => { void projects.flush(); }}
       onResolveConflict={() => projects.openConflict()} />
+  );
+}
+
+/** 媒体丢失（AC-27）：播放器区域的横幅，重新选择文件后恢复播放。 */
+function MediaMissingPlaceholder() {
+  const { projects } = useClientRuntime();
+  const current = useProjectStore(state => state.current);
+  const input = useRef<HTMLInputElement>(null);
+  const relink = useCallback(async (videoFile: VideoFile | null) => {
+    if (!videoFile) return;
+    try { await projects.relinkMedia(videoFile); }
+    catch (error) { toast.error(error instanceof Error ? error.message : String(error)); }
+  }, [projects]);
+  const choose = useCallback(async () => {
+    if (!isTauriRuntime()) { input.current?.click(); return; }
+    const { invoke } = await import('@tauri-apps/api/core');
+    const path = await invoke<string | null>('pick_media_file');
+    if (!path) return;
+    const name = path.split(/[/\\]/).pop() || 'video';
+    await relink({ file: new File([], name), url: '', duration: 0, size: 0, type: '', name, path });
+  }, [relink]);
+  if (current?.media.status !== 'missing') return null;
+  return (
+    <>
+      <input ref={input} type="file" className="hidden" data-testid="relink-file-input" accept="video/*,audio/*"
+        onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void videoFileFromFile(file).then(relink); }} />
+      <MediaMissingBanner fileName={current.media.name} onRelocate={() => { void choose(); }} />
+    </>
+  );
+}
+
+/** 编辑器里的对话框和快捷键（AC-3 ⌘S、AC-24、AC-25），以及关闭窗口前的保护（AC-4）。 */
+function EditorGuards() {
+  const { projects } = useClientRuntime();
+  const current = useProjectStore(state => state.current);
+  const save = useProjectStore(state => state.save);
+  const conflictDialog = useProjectStore(state => state.conflictDialog);
+  const unsavedDialog = useProjectStore(state => state.unsavedDialog);
+  const { language, tp } = useProjectText();
+  const conflictTime = save.conflictAt ? new Date(save.conflictAt).toLocaleString(language, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== 's' || event.shiftKey || event.altKey || !(isMacPlatform ? event.metaKey : event.ctrlKey)) return;
+      event.preventDefault();
+      void projects.flush();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [projects]);
+
+  // 关闭窗口：桌面端拦截后先保存，失败弹 AC-24 对话框；Web 端只能用浏览器自带的离开确认
+  useEffect(() => {
+    if (isTauriRuntime()) {
+      let unlisten: (() => void) | undefined; let disposed = false;
+      void import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
+        const appWindow = getCurrentWindow();
+        return appWindow.onCloseRequested(async event => {
+          if (!projects.hasUnsavedChanges()) return;
+          event.preventDefault();
+          if (await projects.confirmLeave()) await appWindow.destroy();
+        });
+      }).then(off => { if (disposed) off(); else unlisten = off; });
+      return () => { disposed = true; unlisten?.(); };
+    }
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!projects.hasUnsavedChanges()) return;
+      void projects.flush();
+      event.preventDefault();
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [projects]);
+
+  return (
+    <>
+      <SaveConflictDialog open={conflictDialog && !!current} projectName={current?.name ?? ''} otherSavedAt={conflictTime}
+        onOverwrite={() => { void projects.resolveConflict('overwrite'); }}
+        onSaveAsNew={() => { void projects.resolveConflict('save-as-new', fill(tp('copyName'), { name: current?.name ?? '' })).catch(error => toast.error(error instanceof Error ? error.message : String(error))); }}
+        onCancel={() => { void projects.resolveConflict('cancel'); }} />
+      <UnsavedChangesDialog open={!!unsavedDialog} retrying={unsavedDialog?.retrying}
+        onRetry={() => { void projects.resolveUnsaved('retry'); }} onDiscard={() => { void projects.resolveUnsaved('discard'); }}
+        onCancel={() => { void projects.resolveUnsaved('cancel'); }} />
+    </>
   );
 }
 
@@ -120,7 +207,10 @@ function ProjectsRoot(props: FlyCutCaptionProps) {
   return (
     <div className={`flycut-caption-wrapper ${theme} h-screen`}>
       {route.name === 'editor'
-        ? <FlyCutCaptionContent {...props} headerSlot={<EditorBreadcrumb />} onMedia={create} />
+        ? <>
+          <FlyCutCaptionContent {...props} headerSlot={<EditorBreadcrumb />} playerPlaceholder={<MediaMissingPlaceholder />} onMedia={create} />
+          <EditorGuards />
+        </>
         : <ProjectsHomePage version={__FLYCUT_VERSION__} />}
       <ProjectOpenErrorDialog open={!!newerVersion} projectName={newerVersion?.name ?? ''} onClose={() => setProject({ newerVersion: null })} />
     </div>

@@ -7,7 +7,7 @@ import { pipeline } from 'node:stream/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { z } from 'zod';
 import {
-  projectCreateSchema, projectOpenSchema, saveTranscriptSchema, shellLinkSchema,
+  duplicateSchema, projectCreateSchema, projectOpenSchema, relinkSchema, saveEditsSchema, saveTranscriptSchema, shellLinkSchema,
   type ProjectMedia, type ProjectOpenResult, type ProjectPlayback, type ProjectVideo, type SaveResult,
 } from '../../shared/projects';
 import { fingerprintFile, ProjectStore } from '../projects/store';
@@ -129,6 +129,36 @@ export const projectsPlugin = { name: 'flycut-projects', inject: ['hostConfig', 
       await store.writeTranscript(projectId, videoId, transcript);
       video.hasTranscript = true; video.model = model;
       if (durationSeconds || transcript.duration) video.durationSeconds = durationSeconds || transcript.duration;
+    })));
+
+  // Autosave (AC-3). A stale `baseRevision` means another window or device saved first (AC-9): report it, write nothing.
+  ctx.effect(() => ctx.rpc.register('projects.saveEdits', saveEditsSchema, ({ projectId, videoId, edits, baseRevision, force }) =>
+    store.exclusive(projectId, async (): Promise<SaveResult> => {
+      const project = await store.read(projectId);
+      if (!project.videos.some(item => item.id === videoId)) throw new Error('项目里没有这个视频');
+      if (project.revision !== baseRevision && !force) return { status: 'conflict', revision: project.revision, updatedAt: project.updatedAt };
+      await store.writeEdits(projectId, videoId, edits);
+      project.revision += 1; project.updatedAt = new Date().toISOString();
+      await store.writeProject(project);
+      return { status: 'saved', revision: project.revision, updatedAt: project.updatedAt };
+    })));
+
+  // Save as new project (AC-25): the original keeps the other window's version.
+  ctx.effect(() => ctx.rpc.register('projects.duplicate', duplicateSchema, ({ projectId, videoId, name, edits }) =>
+    store.exclusive(projectId, async () => {
+      const copy = await store.duplicate(projectId, name);
+      if (!copy.videos.some(item => item.id === videoId)) throw new Error('项目里没有这个视频');
+      if (edits) await store.writeEdits(copy.id, videoId, edits);
+      return { projectId: copy.id, videoId, revision: copy.revision };
+    })));
+
+  // Choose the file again after it went missing (AC-7). Subtitles and edits stay as they are.
+  ctx.effect(() => ctx.rpc.register('projects.relinkMedia', relinkSchema, ({ projectId, videoId, media: source }) =>
+    commit(projectId, async project => {
+      const video = project.videos.find(item => item.id === videoId); if (!video) throw new Error('项目里没有这个视频');
+      const name = 'mediaRef' in source ? basename(registered.get(source.mediaRef)?.path ?? video.name) : video.name;
+      video.media = await resolveMedia(projectId, videoId, source, name);
+      if ('mediaRef' in source) registered.delete(source.mediaRef);
     })));
 
   // Project media for players: Range requests, same token as RPC.

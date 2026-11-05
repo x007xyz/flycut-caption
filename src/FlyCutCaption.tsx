@@ -19,7 +19,6 @@ import { ThemeInitializer } from '@/components/ThemeInitializer';
 import { ToastContainer } from '@/components/MessageCenter';
 import { SubtitleSettings } from '@/components/SubtitleSettings';
 import {
-  defaultSubtitleStylePair,
   registerSubtitleFonts,
   serializeSubtitleExport,
   getExportFilename,
@@ -27,7 +26,6 @@ import {
   getExportFileTypes,
   applyAspectPreset,
   inferAspectPreset,
-  type SubtitleStylePair,
   type SubtitleExportFormat,
   type SubtitleDisplayMode,
 } from '@/subtitle';
@@ -311,7 +309,10 @@ export function FlyCutCaptionContent(props: FlyCutCaptionProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   // 字幕样式状态：主/副字幕独立样式对，位置（底边距/比例）共享 primary
-  const [subtitleStylePair, setSubtitleStylePair] = useState<SubtitleStylePair>(() => defaultSubtitleStylePair);
+  // 存在 appStore 里，项目模式的自动保存要订阅它（F-0002/AC-3）
+  const subtitleStylePair = useAppStore(state => state.subtitleStylePair);
+  const setSubtitleStylePair = useAppStore(state => state.setSubtitleStylePair);
+  const subtitleStyleRestored = useAppStore(state => state.subtitleStyleRestored);
   // 显示模式（控制播放器预览），持久化在 appStore
   const display = useAppStore(state => state.display);
   const setDisplay = useAppStore(state => state.setDisplay);
@@ -445,6 +446,8 @@ export function FlyCutCaptionContent(props: FlyCutCaptionProps) {
                         onPrimaryStyleChange={(s) => setSubtitleStylePair(prev => ({ ...prev, primary: s }))}
                         onVideoDimensionsChange={(dimensions) => {
                           setVideoMeta(dimensions);
+                          // 从项目里载入的样式保留用户选的画幅，不按画面尺寸重新推断
+                          if (subtitleStyleRestored) return;
                           const preset = inferAspectPreset(dimensions.width, dimensions.height);
                           // aspectPreset 仅作用于 primary（位置/比例共享）
                           setSubtitleStylePair((prev) => (
@@ -455,7 +458,7 @@ export function FlyCutCaptionContent(props: FlyCutCaptionProps) {
                         }}
                       />
                     </div>
-                  ) : (
+                  ) : props.playerPlaceholder ? props.playerPlaceholder : (
                     <div className="flex h-full w-full flex-col items-center justify-center gap-4 p-8">
                       <button
                         onClick={handleUploadClick}

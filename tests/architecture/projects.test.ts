@@ -155,3 +155,72 @@ test('F-0002/AC-8: migrations run step by step and refuse gaps', () => {
   assert.throws(() => migrateProject({ formatVersion: 1 }, {}, 2), /迁移/);
   assert.throws(() => migrateProject({ formatVersion: 3, name: 'n' }, table, 2), /更新/);
 });
+
+const edits = (text: string) => ({ chunks: [{ id: 's1', text, timestamp: [0, 1] }, { id: 's2', text: '世界', timestamp: [1, 2], deleted: true }],
+  deletedWordIds: ['w1'], stylePair: { primary: { aspectPreset: '9:16' }, secondary: {} } });
+
+test('F-0002/AC-3 AC-5: autosaved edits come back on open without touching the transcript', async () => {
+  const host = await setup();
+  try {
+    const assetId = await host.upload('x');
+    const { projectId, videoId } = await host.call('projects.create', { name: 'e', videoName: 'e.mp4', media: { assetId } });
+    const saved = await host.call('projects.saveTranscript', { projectId, videoId, transcript });
+    const transcriptFile = join(host.home, 'projects', projectId, 'videos', videoId, 'transcript.json');
+    const before = (await stat(transcriptFile)).mtimeMs;
+    const result = await host.call('projects.saveEdits', { projectId, videoId, edits: edits('你好！'), baseRevision: saved.revision });
+    assert.equal(result.status, 'saved'); assert.equal(result.revision, saved.revision + 1);
+    const opened = await host.call('projects.open', { projectId });
+    assert.equal(opened.edits.chunks[0].text, '你好！'); assert.equal(opened.edits.chunks[1].deleted, true);
+    assert.deepEqual(opened.edits.deletedWordIds, ['w1']); assert.equal(opened.edits.stylePair.primary.aspectPreset, '9:16');
+    assert.equal(opened.transcript.chunks[0].text, '你好', 'the transcript itself is untouched');
+    assert.equal((await stat(transcriptFile)).mtimeMs, before);
+  } finally { await host.close(); }
+});
+
+test('F-0002/AC-9 AC-25: a stale baseRevision is a conflict; force overwrites; save as new keeps both versions', async () => {
+  const host = await setup();
+  try {
+    const assetId = await host.upload('x');
+    const { projectId, videoId } = await host.call('projects.create', { name: '冲突', videoName: 'c.mp4', media: { assetId } });
+    const base = (await host.call('projects.saveTranscript', { projectId, videoId, transcript })).revision;
+    // Window A saves first.
+    const a = await host.call('projects.saveEdits', { projectId, videoId, edits: edits('A 的版本'), baseRevision: base });
+    // Window B still holds `base`: nothing is written.
+    const b = await host.call('projects.saveEdits', { projectId, videoId, edits: edits('B 的版本'), baseRevision: base });
+    assert.deepEqual(b, { status: 'conflict', revision: a.revision, updatedAt: a.updatedAt });
+    assert.equal((await host.call('projects.open', { projectId })).edits.chunks[0].text, 'A 的版本');
+
+    const copy = await host.call('projects.duplicate', { projectId, videoId, name: '冲突（副本）', edits: edits('B 的版本') });
+    assert.notEqual(copy.projectId, projectId); assert.equal(copy.videoId, videoId);
+    const copied = await host.call('projects.open', { projectId: copy.projectId });
+    assert.equal(copied.project.name, '冲突（副本）'); assert.equal(copied.edits.chunks[0].text, 'B 的版本');
+    assert.equal(copied.transcript.chunks.length, 2); assert.equal(copied.media.status, 'ok', 'stored media is copied');
+    assert.equal((await host.call('projects.open', { projectId })).edits.chunks[0].text, 'A 的版本', 'original unchanged');
+
+    const forced = await host.call('projects.saveEdits', { projectId, videoId, edits: edits('B 覆盖'), baseRevision: base, force: true });
+    assert.equal(forced.status, 'saved');
+    assert.equal((await host.call('projects.open', { projectId })).edits.chunks[0].text, 'B 覆盖');
+    assert.equal((await host.call('projects.list')).length, 2);
+  } finally { await host.close(); }
+});
+
+test('F-0002/AC-7: choosing the file again restores playback and keeps the edits', async () => {
+  const host = await setup();
+  const media = join(host.home, 'moved.mp4');
+  await writeFile(media, Buffer.alloc(2048, 1));
+  try {
+    const { mediaRef } = await (await host.shellLink(media)).json();
+    const { projectId, videoId } = await host.call('projects.create', { name: 'm', videoName: 'moved.mp4', media: { mediaRef } });
+    const base = (await host.call('projects.saveTranscript', { projectId, videoId, transcript })).revision;
+    await host.call('projects.saveEdits', { projectId, videoId, edits: edits('改过'), baseRevision: base });
+    const moved = join(host.home, 'new-place.mp4');
+    await writeFile(moved, Buffer.alloc(2048, 1)); await rm(media);
+    assert.equal((await host.call('projects.open', { projectId })).media.status, 'missing');
+    const { mediaRef: again } = await (await host.shellLink(moved)).json();
+    const relinked = await host.call('projects.relinkMedia', { projectId, videoId, media: { mediaRef: again } });
+    assert.equal(relinked.status, 'saved');
+    const opened = await host.call('projects.open', { projectId });
+    assert.deepEqual(opened.media, { status: 'ok', name: 'new-place.mp4', playback: { kind: 'path', path: moved } });
+    assert.equal(opened.edits.chunks[0].text, '改过');
+  } finally { await host.close(); }
+});

@@ -293,6 +293,7 @@ export interface FlyCutCaptionLocale {
       newerVersionTitle: string;
       newerVersionDescription: string;
       created: string;
+      copyName: string;
     };
     workstation?: {
       appName: string;

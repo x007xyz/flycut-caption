@@ -160,3 +160,202 @@ test('F-0002/AC-12 RPC 报错与网络失败一样显示读取失败', async ({ 
   await openHome(page, 'light', { 'projects.list': () => { throw new RpcError('disk full'); } });
   await expect(page.getByText('读取项目失败')).toBeVisible();
 });
+
+// ---------- 编辑器：自动保存与保存状态（AC-3、AC-19 到 AC-25、AC-27） ----------
+
+const P = uuid(1);
+const NAME = '口播：剪辑工作流分享';
+const SAVED = (revision: number) => ({ status: 'saved', revision, updatedAt: new Date().toISOString() });
+const saveKey = process.platform === 'darwin' ? 'Meta+s' : 'Control+s';
+
+async function openEditor(page: Page, theme: 'light' | 'dark', handlers: MockHandlers = {}) {
+  await prepare(page, theme);
+  const host = await mockHost(page, { 'projects.list': () => [projectItem(P, NAME)], 'projects.open': () => openResult(P, NAME), ...handlers });
+  await page.goto(`/#/projects/${P}/videos/${VIDEO_ID}`);
+  await expect(page.getByPlaceholder('请输入主字幕').first()).toHaveValue('大家好');
+  return host;
+}
+
+/** 改第一条主字幕并让它失焦（字幕编辑器在失焦时提交修改）。 */
+async function editFirst(page: Page, text: string) {
+  const box = page.getByPlaceholder('请输入主字幕').first();
+  await box.click();
+  await box.fill(text);
+  await box.blur();
+}
+
+const status = (page: Page) => page.getByRole('status').filter({ hasText: /保存|修改/ });
+const saveCalls = (host: { calls: { method: string }[] }) => host.calls.filter(call => call.method === 'projects.saveEdits');
+
+for (const theme of THEMES) {
+  test.describe(`${theme} 编辑器`, () => {
+    test(`F-0002/AC-3 AC-19 AC-20 AC-21 修改后显示未保存、保存中，3 秒内自动保存并显示已保存后淡出 (${theme})`, async ({ page }) => {
+      let release!: () => void;
+      const host = await openEditor(page, theme, {
+        'projects.saveEdits': async () => { await new Promise<void>(resolve => { release = resolve; }); return SAVED(4); },
+      });
+      await expect(page.getByRole('button', { name: /我的项目/ })).toBeVisible();
+      await editFirst(page, '大家好呀');
+      await expect(status(page)).toHaveText(/有未保存的修改/);
+      await expect(status(page)).toHaveAttribute('title', /立即保存（(⌘S|Ctrl\+S)）/);
+      await shot(page, F, `editor-pending-${theme}`);
+      await expect(status(page)).toHaveText(/保存中…/, { timeout: 3000 });
+      await shot(page, F, `editor-saving-${theme}`);
+      release();
+      await expect(status(page)).toHaveText(/已保存 · 刚刚/);
+      await shot(page, F, `editor-saved-${theme}`);
+      const calls = saveCalls(host);
+      expect(calls).toHaveLength(1);
+      expect(calls[0].payload).toMatchObject({ projectId: P, videoId: VIDEO_ID, baseRevision: 3, force: false });
+      const edits = calls[0].payload.edits as { chunks: { text: string }[]; stylePair: object };
+      expect(edits.chunks[0].text).toBe('大家好呀');
+      expect(edits.stylePair).toHaveProperty('primary');
+      // 「已保存」约 3 秒后淡出
+      // 淡出后读屏也不再读到它，用 CSS 选择器找
+      await expect(page.locator('[role=status][aria-hidden=true]')).toHaveCSS('opacity', '0', { timeout: 5000 });
+    });
+
+    test(`F-0002/AC-3 快捷键立即保存，连续修改合并成一次写入 (${theme})`, async ({ page }) => {
+      const host = await openEditor(page, theme, { 'projects.saveEdits': () => SAVED(4) });
+      await editFirst(page, '第一次');
+      const second = page.getByPlaceholder('请输入主字幕').nth(1);
+      await second.click(); await second.fill('第二次'); await second.blur();
+      await page.keyboard.press(saveKey);
+      await expect(status(page)).toHaveText(/已保存/, { timeout: 1000 });
+      expect(saveCalls(host)).toHaveLength(1);
+      const edits = saveCalls(host)[0].payload.edits as { chunks: { text: string }[] };
+      expect(edits.chunks.map(chunk => chunk.text)).toEqual(['第一次', '第二次']);
+    });
+
+    test(`F-0002/AC-4 AC-22 保存失败显示重试中，保留修改，自动重试成功 (${theme})`, async ({ page }) => {
+      let fail = true;
+      const host = await openEditor(page, theme, { 'projects.saveEdits': () => { if (fail) throw new Error('down'); return SAVED(4); } });
+      await editFirst(page, '断网时的修改');
+      await expect(status(page)).toHaveText(/保存失败，重试中/, { timeout: 4000 });
+      await shot(page, F, `editor-save-failed-${theme}`);
+      await expect(page.getByPlaceholder('请输入主字幕').first()).toHaveValue('断网时的修改');
+      fail = false;
+      // 第一次重试在 2 秒后
+      await expect(status(page)).toHaveText(/已保存/, { timeout: 5000 });
+      expect(saveCalls(host).length).toBeGreaterThanOrEqual(2);
+    });
+
+    test(`F-0002/AC-4 AC-24 有未写入的修改时返回首页：重试中按钮不可点，取消留下，放弃后离开 (${theme})`, async ({ page }) => {
+      // 只有点「重试保存」那一次请求挂起，方便看到「正在重试…」；其余请求都直接失败
+      let hold = false; let release: (() => void) | undefined;
+      await openEditor(page, theme, { 'projects.saveEdits': async () => {
+        if (hold) { hold = false; await new Promise<void>(resolve => { release = resolve; }); }
+        throw new Error('down');
+      } });
+      await editFirst(page, '没存上的修改');
+      await expect(status(page)).toHaveText(/保存失败/, { timeout: 4000 });
+      await page.getByRole('button', { name: /我的项目/ }).click();
+      const dialog = page.getByRole('dialog');
+      await expect(dialog.getByText('还有修改没有保存')).toBeVisible();
+      await expect(dialog.getByText('自动保存失败，关闭后这些修改会丢失。')).toBeVisible();
+      await shot(page, F, `editor-unsaved-${theme}`);
+      hold = true;
+      await dialog.getByRole('button', { name: '重试保存' }).click();
+      await expect(dialog.getByRole('button', { name: '正在重试…' })).toBeDisabled();
+      await expect(dialog.getByRole('button', { name: '放弃修改' })).toBeDisabled();
+      await expect(dialog.getByRole('button', { name: '取消' })).toBeDisabled();
+      await shot(page, F, `editor-unsaved-retrying-${theme}`);
+      release!();
+      await expect(dialog.getByRole('button', { name: '重试保存' })).toBeEnabled();
+      await dialog.getByRole('button', { name: '取消' }).click();
+      await expect(page).toHaveURL(new RegExp(`#/projects/${P}/videos/`));
+      await expect(page.getByPlaceholder('请输入主字幕').first()).toHaveValue('没存上的修改');
+      await page.getByRole('button', { name: /我的项目/ }).click();
+      await page.getByRole('dialog').getByRole('button', { name: '放弃修改' }).click();
+      await expect(page).toHaveURL(/#\/projects$/);
+    });
+
+    test(`F-0002/AC-9 AC-23 AC-25 版本冲突暂停自动保存，可取消、覆盖 (${theme})`, async ({ page }) => {
+      let conflict = true;
+      const otherTime = new Date().toISOString();
+      const host = await openEditor(page, theme, { 'projects.saveEdits': ({ force }: { force: boolean }) =>
+        conflict && !force ? { status: 'conflict', revision: 5, updatedAt: otherTime } : SAVED(6) });
+      await editFirst(page, '我的版本');
+      await expect(status(page)).toContainText('保存已暂停', { timeout: 4000 });
+      await expect(status(page)).toHaveAttribute('title', '项目在另一个窗口或设备上被修改，为避免覆盖已暂停自动保存');
+      await shot(page, F, `editor-conflict-${theme}`);
+      // 暂停后再改也不会自动保存
+      const before = saveCalls(host).length;
+      await editFirst(page, '我的版本 2');
+      await page.waitForTimeout(2500);
+      expect(saveCalls(host)).toHaveLength(before);
+
+      await page.getByRole('button', { name: '处理冲突' }).click();
+      const dialog = page.getByRole('dialog');
+      await expect(dialog.getByText('项目已在别处修改')).toBeVisible();
+      await expect(dialog.getByText(new RegExp(`「${NAME}」在另一个窗口或设备上于 .+ 保存过。为避免覆盖对方的修改，自动保存已暂停。`))).toBeVisible();
+      await expect(dialog.getByText('另存为新项目会保留两边的修改。')).toBeVisible();
+      await shot(page, F, `editor-conflict-dialog-${theme}`);
+      await dialog.getByRole('button', { name: '取消' }).click();
+      await expect(status(page)).toContainText('保存已暂停');
+
+      await page.getByRole('button', { name: '处理冲突' }).click();
+      await page.getByRole('dialog').getByRole('button', { name: '用我的版本覆盖' }).click();
+      await expect(status(page)).toHaveText(/已保存/);
+      const forced = saveCalls(host).at(-1)!.payload as { force: boolean; edits: { chunks: { text: string }[] } };
+      expect(forced.force).toBe(true); expect(forced.edits.chunks[0].text).toBe('我的版本 2');
+      // 覆盖后恢复自动保存
+      conflict = false;
+      await editFirst(page, '覆盖之后');
+      await expect.poll(() => saveCalls(host).length, { timeout: 4000 }).toBeGreaterThan(before + 1);
+    });
+
+    test(`F-0002/AC-25 另存为新项目后进入新项目，原项目不再写 (${theme})`, async ({ page }) => {
+      const COPY = uuid(7);
+      const host = await openEditor(page, theme, {
+        'projects.saveEdits': () => ({ status: 'conflict', revision: 5, updatedAt: new Date().toISOString() }),
+        'projects.duplicate': () => ({ projectId: COPY, videoId: VIDEO_ID, revision: 1 }),
+        'projects.open': ({ projectId }: { projectId: string }) => openResult(projectId, projectId === COPY ? `${NAME}（副本）` : NAME),
+      });
+      await editFirst(page, '我的版本');
+      await page.getByRole('button', { name: '处理冲突' }).click({ timeout: 4000 });
+      await page.getByRole('dialog').getByRole('button', { name: '另存为新项目' }).click();
+      await expect(page).toHaveURL(new RegExp(`#/projects/${COPY}/videos/`));
+      await expect(page.getByText(`${NAME}（副本）`)).toBeVisible();
+      const duplicate = host.calls.find(call => call.method === 'projects.duplicate')!.payload as { name: string; edits: { chunks: { text: string }[] } };
+      expect(duplicate.name).toBe(`${NAME}（副本）`); expect(duplicate.edits.chunks[0].text).toBe('我的版本');
+    });
+
+    test(`F-0002/AC-26 版本过新的项目停在首页并提示升级 (${theme})`, async ({ page }) => {
+      await prepare(page, theme);
+      await mockHost(page, { 'projects.list': () => [projectItem(P, '同事发来的项目', { newerVersion: true })],
+        'projects.open': () => ({ status: 'newer-version', name: '同事发来的项目' }) });
+      await page.goto('/#/projects');
+      await page.getByRole('button', { name: /同事发来的项目/ }).click();
+      const dialog = page.getByRole('dialog');
+      await expect(dialog.getByText('无法打开这个项目')).toBeVisible();
+      await expect(dialog.getByText('「同事发来的项目」是用更新版本的 FlyCut 保存的。请升级后再打开，项目文件不会被改动。')).toBeVisible();
+      await expect(dialog.getByRole('button')).toHaveCount(1);
+      await shot(page, F, `home-newer-version-${theme}`);
+      await dialog.getByRole('button', { name: '关闭' }).click();
+      await expect(page).toHaveURL(/#\/projects$/);
+      await expect(page.getByText('1 个项目')).toBeVisible();
+    });
+
+    test(`F-0002/AC-7 AC-27 媒体丢失：横幅提示，字幕可编辑，导出视频不可用，重新选择后恢复 (${theme})`, async ({ page }) => {
+      let missing = true;
+      const host = await openEditor(page, theme, {
+        'projects.open': () => missing
+          ? openResult(P, NAME, { media: { status: 'missing', name: '直播回放.mp4' } })
+          : openResult(P, NAME),
+        'projects.relinkMedia': () => { missing = false; return SAVED(4); },
+        'projects.saveEdits': () => SAVED(5),
+      });
+      await expect(page.getByText('找不到这个项目的视频文件')).toBeVisible();
+      await expect(page.getByText('原文件「直播回放.mp4」可能已被移动或删除。字幕仍可查看、编辑和导出字幕文件。')).toBeVisible();
+      await expect(page.getByRole('button', { name: /导出/ }).first()).toBeVisible();
+      await shot(page, F, `editor-media-missing-${theme}`);
+      await editFirst(page, '没有视频也能改');
+      await expect(status(page)).toHaveText(/已保存/, { timeout: 4000 });
+      await page.getByTestId('relink-file-input').setInputFiles({ name: '直播回放.mp4', mimeType: 'video/mp4', buffer: Buffer.from('fake') });
+      await expect(page.getByText('找不到这个项目的视频文件')).toHaveCount(0);
+      expect(host.calls.find(call => call.method === 'projects.relinkMedia')?.payload).toMatchObject({ projectId: P, media: { assetId: UPLOADED_ASSET } });
+      await expect(page.getByPlaceholder('请输入主字幕').first()).toHaveValue('没有视频也能改');
+    });
+  });
+}

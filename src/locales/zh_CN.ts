@@ -290,6 +290,7 @@ const zhCN: FlyCutCaptionLocale = {
       newerVersionTitle: "无法打开这个项目",
       newerVersionDescription: "「{name}」是用更新版本的 FlyCut 保存的。请升级后再打开，项目文件不会被改动。",
       created: "已创建项目「{name}」",
+      copyName: "{name}（副本）",
     },
     workstation: {
       appName: 'FlyCut Caption',

@@ -39,6 +39,10 @@ export interface ProjectState {
   transcribing: { projectId: string; progress: number } | null;
   /** 打开时发现格式版本过新（AC-26） */
   newerVersion: { name: string } | null;
+  /** 版本冲突对话框是否打开（AC-25） */
+  conflictDialog: boolean;
+  /** 未保存离开的对话框（AC-24）；`retrying` 时三个按钮都不可点 */
+  unsavedDialog: { retrying: boolean } | null;
 }
 
 export interface ProjectActions {
@@ -56,6 +60,8 @@ const initialState: ProjectState = {
   save: { status: 'saved' },
   transcribing: null,
   newerVersion: null,
+  conflictDialog: false,
+  unsavedDialog: null,
 };
 
 export const createProjectStore = () => createStore<ProjectState & ProjectActions>()((set) => ({

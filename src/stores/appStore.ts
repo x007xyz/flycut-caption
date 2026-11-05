@@ -12,6 +12,7 @@ import type { ASRProgress } from '@/types/subtitle'
 import type { ModelRef, OptionValue } from '../../shared/providers'
 import type { AIModelConfig, AIProgress } from '@/types/ai'
 import { hasWebGPU } from '@/utils/audioUtils'
+import { defaultSubtitleStylePair, type SubtitleStylePair } from '@/subtitle'
 
 /** Key of a model's saved options in `asrOptions`. */
 export const modelKey = (ref: ModelRef) => `${ref.providerId}/${ref.modelId}`
@@ -65,12 +66,20 @@ export interface AppState {
 
   // 智能剪切空白段设置
   smartCutSilenceThreshold: number // 秒，超过此时长的空白段将被标记裁剪
+
+  /** 主 / 副字幕样式（含画幅 aspectPreset）。随项目保存（F-0002），不写 localStorage */
+  subtitleStylePair: SubtitleStylePair
+  /** 样式来自已保存的项目：载入视频时不再按画面尺寸自动推断画幅，以免覆盖用户的选择 */
+  subtitleStyleRestored: boolean
 }
 
 // 应用动作接口
 export interface AppActions {
   // 阶段管理
   setStage: (stage: AppState['stage']) => void
+
+  /** 修改样式对；`restored` 只在载入项目时传 true */
+  setSubtitleStylePair: (next: SubtitleStylePair | ((previous: SubtitleStylePair) => SubtitleStylePair), restored?: boolean) => void
   
   // 视频管理
   setVideoFile: (videoFile: VideoFile | null) => void
@@ -157,6 +166,9 @@ const initialState: AppState = {
   aiTask: null,
 
   smartCutSilenceThreshold: 1.5,
+
+  subtitleStylePair: defaultSubtitleStylePair,
+  subtitleStyleRestored: false,
 }
 
 // 创建Store
@@ -173,6 +185,13 @@ export const createAppStore = () => createStore<AppState & AppActions>()(
           ...state,
           stage
         })),
+
+      setSubtitleStylePair: (next, restored) =>
+        set((state) => {
+          const subtitleStylePair = typeof next === 'function' ? next(state.subtitleStylePair) : next
+          if (subtitleStylePair === state.subtitleStylePair && restored === undefined) return state
+          return { ...state, subtitleStylePair, subtitleStyleRestored: restored ?? state.subtitleStyleRestored }
+        }),
       
       // 视频管理
       setVideoFile: (videoFile) =>

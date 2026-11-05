@@ -290,6 +290,7 @@ const enUS: FlyCutCaptionLocale = {
       newerVersionTitle: "Can't open this project",
       newerVersionDescription: "\"{name}\" was saved by a newer version of FlyCut. Update FlyCut to open it; the project files are left unchanged.",
       created: "Created project \"{name}\"",
+      copyName: "{name} (copy)",
     },
     workstation: {
       appName: 'FlyCut Caption',
