@@ -10,7 +10,8 @@ import { useClientRuntime } from '@/runtime/context';
 export interface UseASRReturn { isASRLoading: boolean; asrProgress: ASRProgress | null; startASR: (videoFile: VideoFile) => Promise<void> }
 export function useASR(options: { onSubtitleGenerated?: (subtitles: SubtitleChunk[]) => void } = {}): UseASRReturn {
   const { onSubtitleGenerated } = options;
-  const { asr: asrService, stores } = useClientRuntime();
+  const runtime = useClientRuntime();
+  const { asr: asrService, stores } = runtime;
   const { t } = useTranslation();
   const progress = useAppStore(state => state.asrProgress);
   const loading = useAppStore(state => state.isLoading);
@@ -25,7 +26,12 @@ export function useASR(options: { onSubtitleGenerated?: (subtitles: SubtitleChun
     try {
       if (!app.asrModel) throw new Error('请先在「设置 → 模型」中下载或添加一个识别模型');
       let buffer: ArrayBuffer;
-      if (videoFile.path && !videoFile.file.size) {
+      if (videoFile.remotePath && !videoFile.file.size) {
+        // Media stored in a Host project (F-0002): read it back over the project media route.
+        const response = await fetch(videoFile.url);
+        if (!response.ok) throw new Error('无法读取项目媒体');
+        buffer = await response.arrayBuffer();
+      } else if (videoFile.path && !videoFile.file.size) {
         const { convertFileSrc } = await import('@tauri-apps/api/core');
         const response = await fetch(convertFileSrc(videoFile.path));
         if (!response.ok) throw new Error('无法读取本地媒体');
@@ -33,6 +39,10 @@ export function useASR(options: { onSubtitleGenerated?: (subtitles: SubtitleChun
       } else buffer = await videoFile.file.arrayBuffer();
       const transcript = await asrService.transcribeAudio(buffer, { ...app.asrModel, language: app.language,
         options: app.asrOptions[modelKey(app.asrModel)] });
+      // Project mode saves the result to the project the video belongs to (F-0002/AC-2).
+      runtime.emit('flycut/transcribed', { videoFile, transcript, model: app.asrModel });
+      // The user may have opened something else while recognition ran; never overwrite that editor.
+      if (stores.app.getState().videoFile !== videoFile) return;
       stores.history.getState().setTranscript(transcript); app.setStage('edit');
       onSubtitleGenerated?.(stores.history.getState().chunks.filter(chunk => !chunk.deleted));
     } catch (error) {
@@ -40,6 +50,6 @@ export function useASR(options: { onSubtitleGenerated?: (subtitles: SubtitleChun
       app.setError(message); app.setASRProgress({ status: 'error', error: message });
       toast.error(t('messages.asr.asrFailed'), { id: 'asr-error', description: message });
     } finally { app.setLoading(false); active.current = false; }
-  }, [t, asrService, stores, onSubtitleGenerated]);
+  }, [t, runtime, asrService, stores, onSubtitleGenerated]);
   return { isASRLoading: loading, asrProgress: progress, startASR };
 }

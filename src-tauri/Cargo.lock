@@ -839,6 +839,7 @@ version = "2.0.2"
 dependencies = [
  "bzip2",
  "futures",
+ "getrandom 0.2.17",
  "reqwest 0.12.28",
  "rfd",
  "serde",

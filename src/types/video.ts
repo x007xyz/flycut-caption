@@ -9,6 +9,8 @@ export interface VideoFile {
   name: string;
   /** 本地文件路径（Tauri 环境下由原生文件选择器提供） */
   path?: string;
+  /** 存在 Host 项目里的媒体（Host HTTP 路径，不含 token）；`file` 是空占位（F-0002） */
+  remotePath?: string;
 }
 
 export interface VideoPlayerState {

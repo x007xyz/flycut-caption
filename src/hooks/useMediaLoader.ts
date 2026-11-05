@@ -9,11 +9,37 @@ import { fetchBlobWithProgress, loadMediaFromUrl } from '@/utils/fileUtils';
 import type { VideoFile } from '@/types/video';
 import type { FlyCutCaptionProps } from '@/types';
 
+const MEDIA_MIME: Record<string, string> = {
+  mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', avi: 'video/x-msvideo', mkv: 'video/x-matroska', ogg: 'video/ogg',
+  mp3: 'audio/mpeg', wav: 'audio/wav', m4a: 'audio/mp4', flac: 'audio/flac', aac: 'audio/aac',
+};
+const mimeOfName = (name: string) => MEDIA_MIME[name.split('.').pop()?.toLowerCase() ?? ''] ?? '';
+
 // 示例视频：云端托管（本地 src/assets/demo.mp4 仅保留给集成测试）
 const SAMPLE_VIDEO_URL = 'https://fly-cut.oss-cn-hangzhou.aliyuncs.com/demo/sample-video.mp4';
 const SAMPLE_VIDEO_NAME = 'sample-video.mp4';
 
-export function useMediaLoader({ onFileSelected }: Pick<FlyCutCaptionProps, 'onFileSelected'>) {
+/** Builds a `VideoFile` for a browser `File` (object URL + duration probe). */
+export async function videoFileFromFile(file: File): Promise<VideoFile> {
+  const objectUrl = URL.createObjectURL(file);
+  let duration = 0;
+  if (file.type.startsWith('video/') || file.type.startsWith('audio/')) {
+    duration = await new Promise<number>((resolve) => {
+      const probe = document.createElement(file.type.startsWith('video/') ? 'video' : 'audio');
+      probe.preload = 'metadata';
+      probe.onloadedmetadata = () => resolve(Number.isFinite(probe.duration) ? probe.duration : 0);
+      probe.onerror = () => resolve(0);
+      probe.src = objectUrl;
+    });
+  }
+  return { file, url: objectUrl, duration, size: file.size, type: file.type, name: file.name };
+}
+
+/**
+ * `onMedia`: project mode takes over every chosen file (it creates a project first, F-0002/AC-1);
+ * without it the file is loaded straight into the editor.
+ */
+export function useMediaLoader({ onFileSelected, onMedia }: Pick<FlyCutCaptionProps, 'onFileSelected'> & { onMedia?: (videoFile: VideoFile) => Promise<unknown> | void }) {
   const { t } = useTranslation();
   const { stores } = useClientRuntime();
   const setError = useAppStore(state => state.setError);
@@ -30,6 +56,13 @@ export function useMediaLoader({ onFileSelected }: Pick<FlyCutCaptionProps, 'onF
   const isMediaLoading = isFileLoading || isSampleLoading || isUrlLoading;
 
   const handleFileSelect = useCallback((selectedVideoFile: VideoFile) => {
+    if (onMedia) {
+      void Promise.resolve(onMedia(selectedVideoFile)).then(() => onFileSelected?.(selectedVideoFile), (error: unknown) => {
+        console.error('创建项目失败:', error);
+        toast.error(error instanceof Error ? error.message : String(error));
+      });
+      return;
+    }
     console.log('文件选择完成:', selectedVideoFile);
     // 清除演示字幕与历史，避免与真实 ASR 流程冲突
     stores.history.getState().reset();
@@ -39,7 +72,7 @@ export function useMediaLoader({ onFileSelected }: Pick<FlyCutCaptionProps, 'onF
     const setVideoFile = stores.app.getState().setVideoFile;
     setVideoFile(selectedVideoFile);
     onFileSelected?.(selectedVideoFile);
-  }, [onFileSelected, stores]);
+  }, [onFileSelected, onMedia, stores]);
 
   // 加载示例视频：拉取真实视频数据后走标准 ASR 流程（与手动上传一致），
   // 由模型识别生成字幕，而不是显示 mock 内容。
@@ -76,8 +109,11 @@ export function useMediaLoader({ onFileSelected }: Pick<FlyCutCaptionProps, 'onF
         name: SAMPLE_VIDEO_NAME,
         duration,
       };
-      stores.app.getState().setVideoFile(sampleVideoFile);
-      onFileSelected?.(sampleVideoFile);
+      if (onMedia) handleFileSelect(sampleVideoFile);
+      else {
+        stores.app.getState().setVideoFile(sampleVideoFile);
+        onFileSelected?.(sampleVideoFile);
+      }
       setSampleLoadProgress(MEDIA_LOAD_PHASE.COMPLETE);
     } catch (error) {
       console.error('加载示例视频失败:', error);
@@ -86,7 +122,7 @@ export function useMediaLoader({ onFileSelected }: Pick<FlyCutCaptionProps, 'onF
       setIsSampleLoading(false);
       setSampleLoadProgress(null);
     }
-  }, [isSampleLoading, onFileSelected, t, stores]);
+  }, [isSampleLoading, onFileSelected, onMedia, handleFileSelect, t, stores]);
 
   // Tauri 环境下通过原生文件选择器选择本地文件，拿到本地路径
   const handleTauriFileSelect = useCallback(async () => {
@@ -148,30 +184,9 @@ export function useMediaLoader({ onFileSelected }: Pick<FlyCutCaptionProps, 'onF
     setFileLoadProgress(MEDIA_LOAD_PHASE.START);
 
     try {
-      const objectUrl = URL.createObjectURL(file);
       setFileLoadProgress(MEDIA_LOAD_PHASE.METADATA);
-
-      let duration = 0;
-      if (file.type.startsWith('video/') || file.type.startsWith('audio/')) {
-        duration = await new Promise<number>((resolve) => {
-          const probe = document.createElement(file.type.startsWith('video/') ? 'video' : 'audio');
-          probe.preload = 'metadata';
-          probe.onloadedmetadata = () => resolve(Number.isFinite(probe.duration) ? probe.duration : 0);
-          probe.onerror = () => resolve(0);
-          probe.src = objectUrl;
-        });
-      }
-
+      const selectedVideoFile = await videoFileFromFile(file);
       setFileLoadProgress(MEDIA_LOAD_PHASE.FINALIZING);
-      const selectedVideoFile: VideoFile = {
-        file,
-        url: objectUrl,
-        duration,
-        size: file.size,
-        type: file.type,
-        name: file.name,
-      };
-
       handleFileSelect(selectedVideoFile);
       setFileLoadProgress(MEDIA_LOAD_PHASE.COMPLETE);
     } finally {
@@ -216,5 +231,22 @@ export function useMediaLoader({ onFileSelected }: Pick<FlyCutCaptionProps, 'onF
     }
   }, [urlInput, isUrlLoading, handleFileSelect, setError, t]);
 
-  return { uploadInputRef, urlInput, setUrlInput, isUrlLoading, urlLoadProgress, isFileLoading, fileLoadProgress, isSampleLoading, sampleLoadProgress, isMediaLoading, handleLoadSampleVideo, handleNativeFileSelect, handleUploadClick, handleUrlLoad };
+  // 拖入的文件（浏览器）：只取第一个媒体文件
+  const handleFiles = useCallback(async (files: File[]) => {
+    const file = files.find(item => item.type.startsWith('video/') || item.type.startsWith('audio/')) ?? files[0];
+    if (!file) return;
+    handleFileSelect(await videoFileFromFile(file));
+  }, [handleFileSelect]);
+
+  // 桌面端拖入：Tauri 给的是本地路径（外壳已把它加入允许登记的列表）
+  const handlePaths = useCallback((paths: string[]) => {
+    const filePath = paths[0]; if (!filePath) return;
+    const fileName = filePath.split(/[/\\]/).pop() || 'video';
+    const type = mimeOfName(fileName);
+    void import('@tauri-apps/api/core').then(({ convertFileSrc }) => handleFileSelect({
+      file: new File([], fileName, { type }), url: convertFileSrc(filePath), duration: 0, size: 0, type, name: fileName, path: filePath,
+    }));
+  }, [handleFileSelect]);
+
+  return { handleFiles, handlePaths, uploadInputRef, urlInput, setUrlInput, isUrlLoading, urlLoadProgress, isFileLoading, fileLoadProgress, isSampleLoading, sampleLoadProgress, isMediaLoading, handleLoadSampleVideo, handleNativeFileSelect, handleUploadClick, handleUrlLoad };
 }

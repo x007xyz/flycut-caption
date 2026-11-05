@@ -13,7 +13,7 @@ pub struct HostConnection {
     token: String,
 }
 
-struct OwnedHost { child: Child, connection: HostConnection }
+struct OwnedHost { child: Child, connection: HostConnection, shell_token: String }
 static HOST: OnceLock<Mutex<Option<OwnedHost>>> = OnceLock::new();
 
 #[tauri::command]
@@ -33,6 +33,19 @@ pub async fn save_host_asset(app: AppHandle, asset_id: String, output_path: Stri
         std::fs::copy(&source, &output_path).map_err(|error| format!("保存导出文件失败：{error}"))?;
         Ok(output_path)
     }).await.map_err(|error| error.to_string())?
+}
+
+/// The running Host's address and the secret only this shell holds (ADR-0002 shell-only routes).
+pub fn shell_endpoint() -> Result<(String, String), String> {
+    let guard = HOST.get().ok_or("Host 尚未启动")?.lock().map_err(|error| error.to_string())?;
+    let host = guard.as_ref().ok_or("Host 尚未启动")?;
+    Ok((host.connection.url.clone(), host.shell_token.clone()))
+}
+
+fn random_secret() -> Result<String, String> {
+    let mut bytes = [0u8; 32];
+    getrandom::getrandom(&mut bytes).map_err(|error| error.to_string())?;
+    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
 fn start_host(app: AppHandle) -> Result<HostConnection, String> {
@@ -58,10 +71,13 @@ fn start_host(app: AppHandle) -> Result<HostConnection, String> {
     let app_data = app.path().app_data_dir().map_err(|error| error.to_string())?;
     let home = app_data.join("host");
     std::fs::create_dir_all(&home).map_err(|error| error.to_string())?;
+    // A fresh secret per Host process; it only travels in this environment variable, never to the WebView.
+    let shell_token = random_secret()?;
     let mut command = Command::new(node);
     command.arg(script).current_dir(&resource_root)
         .env("FLYCUT_RESOURCE_ROOT", &resource_root).env("FLYCUT_APP_DATA", &app_data)
         .env("FLYCUT_HOST_HOME", &home).env("FLYCUT_HOST_PORT", "0").env("FLYCUT_HOST_STDIO", "1")
+        .env("FLYCUT_SHELL_TOKEN", &shell_token)
         .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::inherit());
     let binary_root = if resource.join("binaries").is_dir() { resource.join("binaries") } else { project.join("src-tauri/binaries") };
     command.env("FLYCUT_FUNASR_SIDECAR", binary_root.join(if cfg!(windows) { "funasr-asr.exe" } else { "funasr-asr" }));
@@ -83,7 +99,7 @@ fn start_host(app: AppHandle) -> Result<HostConnection, String> {
         Ok(Err(error)) => { let _ = child.kill(); let _ = child.wait(); return Err(format!("Host readiness failed: {error}")); }
         Err(error) => { let _ = child.kill(); let _ = child.wait(); return Err(format!("Host readiness failed: {error}")); }
     };
-    *owned = Some(OwnedHost { child, connection: connection.clone() });
+    *owned = Some(OwnedHost { child, connection: connection.clone(), shell_token });
     Ok(connection)
 }
 

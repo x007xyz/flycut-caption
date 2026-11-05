@@ -24,3 +24,7 @@ export function formatRelativeTime(iso: string, language: string, justNow: strin
 export function fill(template: string, values: Record<string, string | number>): string {
   return template.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key] ?? `{${key}}`));
 }
+
+/** 「立即保存」快捷键的显示文字（AC-20）：macOS 为 ⌘S，其他平台为 Ctrl+S。 */
+export const isMacPlatform = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
+export const saveShortcutLabel = isMacPlatform ? '⌘S' : 'Ctrl+S';

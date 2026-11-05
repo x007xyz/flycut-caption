@@ -86,7 +86,7 @@ interface BrowserPerformanceMemory {
  * }
  * ```
  */
-function FlyCutCaptionContent(props: FlyCutCaptionProps) {
+export function FlyCutCaptionContent(props: FlyCutCaptionProps) {
   const {
     className,
     style,
@@ -322,7 +322,7 @@ function FlyCutCaptionContent(props: FlyCutCaptionProps) {
 
   // 视频播放器引用
   const videoPlayerRef = useRef<EnhancedVideoPlayerRef>(null);
-  const media = useMediaLoader({ onFileSelected });
+  const media = useMediaLoader({ onFileSelected, onMedia: props.onMedia });
   const { isFileLoading, fileLoadProgress, isSampleLoading, sampleLoadProgress, isMediaLoading, handleLoadSampleVideo, handleUploadClick } = media;
 
   const timelineDuration = useMemo(() => {

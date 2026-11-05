@@ -218,7 +218,7 @@ test('plugins register RPC methods, expose events and contribute capabilities wi
     assert.ok(!frames.some(frame => frame.name === 'internal/unexposed'));
     await fiber.dispose();
     await assert.rejects(host.call('echo.say', { text: 'hi' }), /Unknown RPC method/);
-    assert.deepEqual((await host.call('host.info')).capabilities, { export: true });
+    assert.deepEqual((await host.call('host.info')).capabilities, { export: true, projects: true, 'projects.linkedMedia': true });
     assert.ok(!(await host.call('host.info')).events.includes('vendor/ping'));
   } finally { ws.terminate(); await host.close(); }
 });

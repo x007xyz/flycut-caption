@@ -16,6 +16,7 @@ import { cloudPlugin } from './plugins/cloud';
 import { deleteSilenceEditingPlugin, editingPlugin } from './plugins/editing';
 import { textPlugin } from './plugins/text';
 import { exportPlugin } from './plugins/export';
+import { projectsPlugin } from './plugins/projects';
 import { builtinAgentToolsPlugin, langgraphPlugin } from './plugins/langgraph';
 import { gatewayPlugin } from './plugins/gateway';
 
@@ -36,6 +37,7 @@ export const BUILTINS: Record<string, Builtin> = {
   'editing-delete-silence': { plugin: deleteSilenceEditingPlugin, provides: [] },
   text: { plugin: textPlugin, provides: ['text'] },
   export: { plugin: exportPlugin, provides: ['export'] },
+  projects: { plugin: projectsPlugin, provides: [] },
   langgraph: { plugin: langgraphPlugin, provides: ['workflows', 'agents', 'agentTools'] },
   'agent-tools': { plugin: builtinAgentToolsPlugin, provides: [] },
   gateway: { plugin: gatewayPlugin, provides: ['httpServer'] },
@@ -54,7 +56,7 @@ export const PROFILES: Record<string, string[]> = {
 };
 /** Per-profile default plugin configs. A patch's `config.<id>` replaces the whole default for that row. */
 export const PROFILE_CONFIG: Record<string, Record<string, unknown>> = {
-  server: { gateway: { shutdown: false }, endpoints: { privateNetwork: false } },
+  server: { gateway: { shutdown: false }, endpoints: { privateNetwork: false }, projects: { linkedMedia: false } },
 };
 
 export const profilePatchSchema = z.object({

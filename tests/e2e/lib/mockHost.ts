@@ -1,0 +1,82 @@
+// 端到端测试用的假 Host：拦截连接引导、RPC 和事件流，按方法名返回测试给的结果。
+// 只用来构造界面状态（加载中、出错、冲突……）；Host 自身的行为由 tests/architecture 覆盖。
+import type { Page, Route } from '@playwright/test';
+
+export const MOCK_HOST = 'http://127.0.0.1:8799';
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- 测试里按方法直接解构参数
+type Handler = (payload: any) => unknown | Promise<unknown>;
+export type MockHandlers = Record<string, Handler>;
+
+export interface MockHost {
+  /** 每个方法被调用时收到的参数，按调用顺序 */
+  calls: { method: string; payload: Record<string, unknown> }[];
+  set(method: string, handler: Handler): void;
+}
+
+/** 模拟一个永不返回的请求（加载中状态）。 */
+export const pending = () => new Promise<never>(() => undefined);
+
+/** 让 RPC 返回错误（Host 已收到但处理失败）。 */
+export class RpcError extends Error {}
+
+const defaults: MockHandlers = {
+  'host.info': () => ({ protocolVersion: 2, generation: 'e2e', methods: [], events: [], providers: [], capabilities: { projects: true } }),
+  'providers.models': () => [],
+  'cloud.status': () => ({ available: false }),
+  'endpoints.list': () => [],
+  'projects.list': () => [],
+};
+
+export async function mockHost(page: Page, handlers: MockHandlers = {}): Promise<MockHost> {
+  const table: MockHandlers = { ...defaults, ...handlers };
+  const host: MockHost = { calls: [], set: (method, handler) => { table[method] = handler; } };
+
+  await page.route('**/__flycut/connection', route => route.fulfill({ json: { url: MOCK_HOST, token: 'e2e-token' } }));
+  await page.routeWebSocket(`${MOCK_HOST.replace('http', 'ws')}/events**`, () => { /* 连上即可，不推送事件 */ });
+  await page.route(`${MOCK_HOST}/**`, async (route: Route) => {
+    const request = route.request();
+    const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' };
+    if (request.method() === 'OPTIONS') { await route.fulfill({ status: 204, headers }); return; }
+    const url = new URL(request.url());
+    // 上传媒体（Web 端新建项目）
+    if (url.pathname === '/assets' && request.method() === 'POST') { await route.fulfill({ headers, json: { assetId: UPLOADED_ASSET } }); return; }
+    if (url.pathname !== '/rpc') { await route.fulfill({ status: 404, headers }); return; }
+    const body = request.postDataJSON() as { rpcId: string; method: string; payload: Record<string, unknown> };
+    host.calls.push({ method: body.method, payload: body.payload });
+    const handler = table[body.method];
+    let result: unknown;
+    try {
+      if (!handler) throw new RpcError(`Unknown RPC method: ${body.method}`);
+      result = { ok: true, value: await handler(body.payload) };
+    } catch (error) {
+      // 网络层失败（Host 未响应）：直接断开
+      if (!(error instanceof RpcError)) { await route.abort('connectionrefused').catch(() => undefined); return; }
+      result = { ok: false, error: { code: 'RPC_ERROR', message: error.message, details: {} } };
+    }
+    await route.fulfill({ headers, json: { type: 'server-response', rpcId: body.rpcId, result } }).catch(() => undefined);
+  });
+  return host;
+}
+
+/** 首页列表里的一个项目。 */
+export function projectItem(id: string, name: string, patch: Record<string, unknown> = {}) {
+  const now = new Date().toISOString();
+  return { id, name, durationSeconds: 754, createdAt: now, updatedAt: now, revision: 3, videoCount: 1, videoId: VIDEO_ID,
+    hasThumbnail: false, mediaMissing: false, ...patch };
+}
+
+/** 假 Host 给每次上传返回的资产编号 */
+export const UPLOADED_ASSET = '00000000-0000-4000-8000-0000000000bb';
+export const VIDEO_ID = '00000000-0000-4000-8000-0000000000aa';
+export const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+
+/** 设置主题和界面偏好；在 page.goto 之前调用。 */
+export async function prepare(page: Page, theme: 'light' | 'dark', extra: Record<string, string> = {}) {
+  await page.addInitScript(({ theme, extra }) => {
+    if (sessionStorage.getItem('e2e-prepared')) return;
+    sessionStorage.setItem('e2e-prepared', '1');
+    localStorage.setItem('theme-storage', JSON.stringify({ state: { theme, resolvedTheme: theme }, version: 0 }));
+    for (const [key, value] of Object.entries(extra)) localStorage.setItem(key, value);
+  }, { theme, extra });
+}

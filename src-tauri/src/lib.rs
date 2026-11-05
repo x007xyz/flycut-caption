@@ -1,5 +1,6 @@
 mod commands;
 mod host;
+mod media_link;
 
 #[tauri::command]
 fn app_ready() -> &'static str {
@@ -22,7 +23,11 @@ async fn pick_media_file() -> Option<String> {
         .pick_file()
         .await;
 
-    file.map(|f| f.path().to_string_lossy().to_string())
+    file.map(|f| {
+        // Only files the user chose here may later be linked into a project (ADR-0002).
+        media_link::allow(f.path());
+        f.path().to_string_lossy().to_string()
+    })
 }
 
 /// 弹出原生保存对话框，返回用户选定的输出文件路径。
@@ -60,7 +65,14 @@ pub fn run() {
             commands::media::download_media_to_temp,
             pick_model_directory,
             host::save_host_asset,
+            media_link::link_project_media,
         ])
+        .on_window_event(|_, event| {
+            // Files dropped onto the window count as chosen by the user, like the picker.
+            if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
+                paths.iter().for_each(|path| media_link::allow(path));
+            }
+        })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|_, event| {

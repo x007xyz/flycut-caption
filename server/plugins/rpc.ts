@@ -1,9 +1,21 @@
 import type { Context } from '@deepseek-ai/cordis';
 import { randomUUID } from 'node:crypto';
 import type { z } from 'zod';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { PROTOCOL_VERSION, type EventFrame, type HostInfo, type RemoteEventName, type RemoteEvents, type RpcInput, type RpcMethod, type RpcOutput } from '../../shared/protocol';
 
 interface Entry { schema?: z.ZodType; handler: (input: unknown) => unknown }
+
+/**
+ * A plain HTTP route owned by a plugin (media streaming, shell-only endpoints). The Gateway matches and authenticates;
+ * `client` routes take the frontend token, `shell` routes only the desktop shell's secret (`HostConfig.shellToken`).
+ */
+export interface HttpRoute {
+  method: 'GET' | 'POST';
+  pattern: RegExp;
+  auth: 'client' | 'shell';
+  handle(req: IncomingMessage, res: ServerResponse, match: RegExpMatchArray): Promise<void>;
+}
 
 export interface RpcService {
   /** Registers a remote method; returns a disposer. Call inside `ctx.effect` so unloading the plugin withdraws it. */
@@ -20,6 +32,10 @@ export interface RpcService {
   cursor(): number;
   /** Capability flags contributed to `host.info`. */
   capability(name: string, enabled?: boolean): () => void;
+  /** Registers a plugin-owned HTTP route; returns a disposer. Call inside `ctx.effect`. */
+  route(route: HttpRoute): () => void;
+  /** The route matching a request, if any. */
+  match(method: string, pathname: string): { route: HttpRoute; match: RegExpMatchArray } | undefined;
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -37,6 +53,7 @@ export const rpcPlugin = { name: 'flycut-rpc', apply(ctx: Context) {
   const exposed = new Map<string, () => void>();
   const listeners = new Set<(frame: EventFrame) => void>();
   const capabilities = new Map<string, boolean>();
+  const routes = new Set<HttpRoute>();
   const generation = randomUUID();
   let sequence = 0;
   const service: RpcService = {
@@ -66,6 +83,14 @@ export const rpcPlugin = { name: 'flycut-rpc', apply(ctx: Context) {
     capability(name, enabled = true) {
       capabilities.set(name, enabled);
       return () => { capabilities.delete(name); };
+    },
+    route(route) { routes.add(route); return () => { routes.delete(route); }; },
+    match(method, pathname) {
+      for (const route of routes) {
+        if (route.method !== method) continue;
+        const match = pathname.match(route.pattern); if (match) return { route, match };
+      }
+      return undefined;
     },
   };
   ctx.provide('rpc', service);

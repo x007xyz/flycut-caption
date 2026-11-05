@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { FlyCutCaption } from './index'
+import { ProjectsApp } from './components/Project/ProjectsApp'
 import { zhCN, enUS, type FlyCutCaptionLocale } from './contexts/LocaleProvider'
 
 // 创建自定义语言包示例 - 日语
@@ -401,7 +401,7 @@ function App() {
   }
 
   return (
-    <FlyCutCaption
+    <ProjectsApp
       config={{
         theme: 'auto',
         language: currentLanguage

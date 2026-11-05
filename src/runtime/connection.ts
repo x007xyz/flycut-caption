@@ -12,6 +12,8 @@ export interface RemoteConnection {
   on<E extends RemoteEventName>(name: E, listener: (payload: RemoteEvents[E]) => void): () => void;
   upload(audio: Blob): Promise<string>;
   download(assetId: string): Promise<Blob>;
+  /** Absolute URL of a Host HTTP route for elements that cannot send headers (`<video src>`); carries the token. */
+  resourceUrl(path: string): string;
   waitJob<T>(id: string, progress?: (job: JobSnapshot) => void, signal?: AbortSignal): Promise<T>;
   subscribe(listener: () => void): () => void;
   snapshot(): 'connecting' | 'connected' | 'disconnected';
@@ -64,6 +66,9 @@ export class HostConnection implements RemoteConnection {
     const response = await fetch(`${this.options.url}/assets/${assetId}`, { headers: { Authorization: `Bearer ${this.options.token}` } });
     if (!response.ok) throw new Error(`Host download HTTP ${response.status}`);
     return response.blob();
+  }
+  resourceUrl(path: string) {
+    const url = new URL(path, this.options.url); url.searchParams.set('token', this.options.token); return url.toString();
   }
   private accept(job: JobSnapshot) {
     const previous = this.jobs.get(job.id);

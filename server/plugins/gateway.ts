@@ -75,6 +75,22 @@ export const gatewayPlugin = { name: 'flycut-api-gateway', inject: ['hostConfig'
       if (!allowedOrigin(req.headers.origin) || !(LOOPBACK_HOST.test(host) || originHosts.has(host))) { json(403, { error: 'Forbidden' }); return; }
       json(200, { token: ctx.hostConfig.token }); return;
     }
+    // Plugin-owned routes (media streaming, shell-only endpoints). Shell routes come from the desktop shell process,
+    // which sends no Origin; a browser page cannot use them even if it learned the frontend token.
+    const routed = ctx.rpc.match(req.method ?? '', url.pathname);
+    if (routed) {
+      const shellToken = ctx.hostConfig.shellToken;
+      const allowed = routed.route.auth === 'shell'
+        ? !!shellToken && !req.headers.origin && req.headers.authorization === `Bearer ${shellToken}`
+        : authorized(req, url);
+      if (!allowed) { json(401, { error: 'Unauthorized' }); return; }
+      try { await routed.route.handle(req, res, routed.match); }
+      catch (error) {
+        if (res.headersSent) { res.destroy(); return; }
+        json(400, { error: error instanceof Error ? error.message : String(error) });
+      }
+      return;
+    }
     // Vite emits bundles under `/assets/<name>`; Host assets are `/assets/<uuid>`, so only UUIDs reach the API.
     if (webRoot && req.method === 'GET' && !['/rpc', '/events'].includes(url.pathname) && !ASSET_PATH.test(url.pathname)) {
       if (await serveStatic(url.pathname, res)) return;
@@ -95,7 +111,8 @@ export const gatewayPlugin = { name: 'flycut-api-gateway', inject: ['hostConfig'
         return;
       }
       if (url.pathname !== '/rpc' || req.method !== 'POST') { json(404, { error: 'Not found' }); return; }
-      const input = rpcRequestSchema.parse(JSON.parse((await body(req, 2 * 1024 * 1024)).toString('utf8')));
+      // An hour of word timestamps is a few MB of JSON (projects.saveTranscript); media goes through /assets.
+      const input = rpcRequestSchema.parse(JSON.parse((await body(req, 32 * 1024 * 1024)).toString('utf8')));
       let response: RpcResponse;
       try { response = { type: 'server-response', rpcId: input.rpcId, result: { ok: true, value: await ctx.rpc.invoke(input.method, input.payload) } }; }
       catch (error) { response = { type: 'server-response', rpcId: input.rpcId, result: { ok: false, error: { code: 'RPC_ERROR', message: error instanceof Error ? error.message : String(error), details: {} } } }; }

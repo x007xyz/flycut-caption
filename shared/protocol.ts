@@ -2,6 +2,8 @@ import { z } from 'zod';
 import type { SubtitleTranscript, ASRProgress } from '../src/types/subtitle';
 import type { EditorPluginManifest } from '../src/types/plugin';
 import { asrRequestSchema, modelRefSchema, type ProviderModels, type ProviderSummary } from './providers';
+import type { ProjectFile, ProjectListItem, ProjectOpenResult, SaveResult, projectCreateSchema, projectOpenSchema, saveTranscriptSchema,
+  saveEditsSchema, duplicateSchema, relinkSchema, thumbnailSchema } from './projects';
 
 export const PROTOCOL_VERSION = 2;
 export const rpcRequestSchema = z.object({ type: z.literal('client-request'), rpcId: z.string().min(1),
@@ -93,6 +95,15 @@ export interface RpcMethods {
   'export.start': { input: z.input<typeof exportInputSchema>; output: JobSnapshot };
   'plugins.list': { input: void; output: { profile: string; layers: string[]; plugins: PluginStatus[] } };
   'plugins.reload': { input: { id: string }; output: PluginStatus };
+  /** Projects (F-0002): `server/plugins/projects.ts`, contract in `shared/projects.ts`. */
+  'projects.list': { input: void; output: ProjectListItem[] };
+  'projects.create': { input: z.input<typeof projectCreateSchema>; output: { projectId: string; videoId: string; revision: number; project: ProjectFile } };
+  'projects.open': { input: z.input<typeof projectOpenSchema>; output: ProjectOpenResult };
+  'projects.saveTranscript': { input: z.input<typeof saveTranscriptSchema>; output: SaveResult };
+  'projects.saveEdits': { input: z.input<typeof saveEditsSchema>; output: SaveResult };
+  'projects.duplicate': { input: z.input<typeof duplicateSchema>; output: { projectId: string; videoId: string; revision: number } };
+  'projects.relinkMedia': { input: z.input<typeof relinkSchema>; output: SaveResult };
+  'projects.thumbnail': { input: z.input<typeof thumbnailSchema>; output: { dataUrl: string | null } };
 }
 export type RpcMethod = keyof RpcMethods;
 export type RpcInput<M extends RpcMethod> = RpcMethods[M]['input'];

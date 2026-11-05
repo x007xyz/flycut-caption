@@ -15,7 +15,9 @@ export interface HostConfig { home: string; port: number; token: string; resourc
   /** Browser origins allowed besides loopback and Tauri, e.g. `https://flycut.example.com`. */
   allowedOrigins?: string[];
   /** Built frontend (`dist/`) served by the Host together with the connection bootstrap. */
-  webRoot?: string }
+  webRoot?: string;
+  /** Secret only the desktop shell holds; authorizes `shell` routes. Unset: those routes reject every request. */
+  shellToken?: string }
 export type ProgressReporter = (progress: ASRProgress) => void;
 /**
  * One inference backend. Capabilities are optional methods: implement only what the backend does.
@@ -53,6 +55,8 @@ export interface AssetService {
   putStream(source: NodeJS.ReadableStream, limit: number): Promise<string>;
   /** Moves a finished file (e.g. an export output) into the asset store without copying. */
   adopt(file: string): Promise<string>;
+  /** Moves an uploaded asset out of the store to `target` (e.g. into a project), so the TTL cleanup no longer applies. */
+  claim(id: string, target: string): Promise<void>;
   read(id: string): Promise<Buffer>;
   size(id: string): Promise<number>;
   path(id: string): string;

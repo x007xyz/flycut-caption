@@ -2,7 +2,7 @@ import type { Context } from '@deepseek-ai/cordis';
 import { randomUUID } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
 import { mkdir, readdir, readFile, writeFile, rename, rm, stat, utimes } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { Transform } from 'node:stream';
 import { z } from 'zod';
@@ -31,6 +31,7 @@ export const storagePlugin = { name: 'flycut-storage', inject: ['hostConfig', 'r
       return id;
     },
     async adopt(file) { const id = randomUUID(); await rename(file, join(assetsRoot, id)); return id; },
+    async claim(id, target) { await mkdir(dirname(target), { recursive: true }); await rename(assetPath(id), target); },
     async read(id) { return readFile(assetPath(id)); },
     async size(id) { return (await stat(assetPath(id))).size; },
     path(id) {

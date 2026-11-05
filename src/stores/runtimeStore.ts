@@ -3,10 +3,12 @@ import { useStore, type StoreApi } from 'zustand';
 import { useClientRuntime } from '@/runtime/context';
 import type { AppState, AppActions } from './appStore';
 import type { HistoryState, HistoryActions } from './historyStore';
+import type { ProjectState, ProjectActions } from './projectStore';
 
 export interface RuntimeStores {
   app: StoreApi<AppState & AppActions>;
   history: StoreApi<HistoryState & HistoryActions>;
+  project: StoreApi<ProjectState & ProjectActions>;
 }
 declare module '@deepseek-ai/cordis' { interface Context { stores: RuntimeStores } }
 
