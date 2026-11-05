@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import type { FlyCutCaptionLocale } from './locales'
 import type { SubtitleChunk } from './types/subtitle'
 
@@ -89,6 +89,8 @@ export interface FlyCutCaptionProps {
   onProgress?: (stage: string, progress: number) => void
   /** Called when language changes */
   onLanguageChange?: (language: string) => void
+  /** Extra content in the workstation header after the brand, e.g. project breadcrumb and save status */
+  headerSlot?: ReactNode
 }
 
 // Default configuration

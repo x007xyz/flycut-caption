@@ -1,4 +1,5 @@
 // 工作台顶部栏：品牌、创建/导出菜单、智能剪切、撤销重做、语言与设置
+import type { ReactNode } from 'react';
 import { ChevronDown, Download, FileText, Github, Keyboard, Link2, Loader2, Play, Redo2, Settings, Undo2, Upload, Video, Wand2 } from 'lucide-react';
 import { useTranslation, useLocale } from '@/contexts/LocaleProvider';
 import { useAppStore } from '@/stores/appStore';
@@ -25,9 +26,11 @@ export interface WorkstationHeaderProps {
   onOpenSubtitleExport: () => void;
   onSmartCutBlank: () => void;
   onOpenSettings: () => void;
+  /** 顶栏左侧、品牌之后的扩展位置，例如项目面包屑和保存状态 */
+  slot?: ReactNode;
 }
 
-export function WorkstationHeader({ media, mergedConfig, onLanguageChange, onOpenVideoExport, onOpenSubtitleExport, onSmartCutBlank, onOpenSettings }: WorkstationHeaderProps) {
+export function WorkstationHeader({ media, mergedConfig, onLanguageChange, onOpenVideoExport, onOpenSubtitleExport, onSmartCutBlank, onOpenSettings, slot }: WorkstationHeaderProps) {
   const { t } = useTranslation();
   const { language, setLanguage } = useLocale();
   const videoFile = useAppStore(state => state.videoFile);
@@ -46,6 +49,8 @@ export function WorkstationHeader({ media, mergedConfig, onLanguageChange, onOpe
         </div>
 
         <div className="h-4 w-px bg-border mx-2"></div>
+
+        {slot && (<>{slot}<div className="h-4 w-px bg-border mx-2"></div></>)}
 
         <div className="create-menu relative">
           <button data-testid="create-trigger" className="flex items-center space-x-1.5 text-sm font-medium hover:text-primary transition-colors">

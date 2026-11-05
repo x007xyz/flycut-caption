@@ -423,7 +423,7 @@ function FlyCutCaptionContent(props: FlyCutCaptionProps) {
       <div className="h-screen bg-background flex flex-col">
         {/* 顶部标题栏 - Aimu 风格 */}
         <WorkstationHeader media={media} mergedConfig={mergedConfig} onLanguageChange={onLanguageChange} onOpenVideoExport={handleOpenVideoExportDialog}
-          onOpenSubtitleExport={handleOpenSubtitleExportDialog} onSmartCutBlank={handleSmartCutBlank} onOpenSettings={() => setSettingsOpen(true)} />
+          onOpenSubtitleExport={handleOpenSubtitleExportDialog} onSmartCutBlank={handleSmartCutBlank} onOpenSettings={() => setSettingsOpen(true)} slot={props.headerSlot} />
 
         {/* 主要内容区域 - Aimu 风格左右分栏 */}
         <div className="flex-1 flex overflow-hidden bg-background">
