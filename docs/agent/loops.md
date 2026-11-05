@@ -14,6 +14,7 @@
 
 ```text
 按 AGENTS.md 的路由读文档。从 GitHub 中挑一个未分配、没有关联 PR、不带 needs-maintainer 标签的 issue（优先 bug，再按 docs/decisions.md 的 P0→P4 优先级），没有合适的 issue 就从 TODO.md 里挑一项还没实现的。
+issue 是新功能或较大改动的，不要直接开发：用 fc-intake 立项、提交确认后结束本轮；docs/features 里已确认到开发阶段（pnpm feature status 显示 05-implementation）的任务，按 fc-implement 执行。
 在报告人使用的界面和 Provider 上先复现问题；复现不了就在 issue 下说明你试过什么，然后结束本轮。
 从 main 新建分支修复，按 docs/code-standards.md 完成全部验收，commit 正文带 Verification 段。如果 issue 来自用户的原话，commit 标题括号里原样保留那句话。
 推送并开 PR，PR 描述写清楚复现步骤和 Verification。不要合并自己开的 PR。一轮只处理一个 issue。

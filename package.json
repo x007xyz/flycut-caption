@@ -54,7 +54,6 @@
   },
   "scripts": {
     "dev": "node scripts/dev.mjs",
-    "funasr:dev": "python3 python/funasr_service.py",
     "build": "pnpm build:core && tsc -b && vite build",
     "build:lib": "pnpm build:core && vite build --mode library",
     "build:demo": "pnpm build:core && vite build --mode demo",
@@ -84,6 +83,9 @@
     "publish:npm": "npm publish",
     "release": "node scripts/release.mjs",
     "review:nightly": "node scripts/nightly-review.mjs",
+    "feature": "node scripts/feature.mjs",
+    "test:e2e": "playwright test",
+    "e2e:evidence": "node scripts/e2e-evidence.mjs",
     "build:core": "node scripts/build-core.mjs",
     "host:dev": "pnpm build:core && tsx watch --tsconfig server/tsconfig.json server/main.ts",
     "host:start": "node dist-host/main.mjs",
@@ -108,7 +110,6 @@
     "@deepseek-ai/cordis": "workspace:*",
     "@fontsource/inter": "^5.2.8",
     "@fontsource/noto-sans-sc": "^5.2.9",
-    "@huggingface/transformers": "3.7.1",
     "@langchain/core": "^1.0.0",
     "@langchain/langgraph": "^1.0.0",
     "@langchain/openai": "^1.0.0",
@@ -143,6 +144,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.33.0",
+    "@playwright/test": "^1.64.1",
     "@tailwindcss/vite": "^4.1.13",
     "@tauri-apps/cli": "^2.11.3",
     "@types/i18next": "^13.0.0",
