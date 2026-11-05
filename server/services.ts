@@ -6,8 +6,6 @@ import type { EditorPlugin } from '../src/types/plugin';
 import type { z } from 'zod';
 
 export interface HostConfig { home: string; port: number; token: string; resourceRoot: string; 
-  /** Existing FunASR Provider service; when unset the Host starts `python/funasr_service.py` itself. */
-  funasrUrl?: string;
   /** User model catalog and downloads (desktop app data dir). Defaults to `<home>/app-data`. */
   appData?: string;
   /** Assets unused for this long are deleted (default 24). */

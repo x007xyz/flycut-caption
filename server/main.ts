@@ -45,7 +45,7 @@ const appData = resolve(process.env.FLYCUT_APP_DATA ?? (process.platform === 'da
   : process.platform === 'win32' ? join(process.env.APPDATA ?? homedir(), 'com.flycut.caption')
   : join(homedir(), '.local/share/com.flycut.caption')));
 const ctx = await createHost({ home, token, appData, port: Number(process.env.FLYCUT_HOST_PORT ?? 8766),
-  resourceRoot: resolve(process.env.FLYCUT_RESOURCE_ROOT ?? '.'), funasrUrl: process.env.FLYCUT_FUNASR_URL, bind, allowedOrigins, webRoot,
+  resourceRoot: resolve(process.env.FLYCUT_RESOURCE_ROOT ?? '.'), bind, allowedOrigins, webRoot,
   assetTtlHours: process.env.FLYCUT_ASSET_TTL_HOURS ? Number(process.env.FLYCUT_ASSET_TTL_HOURS) : undefined }, { profile })
   .catch(async error => { await unlink(lockFile).catch(() => undefined); throw error; });
 const address = ctx.httpServer.address() as { port: number };

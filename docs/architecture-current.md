@@ -1,6 +1,6 @@
 # FlyCut Caption：Cordis 前后端与 LangGraph 编排
 
-本页描述当前代码。前端与 Host 是两个独立进程、两个 Cordis Context，通过 HTTP RPC 和 WebSocket 通信。Python 是 Host 管理的推理 worker。
+本页描述当前代码。前端与 Host 是两个独立进程、两个 Cordis Context，通过 HTTP RPC 和 WebSocket 通信。客户端不带 Python；Python 推理（例如 FunASR）是用户自己运行的 HTTP Provider。
 
 ## 代码入口
 
@@ -20,10 +20,10 @@
 | `server/plugins/providers.ts` | Provider 注册表：`providers.list/models/prepare`，识别前检查模型状态与选项，识别后校验字幕时间戳 |
 | `server/plugins/models.ts` | 内置 Provider 共用的模型文件定位与下载（镜像优先、归档兜底） |
 | `server/plugins/langgraph.ts` | 默认 Workflow 和 Agent Loop 实现 |
-| `server/plugins/asr.ts` | 内置 Provider：sherpa-onnx（直接调用 `funasr-asr` sidecar）、Qwen（调用 `qwen_asr_runner.py`）、Transformers |
-| `server/plugins/funasr.ts` | FunASR Provider：托管或连接 `python/funasr_service.py`，走 HTTP 协议 |
+| `server/plugins/asr.ts` | 内置 Provider：sherpa-onnx（直接调用 `funasr-asr` sidecar） |
+| `server/plugins/cloud.ts` | FlyCut Cloud Provider：官方付费服务，走 HTTP 协议，配置了地址才注册 |
 | `server/plugins/endpoints.ts` | 用户添加的 HTTP Provider（FlyCut 协议 / OpenAI 兼容） |
-| `server/providers/httpProvider.ts` | FlyCut Provider 协议 v1 客户端，内置 FunASR 与用户服务共用 |
+| `server/providers/httpProvider.ts` | FlyCut Provider 协议 v1 客户端，FlyCut Cloud 与用户服务共用 |
 | `server/plugins/text.ts` | 字幕纠错与翻译 Provider |
 | `server/plugins/export.ts` | Host FFmpeg 导出插件、任务进度与结果资产 |
 | `server/plugins/editing.ts` | 编辑分析注册表；每个分析器即一个 Workflow 步骤 |
@@ -52,7 +52,7 @@ flowchart TB
     Flow --> Providers
     Flow --> Jobs
   end
-  Providers --> Worker[Python worker / 原生 sidecar / 模型 API]
+  Providers --> Worker[原生 sidecar / HTTP Provider 服务 / 模型 API]
   Host --> Export[Export Plugin / FFmpeg]
 ```
 
@@ -60,7 +60,7 @@ flowchart TB
 
 前端默认装载 Connection、UI Registry、编辑器宿主、播放器、字幕编辑器、ASR 设置和助手插件。React 负责渲染，Cordis 管理服务依赖、扩展注册及清理。界面通过 PluginSlot 读取已注册组件。
 
-后端默认装载 RPC 注册表、存储、Provider Registry、模型管理、Python worker、三组 ASR Provider、编辑分析、文本 Provider、导出、LangGraph、内置 Agent 工具和 Gateway。插件通过 `ctx.provide` 注册服务，通过 `ctx.effect` 绑定清理；消费者通过 `inject` 声明依赖。
+后端默认装载 RPC 注册表、存储、Provider Registry、模型管理、ASR Provider（sherpa-onnx、FlyCut Cloud、用户服务）、编辑分析、文本 Provider、导出、LangGraph、内置 Agent 工具和 Gateway。插件通过 `ctx.provide` 注册服务，通过 `ctx.effect` 绑定清理；消费者通过 `inject` 声明依赖。
 
 扩展点（全部是注册表，卸载插件即撤销）：
 
@@ -76,9 +76,9 @@ flowchart TB
 
 前端：`ctx.ui.register(slot, component, { order })`；`shell`、`player`、`subtitle-editor` 为独占位置，`tools`、`options` 可多贡献。
 
-ASRService 和 AIService 是前端 Context 内的服务（`ctx.asr`、`ctx.ai`），按连接创建，不执行本地模型推理或直接调用模型 API。识别请求只带 `{ providerId, modelId }`、语言和模型声明过的选项；内置 Provider 为 `sherpa-onnx`、`funasr`、`qwen-asr`、`transformers`，用户服务为 `flycut:<名称>` / `openai:<名称>`。规范见 [subsystems/providers.md](subsystems/providers.md)。
+ASRService 和 AIService 是前端 Context 内的服务（`ctx.asr`、`ctx.ai`），按连接创建，不执行本地模型推理或直接调用模型 API。识别请求只带 `{ providerId, modelId }`、语言和模型声明过的选项；内置 Provider 为 `sherpa-onnx` 和 `flycut-cloud`（配置了地址才有），用户服务（包括独立仓库的 FunASR Provider）为 `flycut:<名称>` / `openai:<名称>`。规范见 [subsystems/providers.md](subsystems/providers.md)。
 
-Transformers 推理在 Host CPU 上执行，模型缓存在后端。原有浏览器 WASM/WebGPU 模型缓存不作为后端已下载状态；设置页的下载操作现在调用 Host。
+Host 和前端都不再内置 Transformers.js 推理；设置页的下载操作调用 Host，由 Provider 自己下载。
 
 ## Workflow 与 Agent Loop
 
@@ -105,7 +105,6 @@ Transformers 推理在 Host CPU 上执行，模型缓存在后端。原有浏览
 - `WS /events`：先发送 `host/ready`（含已暴露事件列表）、`jobs/snapshot`，再推送 `{type:'event', generation, seq, name, payload}`；只有经 `ctx.rpc.expose` 的 Cordis 事件会被转发，`job/updated` 也走这一通道。
 - 客户端重连后恢复任务快照；等待任务时也查询状态，覆盖订阅前完成和连接中断。
 - Host 使用 Bearer 凭证、loopback 监听和 Origin 检查；WebSocket 使用同一凭证。
-- FunASR 服务（Python）使用独立的内部凭证，由 Host 启动和管理。
 
 RPC 方法由各插件注册，完整列表见 `shared/protocol.ts` 的 `RpcMethods` 或运行时 `host.info.methods`：`host.*`、`jobs.*`、`providers.list/models/prepare`、`endpoints.list/save/remove`、`editing.list`、`agent.tools/start`、`workflow.start`、`text.start`、`export.start`。
 
@@ -146,7 +145,7 @@ Host 的插件组合由 `server/profile.ts` 解析，分层顺序与 Harness 一
 
 ```yaml
 # <Host home>/profile.patch.yml
-disable: [asr-python, python]
+disable: [asr-cloud]
 plugins:
   - id: vendor-asr
     module: vendor-asr.mjs   # <Host home>/plugins/vendor-asr.mjs
@@ -173,9 +172,9 @@ pnpm serve:server        # 构建后：server Profile，配合 FLYCUT_HOST_BIND 
 pnpm tauri:dev
 ```
 
-首次桌面打包需要先完成项目原有的 sidecar、FFmpeg 和共享资源准备。`package:host` 使用当前机器的 Node 可执行文件，须在目标平台构建。Python 解释器及模型依赖仍按本地环境配置：FunASR 用 `FLYCUT_PYTHON`，Qwen 用 `FLYCUT_QWEN_PYTHON`（缺省同 `FLYCUT_PYTHON`）。
+首次桌面打包需要先完成项目原有的 sidecar、FFmpeg 和共享资源准备。`package:host` 使用当前机器的 Node 可执行文件，须在目标平台构建。安装包不含 Python；FunASR 见 [funasr-provider.md](funasr-provider.md)。
 
-Host 默认 home：`~/.flycut-caption/host`。可用 `FLYCUT_HOST_HOME`、`FLYCUT_HOST_PORT`、`FLYCUT_RESOURCE_ROOT`、`FLYCUT_APP_DATA` 覆盖。桌面使用应用数据目录。要连接已有的 FunASR 服务（例如 GPU 机器）时设置 `FLYCUT_FUNASR_URL` 与可选 `FLYCUT_FUNASR_TOKEN`。
+Host 默认 home：`~/.flycut-caption/host`。可用 `FLYCUT_HOST_HOME`、`FLYCUT_HOST_PORT`、`FLYCUT_RESOURCE_ROOT`、`FLYCUT_APP_DATA` 覆盖。桌面使用应用数据目录。FlyCut Cloud 的地址用 `FLYCUT_CLOUD_URL` 设置。
 
 ## 验证
 
@@ -188,10 +187,9 @@ pnpm build
 pnpm build:lib
 pnpm build:funasr-sidecar
 cargo check --manifest-path src-tauri/Cargo.toml
-python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
-架构测试覆盖真实 HTTP/WebSocket、鉴权、Provider 注销与模型/选项/时间戳校验、FlyCut 协议服务（含取消与版本检查）、真实启动 `funasr_service.py`、取消、LangGraph 工作流、模型工具循环、API 音频上传、持久化与中断标记。测试中的模型 API 使用本地 fixture，避免调用付费服务。
+架构测试覆盖真实 HTTP/WebSocket、鉴权、Provider 注销与模型/选项/时间戳校验、FlyCut 协议服务（含取消与版本检查）、FlyCut Cloud 的配置与 API Key、取消、LangGraph 工作流、模型工具循环、API 音频上传、持久化与中断标记。测试中的模型 API 使用本地 fixture，避免调用付费服务。
 
 ## 当前保留的编辑能力
 
@@ -205,7 +203,7 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 
 剩余限制：
 - 只有外部插件支持运行中热重载；内置插件改动在开发时由 `pnpm dev`（tsx watch）重启整个 Host。
-- Web ASR 的 OSS 镜像与示例视频当前返回 404，Host Transformers Provider 会回退到 HuggingFace；示例视频按钮依赖该 OSS 文件。
+- 示例视频的 OSS 文件当前返回 404，示例视频按钮依赖该文件。
 
 ## 参考
 

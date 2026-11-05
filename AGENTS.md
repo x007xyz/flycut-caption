@@ -14,12 +14,12 @@ FlyCut Caption 是智能视频字幕裁剪工具：上传视频/音频 → ASR �
 | 要改的地方 | 先读 |
 |---|---|
 | `src-tauri/**`、`src-tauri/sidecars/**`、FFmpeg 打包、桌面媒体路径 | [docs/subsystems/funasr-tauri.md](docs/subsystems/funasr-tauri.md) |
-| `server/plugins/{asr,providers,models,endpoints}.ts`、`server/providers/**`、`shared/providers.ts`、`shared/asr/**`、`python/**`、模型选择相关前端 | [docs/subsystems/providers.md](docs/subsystems/providers.md) |
+| `server/plugins/{asr,cloud,providers,models,endpoints}.ts`、`server/providers/**`、`shared/providers.ts`、`shared/asr/**`、模型选择相关前端 | [docs/subsystems/providers.md](docs/subsystems/providers.md) |
 | `core/**`、`server/**`、`shared/**`、`src/runtime/**`、RPC/事件/插件 | [docs/subsystems/cordis-host.md](docs/subsystems/cordis-host.md)，以及 [docs/architecture-current.md](docs/architecture-current.md) |
 | `src/**` 的组件、Hooks、stores、样式 | [docs/subsystems/frontend.md](docs/subsystems/frontend.md) |
 | 跨多个子系统 | 每个涉及的子系统文档都读，验证要求取并集 |
 | 改变已有行为、交互或架构边界 | [docs/decisions.md](docs/decisions.md)：已拍板的决定不在 PR 里推翻 |
-| 用户接入自己的模型、HTTP Provider 协议、Python worker | [docs/custom-asr-providers.md](docs/custom-asr-providers.md)、[docs/provider-http-protocol.md](docs/provider-http-protocol.md)、[docs/python-runtime-api.md](docs/python-runtime-api.md) |
+| 用户接入自己的模型、HTTP Provider 协议、FunASR | [docs/custom-asr-providers.md](docs/custom-asr-providers.md)、[docs/provider-http-protocol.md](docs/provider-http-protocol.md)、[docs/funasr-provider.md](docs/funasr-provider.md) |
 
 ## 按任务读文档
 

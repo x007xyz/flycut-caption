@@ -10,9 +10,8 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { WebSocket } from 'ws';
 import type { Context, Plugin } from '@deepseek-ai/cordis';
+import { cloudPlugin } from '../../server/plugins/cloud';
 import { createHost } from '../../server/app';
-import { funasrPlugin } from '../../server/plugins/funasr';
-import { QWEN_MODELS } from '../../server/plugins/asr';
 import { z } from 'zod';
 import { encodePcmWav } from '../../shared/asr/apiProtocol';
 import type { JobSnapshot } from '../../shared/protocol';
@@ -369,28 +368,35 @@ test('FlyCut protocol endpoint: health check, models, escaped options, polling a
   } finally { await host.close(); await new Promise<void>(resolve => service.close(() => resolve())); }
 });
 
-test('Qwen manifest lists single and sharded checkpoints with mirror-first file downloads', () => {
-  const files = (id: string) => QWEN_MODELS.find(item => item.entry.id === id)!.entry.files.map(file => file.path);
-  assert.ok(files('qwen3-asr-0.6b').includes('model.safetensors'));
-  assert.ok(!files('qwen3-asr-1.7b').includes('model.safetensors'));
-  for (const path of ['model.safetensors.index.json', 'model-00001-of-00002.safetensors', 'model-00002-of-00002.safetensors']) assert.ok(files('qwen3-asr-1.7b').includes(path));
-  for (const { entry } of QWEN_MODELS) {
-    assert.ok(entry.download_sources.every(source => source.download_mode === 'files'));
-    assert.equal(entry.download_sources[0].region, 'cn');
-  }
-});
-
-test('built-in FunASR Provider starts python/funasr_service.py and speaks the same protocol', async (t) => {
-  try { await execFileAsync(process.env.FLYCUT_PYTHON ?? 'python3', ['--version']); }
-  catch { t.skip('python3 is not installed in this environment'); return; }
-  const host = await setup([funasrPlugin]);
+test('FlyCut Cloud appears only when configured and authenticates with the user API key', async () => {
+  const seen: string[] = [];
+  const service = createServer((req, res) => {
+    seen.push(String(req.headers.authorization));
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(req.url === '/v1/health' ? { protocol: 'flycut-provider', version: 1 }
+      : { models: [{ id: 'cloud-asr', name: 'Cloud', role: 'asr', status: 'ready', timestampLevel: 'word' }] }));
+  });
+  await new Promise<void>(resolve => service.listen(0, '127.0.0.1', resolve));
+  const configured: Plugin = { ...cloudPlugin, apply: (ctx: Context) => cloudPlugin.apply(ctx, { baseUrl: `http://127.0.0.1:${(service.address() as { port: number }).port}` }) };
   try {
-    const group = (await host.call('providers.models')).find((item: any) => item.provider.id === 'funasr');
-    assert.equal(group.error, undefined);
-    const ids = group.models.map((model: any) => `${model.id}:${model.role}`);
-    for (const id of ['paraformer-zh:asr', 'sensevoice-small:asr', 'fsmn-vad:vad', 'ct-punc:punc', 'cam++:speaker']) assert.ok(ids.includes(id), id);
-    assert.ok(group.models.every((model: any) => ['ready', 'download', 'unavailable'].includes(model.status)));
-  } finally { await host.close(); }
+    const unconfigured = await setup([cloudPlugin]);
+    try {
+      assert.deepEqual(await unconfigured.call('cloud.status'), { available: false, hasApiKey: false });
+      assert.ok(!(await unconfigured.call('providers.list')).some((item: any) => item.id === 'flycut-cloud'));
+    } finally { await unconfigured.close(); }
+    const host = await setup([configured]);
+    try {
+      const cloud = async () => (await host.call('providers.models')).find((item: any) => item.provider.id === 'flycut-cloud');
+      assert.match((await cloud()).error, /API Key/);
+      assert.equal(seen.length, 0);
+      assert.deepEqual(await host.call('cloud.setApiKey', { apiKey: 'paid-key' }), { available: true, hasApiKey: true });
+      const group = await cloud();
+      assert.equal(group.error, undefined); assert.equal(group.provider.kind, 'builtin'); assert.equal(group.models[0].id, 'cloud-asr');
+      assert.ok(seen.length >= 2 && seen.every(header => header === 'Bearer paid-key'));
+      assert.deepEqual(await host.call('cloud.setApiKey', { apiKey: '' }), { available: true, hasApiKey: false });
+      assert.match((await cloud()).error, /API Key/);
+    } finally { await host.close(); }
+  } finally { await new Promise<void>(resolve => service.close(() => resolve())); }
 });
 
 test('assets stream in and out, can be released, and expire after their TTL', async () => {
@@ -418,7 +424,7 @@ test('profile layers disable built-ins, reject unmet dependencies, and hot-reloa
   } };\n`);
   await writePlugin('v1');
   await writeFile(join(home, 'profile.patch.yml'), [
-    '# Harness-style patch layer', 'disable: [asr-qwen]', 'plugins:', '  - id: echo', '    module: echo.mjs', '    config:', '      prefix: p', ''].join('\n'));
+    '# Harness-style patch layer', 'disable: [asr-cloud]', 'plugins:', '  - id: echo', '    module: echo.mjs', '    config:', '      prefix: p', ''].join('\n'));
   const base = { home, token: 'profile-token', port: 0, resourceRoot: resolve('.') };
   await assert.rejects(createHost(base, { patches: [{ source: 'test', patch: { disable: ['providers'] } }] }), /依赖不满足/);
   const ctx = await createHost(base);
@@ -431,10 +437,11 @@ test('profile layers disable built-ins, reject unmet dependencies, and hot-reloa
   try {
     const listed = await call('plugins.list');
     assert.ok(listed.layers[0].endsWith('profile.patch.yml'));
-    assert.ok(!listed.plugins.some((item: any) => item.id === 'asr-qwen'));
+    assert.ok(!listed.plugins.some((item: any) => item.id === 'asr-cloud'));
     assert.equal(listed.plugins.find((item: any) => item.id === 'echo').state, 'active');
     const listedProviders = await call('providers.list');
-    assert.ok(!listedProviders.some((item: any) => item.id === 'qwen-asr') && listedProviders.some((item: any) => item.id === 'sherpa-onnx'));
+    assert.ok(listedProviders.some((item: any) => item.id === 'sherpa-onnx'));
+    await assert.rejects(call('cloud.status'));
     assert.deepEqual(await call('echo.say'), { reply: 'v1', prefix: 'p' });
     await writePlugin('v2');
     assert.equal((await call('plugins.reload', { id: 'echo' })).state, 'active');

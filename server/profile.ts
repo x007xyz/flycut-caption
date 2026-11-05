@@ -10,9 +10,9 @@ import { rpcPlugin } from './plugins/rpc';
 import { storagePlugin } from './plugins/storage';
 import { providerRegistryPlugin } from './plugins/providers';
 import { modelsPlugin } from './plugins/models';
-import { qwenAsrPlugin, sherpaAsrPlugin, transformersAsrPlugin } from './plugins/asr';
-import { funasrPlugin } from './plugins/funasr';
+import { sherpaAsrPlugin } from './plugins/asr';
 import { endpointsPlugin } from './plugins/endpoints';
+import { cloudPlugin } from './plugins/cloud';
 import { deleteSilenceEditingPlugin, editingPlugin } from './plugins/editing';
 import { textPlugin } from './plugins/text';
 import { exportPlugin } from './plugins/export';
@@ -30,9 +30,7 @@ export const BUILTINS: Record<string, Builtin> = {
   providers: { plugin: providerRegistryPlugin, provides: ['providers'] },
   models: { plugin: modelsPlugin, provides: ['models'] },
   'asr-sherpa': { plugin: sherpaAsrPlugin, provides: [] },
-  'asr-funasr': { plugin: funasrPlugin, provides: [] },
-  'asr-qwen': { plugin: qwenAsrPlugin, provides: [] },
-  'asr-transformers': { plugin: transformersAsrPlugin, provides: [] },
+  'asr-cloud': { plugin: cloudPlugin, provides: [] },
   endpoints: { plugin: endpointsPlugin, provides: [] },
   editing: { plugin: editingPlugin, provides: ['editorPlugins'] },
   'editing-delete-silence': { plugin: deleteSilenceEditingPlugin, provides: [] },

@@ -1,7 +1,7 @@
-// 设置 → 模型：按 Provider 列出模型、下载、选用，以及添加 / 删除 HTTP 服务
+// 设置 → 模型：按 Provider 列出模型、下载、选用，填写 FlyCut Cloud 的 API Key，以及添加 / 删除 HTTP 服务
 import { useEffect, useState } from 'react';
-import { AlertCircle, CheckCircle2, Download, Loader2, Plus, RefreshCw, Server, Trash2 } from 'lucide-react';
-import type { EndpointInfo, EndpointInput } from '../../../shared/protocol';
+import { AlertCircle, CheckCircle2, Cloud, Download, KeyRound, Loader2, Plus, RefreshCw, Server, Trash2 } from 'lucide-react';
+import type { CloudStatus, EndpointInfo, EndpointInput } from '../../../shared/protocol';
 import type { ModelInfo, ModelRef } from '../../../shared/providers';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -88,8 +88,46 @@ export function ModelsPanel() {
           </ul>
         </section>
       ))}
+      <CloudSection />
       <EndpointsSection />
     </div>
+  );
+}
+
+/** Shown only when the release configures FlyCut Cloud; the key stays in Host memory. */
+function CloudSection() {
+  const { connection } = useClientRuntime();
+  const [status, setStatus] = useState<CloudStatus>();
+  const [apiKey, setApiKey] = useState('');
+  const [message, setMessage] = useState<{ text: string; failed?: boolean }>();
+  useEffect(() => { connection.call('cloud.status').then(setStatus, () => setStatus(undefined)); }, [connection]);
+  if (!status?.available) return null;
+
+  const save = async (value: string) => {
+    setMessage(undefined);
+    try {
+      setStatus(await connection.call('cloud.setApiKey', { apiKey: value }));
+      setApiKey(''); setMessage({ text: value ? '已保存 API Key' : '已清除 API Key' }); notifyProviderModelsChanged();
+    } catch (reason) { setMessage({ text: errorText(reason), failed: true }); }
+  };
+
+  return (
+    <section className="space-y-2 rounded-md border border-aimu-border p-3">
+      <div className="flex items-center gap-2">
+        <Cloud className="h-4 w-4 text-aimu-coral" />
+        <div>
+          <h3 className="text-sm font-medium">FlyCut Cloud</h3>
+          <p className="text-[11px] text-muted-foreground">官方云端识别（付费）。填写 API Key 后，模型出现在上方的 FlyCut Cloud 分组里。Key 只保存在 Host 内存中，重启后需要重填。</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <Input className="h-8 text-xs" type="password" autoComplete="off" value={apiKey} placeholder={status.hasApiKey ? '已设置，输入新的 Key 替换' : 'API Key'}
+          onChange={e => setApiKey(e.target.value)} />
+        <Button size="sm" className="h-8 text-xs" disabled={!apiKey} onClick={() => void save(apiKey)}><KeyRound className="mr-1 h-3 w-3" />保存</Button>
+        {status.hasApiKey && <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => void save('')}>清除</Button>}
+      </div>
+      {message && <p className={`text-[11px] ${message.failed ? 'text-destructive' : 'text-muted-foreground'}`}>{message.text}</p>}
+    </section>
   );
 }
 

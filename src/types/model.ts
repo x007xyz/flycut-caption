@@ -67,7 +67,7 @@ export interface RecognizerConfig {
 
 export interface AvailableModel {
   /** Inference runtime; download_sources[].provider only identifies a mirror. */
-  provider?: 'sherpa-onnx' | 'qwen-asr';
+  provider?: 'sherpa-onnx';
   local_path?: string | null;
   custom?: boolean;
   id: string;
@@ -138,7 +138,6 @@ export interface AllModelsStatus {
 
 // 模型 family 分组（用于 UI 渲染）
 export const MODEL_FAMILY_LABELS: Record<string, string> = {
-  qwen_asr: 'Qwen-ASR 多语种',
   sense_voice: 'SenseVoice 多语种',
   paraformer: 'Paraformer 中文优先',
   whisper: 'Whisper 英文 / 多语种',

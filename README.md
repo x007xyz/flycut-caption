@@ -13,7 +13,7 @@ A powerful AI-driven video subtitle editing tool focused on intelligent subtitle
 ## ✨ Features
 
 ### 🎯 Core Features
-- **🎤 Intelligent Speech Recognition**: High-precision ASR with Whisper (browser) and FunASR (desktop/Tauri), word-level timestamps
+- **🎤 Intelligent Speech Recognition**: High-precision ASR with word-level timestamps: offline sherpa-onnx built in, FunASR or your own service over HTTP
 - **🌐 Bilingual Subtitles**: Primary + secondary tracks, AI translation (e.g. Chinese ↔ English), dual-track editing
 - **✂️ Visual Subtitle Editing**: Select, delete, restore segments; word-level mark/delete modes
 - **⚡ Smart Cut Blank**: One-click detect and remove silent gaps to tighten the cut
@@ -24,7 +24,7 @@ A powerful AI-driven video subtitle editing tool focused on intelligent subtitle
 
 ### 🔧 Technical Features
 - **⚡ Modern Tech Stack**: React 19 + TypeScript + Vite + Tailwind CSS 4 + Tauri
-- **🧠 Local AI Processing**: Browser models via Transformers.js; desktop FunASR sidecar for higher quality
+- **🧠 Local AI Processing**: Offline sherpa-onnx models out of the box; the full FunASR model zoo (Paraformer, SenseVoice, Fun-ASR-Nano, Qwen3-ASR, Whisper) by running the separate [FunASR Provider](https://github.com/x007xyz/flycut-funasr-provider) locally or on a GPU machine ([guide](docs/funasr-provider.md))
 - **🎯 Web Workers / Sidecars**: ASR and encoding stay off the UI thread
 - **📱 Responsive Design**: Modern workstation UI adapted to different screen sizes
 - **🎪 Component Architecture**: Modular design, easy to maintain and extend
@@ -79,7 +79,7 @@ pnpm preview
 ### 2. Generate Subtitles
 - Choose ASR engine / model and recognition language
 - Click start recognition; AI generates timestamped subtitles in the background
-- Desktop builds can use FunASR for higher accuracy on longer clips
+- Add a FunASR Provider service for Qwen3-ASR, Fun-ASR-Nano and speaker labels
 
 ![ASR Processing](screenshots/asr-processing.gif)
 
@@ -544,7 +544,7 @@ You can also customize the appearance by:
 - **Build Tool**: Vite 7.1
 - **Styling Solution**: Tailwind CSS 4.1 + Shadcn/ui
 - **State Management**: Zustand + React Context
-- **AI Model**: Hugging Face Transformers.js
+- **AI Model**: sherpa-onnx, FunASR
 - **Video Processing**: WebAV
 - **Internationalization**: react-i18next
 
@@ -857,7 +857,7 @@ Earlier releases retain their original license terms. This change applies to thi
 
 ## 🙏 Acknowledgments
 
-- [Hugging Face](https://huggingface.co/) - Excellent Transformers.js library
+- [FunASR](https://github.com/modelscope/FunASR) - Speech recognition toolkit and model zoo
 - [OpenAI Whisper](https://openai.com/research/whisper) - Powerful speech recognition model
 - [Shadcn/ui](https://ui.shadcn.com/) - Elegant UI component library
 - [WebAV](https://github.com/hughfenghen/WebAV) - Powerful web audio/video processing library

@@ -52,6 +52,8 @@ export const endpointInputSchema = z.object({
   timeoutSeconds: z.number().min(10).max(600).default(120),
 });
 export type EndpointInput = z.input<typeof endpointInputSchema>;
+/** FlyCut Cloud: `available` once the release configures its address. */
+export interface CloudStatus { available: boolean; hasApiKey: boolean }
 export interface EndpointInfo extends Omit<z.infer<typeof endpointInputSchema>, 'apiKey'> { providerId: string; hasApiKey: boolean }
 
 export interface PluginStatus { id: string; source: 'builtin' | 'external'; module?: string; state: string; error?: string }
@@ -81,6 +83,8 @@ export interface RpcMethods {
   'endpoints.list': { input: void; output: EndpointInfo[] };
   'endpoints.save': { input: EndpointInput; output: EndpointInfo };
   'endpoints.remove': { input: { name: string }; output: { removed: string } };
+  'cloud.status': { input: void; output: CloudStatus };
+  'cloud.setApiKey': { input: { apiKey: string }; output: CloudStatus };
   'editing.list': { input: void; output: EditorPluginManifest[] };
   'agent.tools': { input: void; output: Array<{ name: string; description: string }> };
   'workflow.start': { input: z.input<typeof pipelineInputSchema>; output: JobSnapshot };

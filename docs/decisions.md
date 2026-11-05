@@ -14,9 +14,9 @@
 
 ### 模型 Provider
 
-来源：维护者 2026-11-02 确认。规范细节见 [subsystems/providers.md](subsystems/providers.md)。
+来源：维护者 2026-11-02、2026-11-03、2026-11-04 确认。规范细节见 [subsystems/providers.md](subsystems/providers.md)。
 
-- **一个 Provider 对应一个推理后端。** 例如 sherpa-onnx、FunASR、Qwen、某个 HTTP 服务。同一后端的运行环境、模型下载和鉴权配置只有一份，不按能力拆成多个 Provider。
+- **一个 Provider 对应一个推理后端。** 例如 sherpa-onnx、FlyCut Cloud、某个 HTTP 服务。同一后端的运行环境、模型下载和鉴权配置只有一份，不按能力拆成多个 Provider。
 - **Provider 声明能力，调用按能力分开。** 一个 Provider 可以同时提供 ASR、VAD、标点、说话人识别、对齐、TTS 中的若干项，没有的能力就不声明，不写抛 "not supported" 的空实现。流水线每一步各自选择 Provider，不要求所有步骤来自同一个 Provider。
 - **调用统一使用 `{ providerId, modelId }`（`ModelRef`）。** 前端、流水线、Agent 工具都只传 `ModelRef` 和该模型声明过的选项，不再有引擎类型（`ASREngineType`）、`webModelId` 之类的平行字段，也不在调用方按 Provider 写分支。
 - **模型清单属于 Provider。** 每个 Provider 通过 `models()` 返回自己的模型和能力（角色、语言、时间戳级别、可选项、就绪状态）。Host 只汇总，不维护跨 Provider 的全局清单；界面上的语言、时间戳、选项都从这里读取。
@@ -24,7 +24,11 @@
   1. **Provider 插件**：写在代码里、随版本发布，由维护者开发。内置模型就是插件 Provider 自带的模型，下载、加载由 Provider 自己负责。
   2. **HTTP Provider**：用户自己运行一个实现 [FlyCut Provider 协议](provider-http-protocol.md) 的服务（或 OpenAI 兼容服务），在界面里填地址即可接入，不需要改 FlyCut 代码。
 - **不再支持用户手写模型文件清单。** 用户填写 `files`、`family`、`recognizer_config` 的自定义模型、本地模型目录扫描登记都移除。用户自己的模型一律通过 HTTP Provider 接入。原因：这套方式只能接入已有后端支持的格式，却带来大量校验代码和本地路径安全面。
-- **FunASR 是完整的 Provider，通过 HTTP 协议调用。** FunASR 服务实现 FlyCut Provider 协议，提供 ASR、VAD、标点、说话人识别；Host 可以在本机托管它，也可以连接远程（例如 GPU 服务器）上的同一个服务。内置的 FunASR 和用户接入的 HTTP Provider 走同一套协议客户端。
+- **客户端只内置 sherpa-onnx。** 安装包里的离线识别只有 sherpa-onnx（`funasr-asr` sidecar），Host 不启动、不打包 Python。原因：Python、PyTorch 和模型依赖没法可靠地随安装包分发给普通用户，内置一个大多数人用不起来的 Provider 不如不内置。来源：维护者 2026-11-04 确认。
+- **FunASR Provider 是独立仓库。** FunASR 服务（`flycut-funasr-provider`）单独发布，用户自己安装 Python 环境运行，在「添加服务」里按 FlyCut Provider 协议接入。它用完整的 FunASR 实现：模型都通过官方 `funasr.AutoModel` 加载，覆盖离线 ASR 模型（Paraformer、SenseVoice、Fun-ASR-Nano、Qwen3-ASR、Whisper 等）和配套的 VAD、标点、说话人、对齐模型；不用 FunASR 自带的 `funasr-server`（只有句段时间戳，模型不给时间戳时按字数均分时间，也没有鉴权）。FlyCut 主仓库只保留一篇接入说明。来源：维护者 2026-11-03、2026-11-04 确认。
+- **不执行模型仓库附带的代码。** FunASR Provider 加载模型时不开 `trust_remote_code`；只能靠远程代码加载的模型（例如 GLM-ASR-Nano、MOSS-Transcribe-Diarize）不进它的清单。原因：模型仓库里的 Python 代码会在用户机器上执行。来源：维护者 2026-11-03 确认。
+- **内置官方付费服务 FlyCut Cloud。** 客户端内置 `flycut-cloud` Provider，走同一个 FlyCut Provider 协议，用 API Key 鉴权；服务地址由发行配置决定（`FLYCUT_CLOUD_URL`），没有配置时不出现。服务端、账号和计费另行建设，不在本仓库。来源：维护者 2026-11-04 确认。
+- **移除 Transformers.js Provider。** Host 不再内置 Transformers.js 推理，开箱即用的离线识别由 sherpa-onnx 提供。来源：维护者 2026-11-03 确认。
 - **Provider 的能力声明不能直接打开破坏性编辑。** 字词级剪切只看识别结果里是否有通过校验的字词时间戳，不看 Provider 或模型的声明。
 
 ## 产品定位与优先级
@@ -45,7 +49,7 @@ FlyCut Caption 是**字幕优先**的视频工具，长期目标是成为剪辑�
 
 - **字幕是一切功能的数据基础。** 特效、翻译、剪辑 Agent 都读写同一份带时间戳的字幕（`SubtitleTranscript`：句子级 `chunks` + 可选字词级 `wordChunks`），不另建平行的数据源。原因：编辑、裁剪、导出和后续 Agent 都依赖同一套时间映射，分叉就会不同步。
 - **识别结果可以逐条核对和修改。** ASR、AI 纠错、翻译产出的都是可编辑字幕，不直接写死进成片。原因：识别和翻译都会出错，用户要能在导出前改。
-- **ASR Provider 可以切换。** 本地 Provider（sherpa-onnx、FunASR、Qwen、Transformers）和用户接入的 HTTP Provider 都要保留，新功能不能只在其中一种 Provider 上可用。
+- **ASR Provider 可以切换。** 内置的 sherpa-onnx、FlyCut Cloud 和用户接入的 HTTP Provider（例如 FunASR Provider）都要保留，新功能不能只在其中一种 Provider 上可用。
 - **字幕可以单独导出。** SRT / VTT / JSON / ASS 导出和硬烧 MP4 并存，不能为了视频导出砍掉纯字幕导出。
 
 ### P1 字幕特效

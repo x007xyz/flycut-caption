@@ -41,10 +41,8 @@
     ],
     "resources": [
       "../models.json",
-      "../python/qwen_asr_runner.py",
       "binaries/*",
       "shared_assets/**/*",
-      "../python/funasr_service.py",
       "host/**/*"
     ]
   }

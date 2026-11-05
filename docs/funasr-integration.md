@@ -1,6 +1,6 @@
 # FunASR 客户端本地接入方案
 
-> 历史方案文档：其中「前端直接跑模型、无服务端」的路线已不再采用。当前 FunASR 是通过 HTTP 协议调用的 Provider，见 [subsystems/providers.md](subsystems/providers.md)。
+> 历史方案文档：其中「前端直接跑模型、无服务端」的路线已不再采用。当前 FunASR 是独立仓库的 HTTP Provider，见 [funasr-provider.md](funasr-provider.md)。
 
 ## 目标
 

@@ -1,6 +1,6 @@
 # 接入自己的 ASR 模型
 
-FlyCut 的模型都由 Provider 提供（规范见 [subsystems/providers.md](subsystems/providers.md)）。内置 Provider（sherpa-onnx、FunASR、Qwen、Transformers）随应用发布，在「设置 → 模型」里点下载即可使用。
+FlyCut 的模型都由 Provider 提供（规范见 [subsystems/providers.md](subsystems/providers.md)）。内置的 sherpa-onnx 随应用发布，在「设置 → 模型」里点下载即可使用；FunASR 是一个现成的 HTTP Provider，接入方法见 [funasr-provider.md](funasr-provider.md)。
 
 想用内置列表以外的模型，有两种方式，都**不需要修改 FlyCut 代码**：
 
@@ -27,7 +27,7 @@ FlyCut 的模型都由 Provider 提供（规范见 [subsystems/providers.md](sub
 
 ## 写一个 FlyCut Provider 服务
 
-最快的起点是复制内置 FunASR 服务 `python/funasr_service.py`：它只依赖 Python 标准库的 HTTP 服务器，协议相关的部分（任务表、轮询、取消、结果格式）都可以照搬，只需要替换「加载模型」和「识别」两段。
+最快的起点是复制 [flycut-funasr-provider](https://github.com/x007xyz/flycut-funasr-provider) 的 `funasr_service.py`：它只依赖 Python 标准库的 HTTP 服务器，协议相关的部分（任务表、轮询、取消、结果格式）都可以照搬，只需要替换「加载模型」和「识别」两段。
 
 必须实现的接口：`GET /v1/health`、`GET /v1/models`、`POST /v1/asr/jobs`、`GET /v1/jobs/{id}`、`POST /v1/jobs/{id}/cancel`。需要在 FlyCut 里点下载的模型再实现 `POST /v1/models/{id}/prepare`。完整定义见 [provider-http-protocol.md](provider-http-protocol.md)。
 

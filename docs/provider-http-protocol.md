@@ -2,7 +2,7 @@
 
 用自己的模型接入 FlyCut，不需要改 FlyCut 代码：运行一个实现本协议的 HTTP 服务，在「设置 → 模型 → 添加服务」里填写地址即可。服务可以跑在本机，也可以跑在局域网或云上的 GPU 机器。
 
-内置的 FunASR Provider（`python/funasr_service.py`）就是本协议的一个完整实现，可以直接当作模板。架构上的位置见 [subsystems/providers.md](subsystems/providers.md)。
+[FunASR Provider](https://github.com/x007xyz/flycut-funasr-provider)（`funasr_service.py`）就是本协议的一个完整实现，可以直接当作模板；内置的 FlyCut Cloud 也使用本协议。架构上的位置见 [subsystems/providers.md](subsystems/providers.md)。
 
 ## 约定
 

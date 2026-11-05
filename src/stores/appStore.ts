@@ -12,18 +12,15 @@ import type { ASRProgress } from '@/types/subtitle'
 import type { ModelRef, OptionValue } from '../../shared/providers'
 import type { AIModelConfig, AIProgress } from '@/types/ai'
 import { hasWebGPU } from '@/utils/audioUtils'
-import { getWebAsrModel } from '../../shared/asr/webModels'
 
 /** Key of a model's saved options in `asrOptions`. */
 export const modelKey = (ref: ModelRef) => `${ref.providerId}/${ref.modelId}`
 
 /** Settings saved before Providers (version 0) named an engine type plus two model fields. */
 export function migrateLegacyModel(state: { asrEngineType?: string; asrModelId?: string; webModelId?: string }): ModelRef | null {
-  if (state.asrEngineType === 'transformers' && state.webModelId && getWebAsrModel(state.webModelId)) {
-    return { providerId: 'transformers', modelId: state.webModelId }
-  }
+  // Transformers.js was removed: those users pick a model again.
   if ((state.asrEngineType === 'funasr-tauri' || state.asrEngineType === 'python-runtime')
-    && state.asrModelId && !state.asrModelId.startsWith('custom-') && !getWebAsrModel(state.asrModelId)) {
+    && state.asrModelId && !state.asrModelId.startsWith('custom-')) {
     return { providerId: 'sherpa-onnx', modelId: state.asrModelId }
   }
   return null

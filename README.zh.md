@@ -13,7 +13,7 @@
 ## ✨ 功能特色
 
 ### 🎯 核心功能
-- **🎤 智能语音识别**：支持 Whisper（浏览器）与 FunASR（桌面 / Tauri），字级时间戳
+- **🎤 智能语音识别**：内置 sherpa-onnx 离线识别，也可通过 HTTP 接入 FunASR 或自己的服务，字级时间戳
 - **🌐 双语字幕**：主字幕 + 副字幕双轨，支持 AI 翻译（如中文 ↔ 英文）
 - **✂️ 可视化字幕编辑**：片段选择 / 删除 / 恢复，字级标注删除
 - **⚡ 智能剪切空白**：一键检测并去掉长静音，自动收紧成片
@@ -24,7 +24,7 @@
 
 ### 🔧 技术特色
 - **⚡ 现代化技术栈**：React 19 + TypeScript + Vite + Tailwind CSS 4 + Tauri
-- **🧠 本地 AI 处理**：浏览器侧 Transformers.js；桌面侧 FunASR sidecar 更高精度
+- **🧠 本地 AI 处理**：开箱即用的 sherpa-onnx 离线模型；在本机或 GPU 机器上运行独立的 [FunASR Provider](https://github.com/x007xyz/flycut-funasr-provider)，即可使用完整的 FunASR 模型（Paraformer、SenseVoice、Fun-ASR-Nano、Qwen3-ASR、Whisper），见[接入说明](docs/funasr-provider.md)
 - **🎯 Web Workers / Sidecar**：识别与编码不阻塞主界面
 - **📱 响应式设计**：工作台式界面，适配不同屏幕
 - **🎪 组件化架构**：模块化设计，易于维护和扩展
@@ -79,7 +79,7 @@ pnpm preview
 ### 2. 生成字幕
 - 选择 ASR 引擎 / 模型与识别语言
 - 点击开始识别，AI 在后台生成带时间戳的字幕
-- 桌面端可使用 FunASR，更适合较长视频
+- 添加 FunASR Provider 服务后可使用 Qwen3-ASR、Fun-ASR-Nano 和说话人识别
 
 ![ASR 识别过程](screenshots/asr-processing.gif)
 
@@ -544,7 +544,7 @@ import '@flycut/caption-react/styles'
 - **构建工具**：Vite 7.1
 - **样式方案**：Tailwind CSS 4.1 + Shadcn/ui
 - **状态管理**：Zustand + React Context
-- **AI 模型**：Hugging Face Transformers.js
+- **AI 模型**：sherpa-onnx、FunASR
 - **视频处理**：WebAV
 - **国际化**：react-i18next
 
@@ -865,7 +865,7 @@ FlyCut Caption 采用 **FlyCut Caption 自定义源码可见社区许可 1.0＋�
 
 ## 🙏 致谢
 
-- [Hugging Face](https://huggingface.co/) - 提供优秀的 Transformers.js 库
+- [FunASR](https://github.com/modelscope/FunASR) - 语音识别工具包与模型仓库
 - [OpenAI Whisper](https://openai.com/research/whisper) - 强大的语音识别模型
 - [Shadcn/ui](https://ui.shadcn.com/) - 优雅的 UI 组件库
 - [WebAV](https://github.com/hughfenghen/WebAV) - 强大的 Web 音视频处理库

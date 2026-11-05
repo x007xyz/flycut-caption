@@ -8,6 +8,7 @@
 - [开发环境配置](./development-setup.md) - Tauri 开发环境搭建
 - [API 设计](./api-design.md) - Rust 后端 API 设计
 - [部署指南](./deployment.md) - 应用打包和分发
+- [接入 FunASR（Python）](./funasr-provider.md) - 运行独立的 FunASR Provider 并在 FlyCut 里添加
 - [FunASR 客户端本地接入方案](./funasr-integration.md) - Web 和 Tauri 无服务端接入 FunASR 的实现路线
 - [字幕系统改进方案](./subtitle-system-improvement-plan.md) - 字体、排版、分辨率适配、导出格式分阶段实施方案
 
