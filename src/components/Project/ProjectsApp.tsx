@@ -25,6 +25,8 @@ import { TrashPage } from './TrashPage';
 import { SharedStyleHint, StyleSourceBar } from './StyleSource';
 import { ConfirmDialog, DeleteProjectDialog, MediaMissingBanner, ProjectDeletedDialog, ProjectOpenErrorDialog, RenameProjectDialog, SaveConflictDialog,
   UnsavedChangesDialog } from './ProjectDialogs';
+import { RecoveryCheckingDialog, RecoveryChooseDialog, RecoveryConflictDialog, RecoveryDiscardDialog, RecoveryFailedDialog,
+  RecoveryUnavailableBanner } from './RecoveryDialogs';
 import type { ProjectSummary, ProjectVideoItem, ProjectsView } from './types';
 import type { ProjectVideoSummary } from '../../../shared/projects';
 import { fill, isMacPlatform, saveShortcutLabel } from './format';
@@ -422,6 +424,61 @@ function EditorGuards() {
   );
 }
 
+const CHECKING_DELAY_MS = 300;
+
+/** 崩溃恢复（F-0004 AC-2 到 AC-9）：打开项目时的检查、选择、恢复、冲突和放弃。 */
+function RecoveryGate() {
+  const { projects } = useClientRuntime();
+  const recovery = useProjectStore(state => state.recovery);
+  const current = useProjectStore(state => state.current);
+  const { tp, language } = useProjectText();
+  const time = (iso?: string) => iso ? new Date(iso).toLocaleString(language, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
+  const { phase, candidates, selectedKey } = recovery;
+  const selected = candidates.find(candidate => candidate.key === selectedKey);
+  const showError = (error: unknown) => toast.error(errorText(error));
+  // 检查通常只要几十毫秒：超过 300ms 才显示，避免每次打开都闪一下（检查期间编辑器始终被挡住）
+  const [checkingVisible, setCheckingVisible] = useState(false);
+  useEffect(() => {
+    if (phase !== 'checking') { setCheckingVisible(false); return; }
+    const timer = setTimeout(() => setCheckingVisible(true), CHECKING_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [phase]);
+  const recover = () => { void projects.recover().then(ok => { if (ok) toast.success(tp('recoveryRecovered')); }, showError); };
+  return (
+    <>
+      <RecoveryCheckingDialog open={checkingVisible} onBack={() => { void projects.leaveRecovery(); }} />
+      <RecoveryChooseDialog open={phase === 'choose' || phase === 'applying'} applying={phase === 'applying'} selectedKey={selectedKey}
+        recordedAt={time(selected?.recordedAt)} hostSavedAt={time(recovery.hostSavedAt)}
+        choices={candidates.map((candidate, index) => ({ key: candidate.key, recordedAt: candidate.recordedAt,
+          label: tp('recoverySession', { n: index + 1, time: time(candidate.recordedAt) }) }))}
+        onSelect={key => projects.selectRecovery(key)} onRecover={recover} onDiscard={() => projects.askDiscardRecovery()}
+        onLater={() => { void projects.leaveRecovery(); }} />
+      <RecoveryConflictDialog open={phase === 'conflict' || phase === 'conflict-busy'} busy={phase === 'conflict-busy'}
+        onOverwrite={() => { void projects.resolveRecoveryConflict('overwrite').then(result => { if (result === 'recovered') toast.success(tp('recoveryRecovered')); }, showError); }}
+        onSaveAsNew={() => { void projects.resolveRecoveryConflict('save-as-new', fill(tp('copyName'), { name: current?.name ?? '' }))
+          .then(result => { if (result === 'saved-as-new') toast.success(tp('recoveryRecovered')); }, showError); }}
+        onCancel={() => { void projects.resolveRecoveryConflict('cancel'); }} />
+      <RecoveryDiscardDialog open={phase === 'discard' || phase === 'discarding'} busy={phase === 'discarding'} failed={recovery.discardFailed}
+        onConfirm={() => { void projects.discardRecovery().then(ok => { if (ok) toast.success(tp('recoveryDiscarded')); }, showError); }}
+        onCancel={() => projects.cancelDiscardRecovery()} />
+      <RecoveryFailedDialog open={phase === 'failed'} missing={recovery.failure?.missing} uncertain={recovery.failure?.uncertain}
+        onRetry={() => { void projects.retryRecovery().then(ok => { if (ok) toast.success(tp('recoveryRecovered')); }, showError); }}
+        onBack={() => { void projects.leaveRecovery(); }} />
+    </>
+  );
+}
+
+/** AC-10：本地恢复记录失败时的提示条。 */
+function RecoveryHealthBanner() {
+  const { projects } = useClientRuntime();
+  const health = useProjectStore(state => state.recoveryHealth);
+  const [retrying, setRetrying] = useState(false);
+  if (health !== 'unavailable') return null;
+  return <RecoveryUnavailableBanner retrying={retrying}
+    onRetry={() => { setRetrying(true); void projects.retryRecoveryRecord().finally(() => setRetrying(false)); }}
+    onSaveNow={() => { void projects.flush(); }} />;
+}
+
 function ProjectsRoot(props: FlyCutCaptionProps) {
   const { projects } = useClientRuntime();
   const route = useProjectStore(state => state.route);
@@ -445,10 +502,12 @@ function ProjectsRoot(props: FlyCutCaptionProps) {
           <FlyCutCaptionContent {...props} headerSlot={<EditorBreadcrumb />} playerPlaceholder={<MediaMissingPlaceholder />} onMedia={create}
             styleHeaderSlot={<StyleSourceSlot />} styleFooterSlot={<SharedStyleHintSlot />} />
           <EditorGuards />
+          <RecoveryHealthBanner />
         </>
         : route.name === 'project' ? <ProjectDetailPage version={__FLYCUT_VERSION__} />
         : route.name === 'trash' ? <TrashPageContainer version={__FLYCUT_VERSION__} />
         : <ProjectsHomePage version={__FLYCUT_VERSION__} />}
+      <RecoveryGate />
       <ProjectOpenErrorDialog open={!!newerVersion} projectName={newerVersion?.name ?? ''} onClose={() => setProject({ newerVersion: null })} />
     </div>
   );

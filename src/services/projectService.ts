@@ -1,5 +1,6 @@
 // 项目服务（F-0002、F-0003）：前端 Cordis 插件，提供 `ctx.projects`。负责项目的新建、打开、路由、自动保存，以及把转写结果写回 Host；
 // F-0003 加上项目管理（重命名、回收站）、项目详情页、一个项目多个视频和项目级字幕样式。
+// F-0004 加上崩溃恢复：编辑时把还没写进 Host 的修改记成本地临时副本，打开项目时检查并让用户选择恢复或放弃（ADR-0004）。
 // 只通过 Host RPC 读写项目数据；界面状态放在 `stores.project`。
 import type { Context } from '@deepseek-ai/cordis';
 import type { ModelRef } from '../../shared/providers';
@@ -13,6 +14,11 @@ import type { CurrentProject, ProjectRoute } from '@/stores/projectStore';
 import type { SubtitleStylePair } from '@/subtitle';
 import { defaultSubtitleStylePair } from '@/subtitle';
 import { isTauriRuntime } from '@/utils/runtime';
+import { conflictsWithHost, diffWithHost, keyOf, scopeOf, type HostContent, type RecoveryContent, type RecoveryCopy } from '@/recovery/copy';
+import { IndexedDbRecoveryStorage, type RecoveryStorage } from '@/recovery/storage';
+import { RecoveryRecorder } from '@/recovery/recorder';
+import { holdSession, liveSessions } from '@/recovery/sessions';
+import type { RecoveryState } from '@/stores/projectStore';
 
 declare module '@deepseek-ai/cordis' {
   interface Context { projects: ProjectService }
@@ -104,6 +110,12 @@ export function buildEdits(chunks: SubtitleChunk[], wordChunks: SubtitleChunk[],
     stylePair: custom ? stylePair as unknown as ProjectEdits['stylePair'] : undefined, aspectPreset: aspectOf(stylePair) };
 }
 
+/** 恢复副本要写进 Host 的这个视频的修改（与 buildEdits 相同，只是删除的字词编号直接来自副本）。 */
+function editsFromContent(content: RecoveryContent): ProjectEdits {
+  const pair = content.stylePair as unknown as SubtitleStylePair;
+  return { ...buildEdits(content.chunks as unknown as SubtitleChunk[], [], pair, content.styleSource === 'custom'), deletedWordIds: content.deletedWordIds };
+}
+
 interface Snapshot { chunks: SubtitleChunk[]; wordChunks: SubtitleChunk[]; style: SubtitleStylePair; styleSource: 'project' | 'custom' }
 /** 最后一次写进 Host（或刚载入）的内容。按视频保存的部分和项目样式分开记，各自保存成功后各自更新。 */
 interface Baseline { chunks: SubtitleChunk[]; wordChunks: SubtitleChunk[]; aspect: string; styleSource: 'project' | 'custom';
@@ -133,7 +145,24 @@ export class ProjectService {
   /** 写入失败的转写结果：随自动保存一起重试，避免识别结果丢失 */
   private pendingTranscript: { videoFile: VideoFile; transcript: SubtitleTranscript; model: ModelRef | null } | null = null;
 
-  constructor(ctx: Context) { this.ctx = ctx; this.connection = ctx.connection; this.stores = ctx.stores; }
+  // ---------- 崩溃恢复（F-0004） ----------
+  private recoveryStorage: RecoveryStorage;
+  /** 当前编辑会话：每次载入一个视频的编辑器开一个新会话，各自只覆盖自己的副本 */
+  private session: { id: string; recorder: RecoveryRecorder; release: () => void } | null = null;
+  /** 当前连接的 Host 身份（副本按它隔离）；连接换了 Host 时重新读取 */
+  private hostId: string | null = null;
+  /** 打开项目的代次：返回首页或打开别的项目后，旧的打开和检查结果作废 */
+  private openGeneration = 0;
+  /** 本次检查找到的副本内容，按 key */
+  private recoveryCopies = new Map<string, RecoveryCopy>();
+  /** 恢复时「另存为新项目」的新项目 ID：响应丢失后重试仍是同一个项目（AC-7） */
+  private recoverySaveAsId: string | null = null;
+  /** 最近的副本写入耗时（毫秒），验收测量 1 秒 / 2 秒指标用 */
+  readonly recoveryTimings: Array<{ at: number; ms: number; bytes: number }> = [];
+
+  constructor(ctx: Context, storage: RecoveryStorage = new IndexedDbRecoveryStorage()) {
+    this.ctx = ctx; this.connection = ctx.connection; this.stores = ctx.stores; this.recoveryStorage = storage;
+  }
 
   private get state() { return this.stores.project.getState(); }
 
@@ -381,11 +410,26 @@ export class ProjectService {
     if (this.state.openingId) return;
     if (!(await this.confirmLeave())) return;
     set({ openingId: projectId });
+    const generation = ++this.openGeneration;
     try {
       const result: ProjectOpenResult = await this.connection.call('projects.open', { projectId, videoId });
+      if (generation !== this.openGeneration) return;
+      // F-0004 AC-2：载入后先检查恢复内容，期间编辑区被挡住，可以返回首页（读取 Host 期间沿用打开项目的转圈）
+      if (result.status === 'ok') this.setRecovery({ phase: 'checking', candidates: [], selectedKey: null });
       if (result.status === 'newer-version') { set({ newerVersion: { name: result.name } }); this.navigate({ name: 'home' }); return; }
       if (result.status === 'trashed') { if (this.state.current) this.leaveEditor(); this.navigate({ name: 'home' }); void this.refresh(); return; }
+      this.applyOpenResult(result);
+      await this.checkRecovery(generation, result);
+    } catch (error) {
+      if (generation === this.openGeneration && this.state.recovery.phase === 'checking') this.setRecovery({ phase: 'idle', candidates: [], selectedKey: null });
+      throw error;
+    } finally { set({ openingId: null }); }
+  }
+
+  /** 把 Host 读回的项目载入编辑器（打开、恢复成功后重新载入）。 */
+  private applyOpenResult(result: Extract<ProjectOpenResult, { status: 'ok' }>) {
       const { project, video, transcript, edits, media, videos } = result;
+      const projectId = project.id;
       const videoFile = media.status === 'ok' && media.playback ? this.playbackFile(media.playback, media.name, video.durationSeconds, video.media.size) : null;
       if (videoFile) this.owners.set(videoFile, { projectId, videoId: video.id });
       const projectStyle = fromProjectStyle(result.projectStyle);
@@ -395,12 +439,13 @@ export class ProjectService {
         media: { status: media.status, name: media.name }, videoName: video.name, videoRevision: video.revision, styleRevision: project.styleRevision,
         styleSource: video.styleSource, projectStyle: projectStyle ?? withAspect(defaultSubtitleStylePair, aspectOf(style.pair)), videos },
       videoFile, transcript ? mergeEdits(transcript as unknown as SubtitleTranscript, edits) : undefined, style.pair, style.restored);
-    } finally { set({ openingId: null }); }
   }
 
   /** 回到首页（AC-19）。有没写入的修改时先保存，仍失败则弹 AC-24 的对话框。 */
   async goHome() {
     if (!(await this.confirmLeave())) return;
+    this.openGeneration += 1;
+    this.setRecovery({ phase: 'idle', candidates: [], selectedKey: null });
     this.leaveEditor();
     this.navigate({ name: 'home' });
     void this.refresh();
@@ -479,6 +524,10 @@ export class ProjectService {
   /** 字幕或样式变化时调用（store 订阅）。 */
   onEdit() {
     const current = this.state.current;
+    // F-0004：恢复对话框挡住编辑器时不保存、不记录（载入恢复结果引起的变化不是用户修改）
+    if (this.state.recovery.phase !== 'idle') return;
+    // 本地恢复副本（F-0004 AC-1）：有没保存的修改就记录，都保存了就删除
+    if (current?.hasTranscript) this.session?.recorder.changed();
     // 转写结果还没写进项目时没有可以叠加的修改：等转写保存完再看（saveTranscript 之后会再检查一次）
     if (!current?.hasTranscript || !this.isDirty()) return;
     const status = this.state.save.status;
@@ -543,6 +592,8 @@ export class ProjectService {
         return false;
       }
       this.failures = 0;
+      // F-0004 AC-1：已经保存的内容不再需要副本；之后又有修改时，副本马上换成新的基准修订号
+      this.session?.recorder.changed(true);
       const dirty = this.isDirty();
       this.state.setSave({ status: dirty ? 'pending' : 'saved', savedAt: savedAt ?? this.state.save.savedAt, error: undefined, conflictAt: undefined });
       if (dirty) this.onEdit();
@@ -754,6 +805,253 @@ export class ProjectService {
     this.baseline = { ...this.baseline, chunks: history.chunks, wordChunks: history.wordChunks };
   }
 
+  // ---------- 崩溃恢复（F-0004，ADR-0004） ----------
+
+  private setRecovery(recovery: RecoveryState) { this.state.set({ recovery }); }
+  private patchRecovery(patch: Partial<RecoveryState>) { this.state.set({ recovery: { ...this.state.recovery, ...patch } }); }
+
+  /** 当前连接的 Host 身份。旧 Host 不支持时抛错：恢复保护显示为不可用，普通保存照常工作。 */
+  private async hostIdentity() {
+    const { hostId } = await this.connection.call('projects.identity');
+    this.hostId = hostId;
+    return hostId;
+  }
+
+  /** 开始一个编辑会话：新的会话 ID 和记录器，并占住会话锁（其他窗口检查时跳过还开着的会话）。 */
+  private startSession() {
+    const id = crypto.randomUUID();
+    const recorder = new RecoveryRecorder({ storage: this.recoveryStorage, capture: () => this.captureCopy(id),
+      onHealth: healthy => { if (this.session?.id === id) this.state.set({ recoveryHealth: healthy ? 'ok' : 'unavailable' }); },
+      onRecorded: (copy, ms) => {
+        this.recoveryTimings.push({ at: Date.now(), ms, bytes: JSON.stringify(copy.content).length });
+        if (this.recoveryTimings.length > 200) this.recoveryTimings.shift();
+      } });
+    this.session = { id, recorder, release: holdSession(id) };
+    // 新建项目直接进编辑器、没有经过打开时的检查：这里补读 Host 身份，副本才能按 Host 隔离
+    if (!this.hostId) void this.hostIdentity().catch(error => console.warn('读取 Host 身份失败', error));
+  }
+
+  private endSession(discard: boolean) {
+    const session = this.session; if (!session) return;
+    this.session = null;
+    void session.recorder.close(discard).finally(session.release);
+  }
+
+  /** 记录器要写的副本：这个视频还没写进 Host 的完整编辑状态；都保存了返回 null。 */
+  private captureCopy(sessionId: string): Omit<RecoveryCopy, 'sequence' | 'recordedAt'> | null {
+    const current = this.state.current;
+    if (!current?.hasTranscript || this.session?.id !== sessionId || !this.isDirty()) return null;
+    if (!this.hostId) throw new Error('还没有读到 Host 身份');
+    const snap = this.snapshot();
+    const content: RecoveryContent = { chunks: snap.chunks as unknown as RecoveryContent['chunks'],
+      deletedWordIds: snap.wordChunks.filter(word => word.deleted).map(word => word.id), styleSource: snap.styleSource,
+      stylePair: snap.style as unknown as RecoveryContent['stylePair'] };
+    return { schemaVersion: 1, key: keyOf(this.hostId, current.projectId, current.videoId, sessionId), scope: scopeOf(this.hostId, current.projectId, current.videoId),
+      hostId: this.hostId, projectId: current.projectId, videoId: current.videoId, sessionId, baseVideoRevision: current.videoRevision,
+      baseStyleRevision: current.styleRevision, projectName: current.name, content };
+  }
+
+  /** Host 上这个视频的当前内容，按打开项目的规则算出生效样式。 */
+  private hostContent(result: Extract<ProjectOpenResult, { status: 'ok' }>): HostContent {
+    const { transcript, edits, video } = result;
+    const projectStyle = fromProjectStyle(result.projectStyle);
+    const effective = effectiveStyle(video.styleSource, edits, projectStyle).pair;
+    return { chunks: edits?.chunks ?? transcript?.chunks ?? [],
+      deletedWordIds: edits ? edits.deletedWordIds ?? [] : (transcript?.wordChunks ?? []).filter(word => word.deleted).map(word => word.id),
+      styleSource: video.styleSource, effectiveStyle: effective as unknown as HostContent['effectiveStyle'],
+      projectStyle: (projectStyle ?? withAspect(defaultSubtitleStylePair, aspectOf(effective))) as unknown as HostContent['projectStyle'] };
+  }
+
+  /**
+   * 打开项目后检查恢复副本（AC-2、AC-3）：跳过还开着的会话和已经写进 Host 的副本（顺手删掉），剩下的让用户选择。
+   * 读不到副本或 Host 身份时不当作没有副本（AC-6）。
+   */
+  private async checkRecovery(generation: number, result: Extract<ProjectOpenResult, { status: 'ok' }>) {
+    const stale = () => generation !== this.openGeneration;
+    try {
+      const hostId = await this.hostIdentity();
+      if (stale()) return;
+      if (!result.video.hasTranscript) { this.setRecovery({ phase: 'idle', candidates: [], selectedKey: null }); return; }
+      const [records, live] = await Promise.all([this.recoveryStorage.list(scopeOf(hostId, result.project.id, result.video.id)), liveSessions()]);
+      if (stale()) return;
+      const host = this.hostContent(result);
+      const copies: RecoveryCopy[] = []; let unreadable = 0;
+      for (const record of records) {
+        if (!record.ok) { unreadable += 1; continue; }
+        const copy = record.copy;
+        if (copy.sessionId === this.session?.id || live.has(copy.sessionId)) continue;
+        // 已经写进 Host 的副本（保存成功后没来得及删）：不再提示（AC-1、AC-5）
+        if (diffWithHost(copy.content, host).same) { void this.recoveryStorage.delete(copy.key, copy.sequence).catch(() => undefined); continue; }
+        copies.push(copy);
+      }
+      if (!copies.length) {
+        this.setRecovery(unreadable ? { phase: 'failed', candidates: [], selectedKey: null, failure: { stage: 'check' } } : { phase: 'idle', candidates: [], selectedKey: null });
+        return;
+      }
+      copies.sort((a, b) => b.recordedAt.localeCompare(a.recordedAt));
+      this.recoveryCopies = new Map(copies.map(copy => [copy.key, copy]));
+      this.recoverySaveAsId = null;
+      this.setRecovery({ phase: 'choose', selectedKey: copies[0].key, hostSavedAt: result.video.updatedAt ?? result.project.updatedAt,
+        candidates: copies.map(copy => ({ key: copy.key, sessionId: copy.sessionId, sequence: copy.sequence, recordedAt: copy.recordedAt })) });
+    } catch (error) {
+      console.error('检查恢复内容失败', error);
+      if (!stale()) this.setRecovery({ phase: 'failed', candidates: [], selectedKey: null, failure: { stage: 'check' } });
+    }
+  }
+
+  /** 检查失败后重试（AC-6）：重新读取 Host 和本地副本。 */
+  async retryRecoveryCheck() {
+    const current = this.state.current;
+    if (!current) { this.setRecovery({ phase: 'idle', candidates: [], selectedKey: null }); return; }
+    const generation = ++this.openGeneration;
+    this.setRecovery({ phase: 'checking', candidates: [], selectedKey: null });
+    try {
+      const result = await this.connection.call('projects.open', { projectId: current.projectId, videoId: current.videoId });
+      if (generation !== this.openGeneration) return;
+      if (result.status !== 'ok') { this.setRecovery({ phase: 'failed', candidates: [], selectedKey: null, failure: { stage: 'check', missing: true } }); return; }
+      await this.checkRecovery(generation, result);
+    } catch (error) {
+      console.error('检查恢复内容失败', error);
+      if (generation === this.openGeneration) this.setRecovery({ phase: 'failed', candidates: [], selectedKey: null, failure: { stage: 'check', missing: isMissingTarget(error) } });
+    }
+  }
+
+  selectRecovery(key: string) { if (this.state.recovery.phase === 'choose') this.patchRecovery({ selectedKey: key }); }
+
+  /** 稍后 / 关闭（AC-3）、失败后返回首页（AC-6）：副本不动，回到首页。 */
+  async leaveRecovery() {
+    this.setRecovery({ phase: 'idle', candidates: [], selectedKey: null });
+    this.openGeneration += 1;
+    await this.goHome();
+  }
+
+  /**
+   * 恢复选中的副本（AC-4、AC-5、AC-7）。先重新读取 Host：已经写进去的不再写；基准修订号不对就进入冲突选择；
+   * `force` 只由冲突里的「覆盖」使用，仍然不能写进已经不存在的项目或视频。返回是否恢复成功。
+   */
+  async recover(force = false): Promise<boolean> {
+    const recovery = this.state.recovery;
+    const current = this.state.current;
+    const copy = recovery.selectedKey ? this.recoveryCopies.get(recovery.selectedKey) : undefined;
+    if (!copy || !current || recovery.phase === 'applying' || recovery.phase === 'conflict-busy') return false;
+    this.patchRecovery({ phase: force ? 'conflict-busy' : 'applying', failure: undefined });
+    const fail = (failure: NonNullable<RecoveryState['failure']>) => { this.patchRecovery({ phase: 'failed', failure }); return false; };
+    let opened: ProjectOpenResult;
+    try { opened = await this.connection.call('projects.open', { projectId: copy.projectId, videoId: copy.videoId }); }
+    catch (error) { console.error('恢复前读取项目失败', error); return fail({ stage: 'apply', missing: isMissingTarget(error) }); }
+    if (opened.status !== 'ok') return fail({ stage: 'apply', missing: true });
+    const diff = diffWithHost(copy.content, this.hostContent(opened));
+    if (diff.same) return this.finishRecovery(copy, opened);
+    if (!force && conflictsWithHost(copy, diff, { video: opened.video.revision, style: opened.project.styleRevision })) {
+      this.patchRecovery({ phase: 'conflict' });
+      return false;
+    }
+    const { content } = copy;
+    const results = [] as SaveResultV2[];
+    try {
+      if (diff.video) results.push(await this.enqueue(() => this.connection.call('projects.saveVideoEdits', { projectId: copy.projectId, videoId: copy.videoId,
+        edits: editsFromContent(content), styleSource: content.styleSource, baseRevision: opened.video.revision, force })));
+      if (diff.style && !results.some(result => result.status !== 'saved')) results.push(await this.enqueue(() => this.connection.call('projects.saveProjectStyle', {
+        projectId: copy.projectId, style: toProjectStyle(content.stylePair as unknown as SubtitleStylePair), baseRevision: opened.project.styleRevision, force })));
+    } catch (error) {
+      // 请求可能已经送达、只是响应丢了：先查询确认，不误报没写入，也不盲目再写（AC-6）
+      console.error('恢复写入失败', error);
+      try {
+        const check = await this.connection.call('projects.open', { projectId: copy.projectId, videoId: copy.videoId });
+        if (check.status === 'ok' && diffWithHost(content, this.hostContent(check)).same) return this.finishRecovery(copy, check);
+        return fail({ stage: 'apply', missing: check.status !== 'ok' });
+      } catch (verifyError) {
+        return fail({ stage: 'apply', uncertain: !isMissingTarget(verifyError), missing: isMissingTarget(verifyError) });
+      }
+    }
+    if (results.some(result => result.status === 'conflict')) { this.patchRecovery({ phase: 'conflict' }); return false; }
+    if (results.some(result => result.status !== 'saved')) return fail({ stage: 'apply', missing: true });
+    let reopened: ProjectOpenResult;
+    try { reopened = await this.connection.call('projects.open', { projectId: copy.projectId, videoId: copy.videoId }); }
+    catch { return fail({ stage: 'apply', uncertain: true }); }
+    if (reopened.status !== 'ok') return fail({ stage: 'apply', missing: true });
+    return this.finishRecovery(copy, reopened);
+  }
+
+  /** 恢复成功：载入 Host 上的结果（撤销栈清空），删掉这份副本。删不掉也没关系：它和 Host 相同，下次打开会被识别为已应用。 */
+  private async finishRecovery(copy: RecoveryCopy, opened: Extract<ProjectOpenResult, { status: 'ok' }>) {
+    this.setRecovery({ phase: 'idle', candidates: [], selectedKey: null });
+    this.applyOpenResult(opened);
+    this.state.setSave({ status: 'saved', savedAt: opened.video.updatedAt ?? opened.project.updatedAt });
+    await this.recoveryStorage.delete(copy.key, copy.sequence).catch(error => console.warn('删除已恢复的副本失败', error));
+    this.recoveryCopies.delete(copy.key);
+    return true;
+  }
+
+  /** 恢复时的版本冲突（AC-7）：显式覆盖、另存为新项目、取消（回到恢复选择，副本保留）。 */
+  async resolveRecoveryConflict(choice: 'overwrite' | 'save-as-new' | 'cancel', copyName = ''): Promise<'recovered' | 'saved-as-new' | 'cancelled' | 'failed'> {
+    if (this.state.recovery.phase !== 'conflict') return 'failed';
+    if (choice === 'cancel') { this.patchRecovery({ phase: 'choose' }); return 'cancelled'; }
+    if (choice === 'overwrite') return (await this.recover(true)) ? 'recovered' : 'failed';
+    const copy = this.recoveryCopies.get(this.state.recovery.selectedKey ?? '');
+    if (!copy) return 'failed';
+    this.patchRecovery({ phase: 'conflict-busy' });
+    const { content } = copy;
+    const copyId = this.recoverySaveAsId ??= crypto.randomUUID();
+    try {
+      const created = await this.connection.call('projects.duplicate', { projectId: copy.projectId, videoId: copy.videoId, name: copyName, copyId,
+        edits: editsFromContent(content) });
+      if (content.styleSource === 'project') await this.connection.call('projects.saveProjectStyle', { projectId: created.projectId,
+        style: toProjectStyle(content.stylePair as unknown as SubtitleStylePair), baseRevision: 0, force: true });
+      // 只处理选中的副本，其他会话的副本留着（AC-7）
+      await this.recoveryStorage.delete(copy.key, copy.sequence).catch(error => console.warn('删除已另存的副本失败', error));
+      this.recoveryCopies.delete(copy.key); this.recoverySaveAsId = null;
+      this.setRecovery({ phase: 'idle', candidates: [], selectedKey: null });
+      this.leaveEditor();
+      await this.open(created.projectId, created.videoId);
+      return 'saved-as-new';
+    } catch (error) {
+      console.error('恢复另存为新项目失败', error);
+      this.patchRecovery({ phase: 'failed', failure: { stage: 'apply', missing: isMissingTarget(error) } });
+      return 'failed';
+    }
+  }
+
+  /** 失败后的「重试」（AC-6）：检查失败重新检查，恢复失败重新恢复。 */
+  async retryRecovery() {
+    const recovery = this.state.recovery;
+    if (recovery.phase !== 'failed') return false;
+    if (recovery.failure?.stage === 'check' || !recovery.selectedKey) { await this.retryRecoveryCheck(); return false; }
+    this.patchRecovery({ phase: 'choose', failure: undefined });
+    return this.recover();
+  }
+
+  /** 放弃恢复（AC-8）：先二次确认。 */
+  askDiscardRecovery() { if (this.state.recovery.phase === 'choose') this.patchRecovery({ phase: 'discard', discardFailed: false }); }
+  cancelDiscardRecovery() { if (this.state.recovery.phase === 'discard') this.patchRecovery({ phase: 'choose', discardFailed: false }); }
+
+  /**
+   * 确认放弃（AC-9）：只删选中的这份，而且只在它仍是检查时的版本时删；成功后编辑器里就是 Host 已保存的内容。
+   * 返回是否已放弃。
+   */
+  async discardRecovery(): Promise<boolean> {
+    const recovery = this.state.recovery;
+    const copy = recovery.selectedKey ? this.recoveryCopies.get(recovery.selectedKey) : undefined;
+    if (recovery.phase !== 'discard' || !copy) return false;
+    this.patchRecovery({ phase: 'discarding', discardFailed: false });
+    try {
+      const deleted = await this.recoveryStorage.delete(copy.key, copy.sequence);
+      this.recoveryCopies.delete(copy.key);
+      if (!deleted) { await this.retryRecoveryCheck(); return false; }
+    } catch (error) {
+      console.error('移除恢复副本失败', error);
+      this.patchRecovery({ phase: 'discard', discardFailed: true });
+      return false;
+    }
+    const rest = recovery.candidates.filter(candidate => candidate.key !== copy.key);
+    if (rest.length) this.setRecovery({ ...recovery, phase: 'choose', candidates: rest, selectedKey: rest[0].key, discardFailed: false });
+    else this.setRecovery({ phase: 'idle', candidates: [], selectedKey: null });
+    return true;
+  }
+
+  /** AC-10 的「重试」：马上再记录一次。 */
+  retryRecoveryRecord() { return this.session?.recorder.record() ?? Promise.resolve(true); }
+
   // ---------- 内部 ----------
 
   private async mediaSource(videoFile: VideoFile): Promise<{ assetId: string; mimeType: string } | { mediaRef: string }> {
@@ -774,6 +1072,10 @@ export class ProjectService {
   }
 
   private leaveEditor() {
+    // 走到这里时修改已经保存或者用户选择了放弃（confirmLeave）：这个会话的副本不再需要
+    this.endSession(true);
+    this.openGeneration += 1;
+    this.state.set({ recoveryHealth: 'ok' });
     clearTimeout(this.timer); clearTimeout(this.retryTimer); this.failures = 0; this.baseline = null;
     this.transcriptRecord = undefined;
     this.state.set({ current: null, save: { status: 'saved' }, conflictDialog: false, projectDeleted: null });
@@ -783,6 +1085,8 @@ export class ProjectService {
 
   private loadEditor(current: CurrentProject, videoFile: VideoFile | null, transcript?: SubtitleTranscript, stylePair?: SubtitleStylePair, restored = !!stylePair) {
     clearTimeout(this.timer); clearTimeout(this.retryTimer); this.failures = 0;
+    // 换了视频（或重新载入）：上一个会话的修改已经保存或被放弃（confirmLeave、恢复流程）
+    this.endSession(true);
     const history = this.stores.history.getState(); const app = this.stores.app.getState();
     history.reset(); app.clearASRProgress();
     // 切换视频：先把当前项目设为目标视频，样式的变化才不会被当成上一个视频的修改
@@ -799,8 +1103,15 @@ export class ProjectService {
     if (transcript || !videoFile) app.setStage('edit');
     this.state.set({ current, save: { status: 'saved' }, conflictDialog: false, detail: null });
     this.baseline = this.baselineOf(this.snapshot(), current.projectStyle);
+    this.startSession();
     this.navigate({ name: 'editor', projectId: current.projectId, videoId: current.videoId });
   }
+}
+
+/** 原项目或视频已经不存在（彻底删除、视频被移除）：区别于连接失败（AC-6）。 */
+function isMissingTarget(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /ENOENT|没有这个视频|已被彻底删除|回收站|no such file/i.test(message);
 }
 
 const MIME: Record<string, string> = { mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', avi: 'video/x-msvideo', mkv: 'video/x-matroska',

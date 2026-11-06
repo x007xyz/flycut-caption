@@ -51,6 +51,32 @@ export interface SaveState {
   conflictAt?: string;
 }
 
+/** 打开项目时发现的一份恢复副本（F-0004 AC-3）。副本内容在 `ctx.projects` 里，store 只放展示用的信息 */
+export interface RecoveryCandidate {
+  key: string;
+  sessionId: string;
+  sequence: number;
+  /** ISO 8601 */
+  recordedAt: string;
+}
+
+/**
+ * 崩溃恢复（F-0004 AC-2 到 AC-9）。`phase` 不是 idle 时编辑器被对话框挡住，自动保存和副本记录暂停。
+ * - checking：正在检查恢复内容；choose：选择恢复 / 放弃 / 稍后；applying：正在恢复；conflict：版本冲突（AC-7）；
+ * - discard：放弃确认；discarding：正在移除副本；failed：检查或恢复失败（AC-6）
+ */
+export interface RecoveryState {
+  phase: 'idle' | 'checking' | 'choose' | 'applying' | 'conflict' | 'conflict-busy' | 'discard' | 'discarding' | 'failed';
+  candidates: RecoveryCandidate[];
+  selectedKey: string | null;
+  /** Host 上这个视频最后一次保存的时间（ISO 8601） */
+  hostSavedAt?: string;
+  /** failed 时：失败的步骤；`missing` 原项目或视频已不存在；`uncertain` 保存结果暂时无法确认 */
+  failure?: { stage: 'check' | 'apply'; missing?: boolean; uncertain?: boolean };
+  /** 放弃确认框里的错误（AC-9） */
+  discardFailed?: boolean;
+}
+
 export interface ProjectState {
   route: ProjectRoute;
   listStatus: LoadStatus;
@@ -77,6 +103,10 @@ export interface ProjectState {
   switchingVideoId: string | null;
   /** 当前项目在别处被移到回收站或彻底删除（F-0003 AC-15、AC-32）；`busy` 时按钮不可点 */
   projectDeleted: { state: 'trashed' | 'deleted'; busy: boolean; error?: string } | null;
+  /** 崩溃恢复的检查与选择（F-0004） */
+  recovery: RecoveryState;
+  /** 本地恢复副本最近一次是否记录成功（F-0004 AC-10） */
+  recoveryHealth: 'ok' | 'unavailable';
 }
 
 export interface ProjectActions {
@@ -101,6 +131,8 @@ const initialState: ProjectState = {
   trash: { status: 'loading', items: [], restoringId: null },
   switchingVideoId: null,
   projectDeleted: null,
+  recovery: { phase: 'idle', candidates: [], selectedKey: null },
+  recoveryHealth: 'ok',
 };
 
 export const createProjectStore = () => createStore<ProjectState & ProjectActions>()((set) => ({

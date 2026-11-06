@@ -26,6 +26,7 @@ const defaults: MockHandlers = {
   'cloud.status': () => ({ available: false }),
   'endpoints.list': () => [],
   'projects.list': () => [],
+  'projects.identity': () => ({ hostId: E2E_HOST_ID, recovery: 1 }),
 };
 
 export async function mockHost(page: Page, handlers: MockHandlers = {}): Promise<MockHost> {
@@ -65,6 +66,9 @@ export function projectItem(id: string, name: string, patch: Record<string, unkn
   return { id, name, durationSeconds: 754, createdAt: now, updatedAt: now, revision: 3, videoCount: 1, videoId: VIDEO_ID,
     hasThumbnail: false, mediaMissing: false, ...patch };
 }
+
+/** 假 Host 的身份（F-0004：恢复副本按它隔离） */
+export const E2E_HOST_ID = '00000000-0000-4000-8000-0000000000cc';
 
 /** 假 Host 给每次上传返回的资产编号 */
 export const UPLOADED_ASSET = '00000000-0000-4000-8000-0000000000bb';
