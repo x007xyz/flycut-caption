@@ -98,14 +98,32 @@ approved_at:
 
 ### 结果
 
-**初稿试算（2026-11-05，`--allow-draft`，不能当结论）**：
+**初稿试算（2026-11-05，`--allow-draft`，不能当结论）**：7 个内置 sherpa-onnx 模型 × 2 段 COSCUP（各约 25–30 分钟，FSMN VAD，维护者的 Mac）。字错率为 `3UegVxMFyeo` / `BWgFrY91F_I`。
 
-| 样本 | 模型 | 字错率 | 替换 / 删除 / 插入 | 语气词召回 | 多出的语气词 | 实时率 | 峰值内存 |
+| 模型 | 字错率 | 主要错误 | 语气词召回 | 多出的语气词 | 字词时间戳 | 实时率 | 峰值内存 |
 |---|---|---|---|---|---|---|---|
-| `coscup-3UegVxMFyeo` | SenseVoice small int8 | 4.4% | 145 / 68 / 65 | 98.9%（93/94） | 6 | 0.078 | 1.91 GB |
-| `coscup-3UegVxMFyeo` | Paraformer zh int8 2023 | 5.6% | 154 / 70 / 131 | 97.9%（92/94） | 12 | 0.066 | 1.95 GB |
-| `coscup-BWgFrY91F_I` | SenseVoice small int8 | 8.0% | 243 / 232 / 99 | 98.1%（53/54） | 6 | 0.082 | 1.69 GB |
-| `coscup-BWgFrY91F_I` | Paraformer zh int8 2023 | 8.7% | 260 / 76 / 287 | 100%（54/54） | 32 | 0.070 | 1.65 GB |
+| SenseVoice small int8 | 4.4% / 8.0% | 替换、删除 | 98.9% / 98.1% | 6 / 6 | 有 | 0.08 | 1.7–1.9 GB |
+| Paraformer zh int8 2023 | 5.6% / 8.7% | 插入 | 97.9% / 100% | 12 / 32 | 有 | 0.07 | 1.7–2.0 GB |
+| Paraformer zh int8 2024 | 6.3% / 9.6% | 插入 | 98.9% / 100% | 10 / 33 | **无**（只有句级） | 0.06 | 1.6–1.8 GB |
+| FireRedASR large zh_en | 5.0% / 12.0% | 插入、替换 | 96.8% / 98.1% | 9 / 33 | **无** | **0.45–0.63** | **4.2–4.9 GB** |
+| Whisper small multilingual | 19.2% / 25.8% | **大量删除** | **3.2% / 5.6%** | 1 / 0 | **无** | 0.23–0.28 | 2.4 GB |
+| TeleSpeech CTC int8 | 26.9% / 52.9% | 大量删除、错字 | 73.4% / 59.3% | 6 / 10 | 有 | 0.09–0.10 | 3.3–3.8 GB |
+| Zipformer CTC zh int8 2025 | 295% / 295% | **输出乱码**（见发现 2） | 0% | 0 | 有 | 0.06 | 2.3–2.6 GB |
+
+完整报告：`test-results/asr-eval/report.md`（本地生成，不入库）。
+
+**评测中发现的产品问题**：
+
+1. **多语 Whisper 在应用里每次都识别失败**（`Invalid language: auto`）：`models.json` 给的 `language: auto` 原样传给 sherpa-onnx，而它只认空字符串表示自动检测；sidecar 对 Whisper 又忽略了 `--language`。已修复（`5038934`）。
+2. **Zipformer CTC zh 2025-07-03 在应用里输出乱码**：模型用 byte-level BPE，输出 `Ɛģň Əťļ …` 这类字节符号，sidecar 没有把它们还原成汉字。用户下载这个模型会得到乱码。修复要改 sidecar 解码，超出本调研范围，建议单独修（bug），修好后重测。
+
+**能先看出的方向**（不依赖初稿偏差的部分）：
+
+- **Whisper 不适合口播剪辑**：几乎不转写语气词（召回 3–6%），还整段漏掉内容（删除是主要错误），去口癖和逐字剪辑都用不了。
+- **TeleSpeech 质量明显不够**，Zipformer 要先修解码。
+- **能做字词级剪切的只有 SenseVoice、Paraformer 2023**（以及修好后的 Zipformer、TeleSpeech）：Paraformer 2024、FireRedASR、Whisper 只有句级时间戳。
+- **FireRedASR 字错率与前两名同一量级，但慢 6–8 倍、内存 4–5 GB**，不适合作桌面端默认。
+- 真正的竞争在 SenseVoice 和 Paraformer 2023 之间，差距小于初稿偏差，要等听校后的正式结果决定。
 
 为什么不能当结论：初稿的底稿 A 是在 SenseVoice 输出上精校的，分歧处又取 A，数字天然偏向 SenseVoice；语气词更明显——精校版的「呃」基本沿用 SenseVoice（52 个），Paraformer 识别出 79 个，「多出的 32 个」里很可能有真实语气词被 SenseVoice 漏掉。听校之后重跑同一命令即可得到正式结果。
 
@@ -124,8 +142,8 @@ Paraformer 输出不带标点，按标点断句后每句平均 8.5 秒（SenseVo
 
 **进行中（2026-11-05）**：问题 1–3、5 要等参考文本听校完成；问题 4 已有结论。
 
-1. 字错率：待听校。初稿试算 SenseVoice 与 Paraformer 在 4–9% 之间，差距小于初稿偏差。其他模型待下载（约 3.6 GB，需维护者同意）。
-2. 语气词召回：待听校。已确认两个模型都会转写语气词，没有自动删除。
+1. 字错率：待听校。初稿试算 7 个模型：SenseVoice、Paraformer 2023/2024、FireRedASR 在 4–12%；Whisper 19–26%、TeleSpeech 27–53% 明显落后；Zipformer 输出乱码（产品 bug，待修）。前四名之间的差距小于初稿偏差。FlyCut Cloud、FunASR Provider 未测（本机没有配置）。
+2. 语气词召回：待听校。**Whisper 几乎不转写语气词（3–6%）**，其余可用模型都保留语气词，没有自动删除。
 3. 字词时间戳误差：待听校后用强制对齐生成参考时间戳；`models.json` 里所有中文模型都标着 `token_timestamp_verified: false`。
 4. **长音频：可以稳定跑完。** 60 分钟音频两个模型都完整跑完，4–5 分钟、峰值内存约 2.4–2.5 GB，满足桌面端使用。
 5. 默认推荐与「可用标准」：待 1–3 的正式结果；届时写 ADR。
