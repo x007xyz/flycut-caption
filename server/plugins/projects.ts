@@ -2,7 +2,7 @@ import type { Context } from '@deepseek-ai/cordis';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { createReadStream } from 'node:fs';
-import { access, mkdir, readFile, rename, rm, stat } from 'node:fs/promises';
+import { access, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -11,7 +11,7 @@ import {
   addVideoSchema, createEmptySchema, createFromSnapshotSchema, duplicateSchema, emptyTrashSchema, projectCreateSchema, projectOpenSchema, projectRefSchema, relinkSchema,
   removeVideoSchema, renameSchema, saveEditsSchema, saveProjectStyleSchema, saveTranscriptSchema, saveVideoEditsSchema, shellLinkSchema, thumbnailSchema,
   type ProjectDetailResult, type ProjectFile, type ProjectMedia, type ProjectOpenResult, type ProjectPlayback, type ProjectVideo, type ProjectVideoSummary,
-  type SaveResult, type SaveResultV2,
+  type SaveResult, type SaveResultV2, type HostIdentity, RECOVERY_PROTOCOL_VERSION,
 } from '../../shared/projects';
 import { fingerprintFile, ProjectStore } from '../projects/store';
 import { NewerFormatError } from '../projects/migrations';
@@ -71,6 +71,26 @@ function runFfmpeg(ffmpeg: string, args: string[], timeoutMs = 30_000): Promise<
     child.on('error', error => { clearTimeout(timer); reject(error); });
     child.on('close', code => { clearTimeout(timer); if (code === 0) resolve(stderr); else reject(Object.assign(new Error(`ffmpeg exited with ${code}`), { stderr })); });
   });
+}
+
+/**
+ * The Host home's stable identity (F-0004, ADR-0004). Created once with an exclusive create, so two Hosts starting on
+ * the same home agree on one ID. A damaged file is an error, not a reason to make a new ID: that would hide the
+ * recovery copies kept under the old one. The file belongs to the Host home, not to any project, and is never exported.
+ */
+export async function readHostIdentity(home: string): Promise<string> {
+  const file = join(home, 'host-id.json');
+  const parse = (raw: string) => {
+    const id = (JSON.parse(raw) as { hostId?: unknown }).hostId;
+    if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/i.test(id)) throw new Error(`Host 身份文件已损坏：${file}`);
+    return id;
+  };
+  try { return parse(await readFile(file, 'utf8')); }
+  catch (error) { if (!isMissing(error)) throw error; }
+  await mkdir(home, { recursive: true });
+  try { await writeFile(file, JSON.stringify({ hostId: randomUUID() }), { flag: 'wx' }); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+  return parse(await readFile(file, 'utf8'));
 }
 
 /** `Duration: 00:03:21.45` in FFmpeg's input summary. */
@@ -241,9 +261,9 @@ export const projectsPlugin = { name: 'flycut-projects', inject: ['hostConfig', 
     })));
 
   // Save as new project (AC-25): the original keeps the other window's version.
-  ctx.effect(() => ctx.rpc.register('projects.duplicate', duplicateSchema, ({ projectId, videoId, name, edits }) =>
+  ctx.effect(() => ctx.rpc.register('projects.duplicate', duplicateSchema, ({ projectId, videoId, name, edits, copyId }) =>
     store.exclusive(projectId, async () => {
-      const copy = await store.duplicate(projectId, name);
+      const copy = await store.duplicate(projectId, name, copyId);
       if (!copy.videos.some(item => item.id === videoId)) throw new Error('项目里没有这个视频');
       if (edits) await store.writeEdits(copy.id, videoId, edits);
       return { projectId: copy.id, videoId, revision: copy.revision };
@@ -435,6 +455,10 @@ export const projectsPlugin = { name: 'flycut-projects', inject: ['hostConfig', 
       res.end(JSON.stringify({ mediaRef, name: basename(path), size: entry.size }));
     } }));
   }
+  // F-0004: stable Host identity for crash-recovery copies (ADR-0004).
+  const identity = await readHostIdentity(ctx.hostConfig.home);
+  ctx.effect(() => ctx.rpc.register('projects.identity', undefined, (): HostIdentity => ({ hostId: identity, recovery: RECOVERY_PROTOCOL_VERSION })));
+
   ctx.effect(() => ctx.rpc.capability('projects'));
   ctx.effect(() => ctx.rpc.capability('projects.linkedMedia', linkedMedia));
 } };

@@ -5,7 +5,7 @@ import { asrRequestSchema, modelRefSchema, type ProviderModels, type ProviderSum
 import type { ProjectFile, ProjectListItem, ProjectOpenResult, SaveResult, projectCreateSchema, projectOpenSchema, saveTranscriptSchema,
   saveEditsSchema, duplicateSchema, relinkSchema, thumbnailSchema,
   createEmptySchema, projectRefSchema, renameSchema, emptyTrashSchema, addVideoSchema, removeVideoSchema, saveVideoEditsSchema, saveProjectStyleSchema, createFromSnapshotSchema,
-  ProjectDetailResult, TrashItem, SaveResultV2 } from './projects';
+  ProjectDetailResult, TrashItem, SaveResultV2, HostIdentity } from './projects';
 
 export const PROTOCOL_VERSION = 2;
 export const rpcRequestSchema = z.object({ type: z.literal('client-request'), rpcId: z.string().min(1),
@@ -120,6 +120,8 @@ export interface RpcMethods {
   'projects.saveVideoEdits': { input: z.input<typeof saveVideoEditsSchema>; output: SaveResultV2 };
   'projects.saveProjectStyle': { input: z.input<typeof saveProjectStyleSchema>; output: SaveResultV2 };
   'projects.createFromSnapshot': { input: z.input<typeof createFromSnapshotSchema>; output: { projectId: string; videoId: string } };
+  /** F-0004: the Host's stable identity for crash-recovery copies. */
+  'projects.identity': { input: void; output: HostIdentity };
 }
 export type RpcMethod = keyof RpcMethods;
 export type RpcInput<M extends RpcMethod> = RpcMethods[M]['input'];

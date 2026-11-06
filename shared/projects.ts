@@ -172,7 +172,12 @@ export const saveEditsSchema = z.object({ projectId: projectIdSchema, videoId: z
   baseRevision: z.number().int().min(0), force: z.boolean().default(false) });
 /** Save as new project (AC-25): copies the project, then writes `edits` (this window's version) into the copy. */
 export const duplicateSchema = z.object({ projectId: projectIdSchema, videoId: z.uuid(), name: z.string().trim().min(1).max(200),
-  edits: projectEditsSchema.optional() });
+  edits: projectEditsSchema.optional(),
+  /**
+   * F-0004: the new project's ID, chosen by the client so a retry after a lost response returns the same copy
+   * instead of making another one (ADR-0004). Without it the Host picks one.
+   */
+  copyId: z.uuid().optional() });
 export const relinkSchema = z.object({ projectId: projectIdSchema, videoId: z.uuid(), media: mediaSourceSchema });
 export const thumbnailSchema = z.object({ projectId: projectIdSchema, videoId: z.uuid() });
 /** Desktop shell only (`/shell/projects/media`): registers a file the user picked. */
@@ -199,3 +204,12 @@ export const saveProjectStyleSchema = z.object({ projectId: projectIdSchema, sty
 export const createFromSnapshotSchema = z.object({ name: projectNameSchema, videoName: z.string().min(1).max(260),
   durationSeconds: z.number().min(0).default(0), transcript: transcriptRecordSchema.optional(), edits: projectEditsSchema,
   styleSource: z.enum(['project', 'custom']), style: projectStyleSchema.optional() });
+
+// ---------- F-0004 ----------
+/** Version of the crash-recovery support the Host offers (`projects.identity`). */
+export const RECOVERY_PROTOCOL_VERSION = 1;
+/**
+ * A Host's stable identity (F-0004, ADR-0004): a random ID kept in the Host home. Same across restarts and token
+ * changes, different for another Host home. Clients keep recovery copies per Host by it, never by URL.
+ */
+export interface HostIdentity { hostId: string; recovery: number }

@@ -195,10 +195,16 @@ export class ProjectStore {
     await writeJson(join(this.videoDir(id, videoId), 'edits.json'), edits);
   }
 
-  /** Copies a whole project under a new ID (Save as new project). Linked media keep pointing at the same file. */
-  async duplicate(id: string, name: string) {
+  /**
+   * Copies a whole project under a new ID (Save as new project). Linked media keep pointing at the same file.
+   * With a client-chosen `copyId` (F-0004) a retry returns the finished copy; a copy a crash left half done is redone.
+   */
+  async duplicate(id: string, name: string, copyId: string = randomUUID()) {
     const project = await this.read(id);
-    const copyId = randomUUID(); const now = new Date().toISOString();
+    const existing = await this.read(copyId).catch(() => undefined);
+    if (existing?.id === copyId) return existing;
+    await rm(this.dir(copyId), { recursive: true, force: true });
+    const now = new Date().toISOString();
     await cp(this.dir(id), this.dir(copyId), { recursive: true, filter: source => !source.endsWith('.tmp') });
     const copy: ProjectFile = { ...project, id: copyId, name, createdAt: now, updatedAt: now, revision: 1, deletedAt: undefined, purgeAfter: undefined };
     await this.writeProject(copy);
