@@ -7,9 +7,9 @@
 //   pnpm feature depends F-0001 F-0002 F-0003   （--clear 清空）
 //   pnpm feature next F-0001
 //   pnpm feature review <VISION | E-05 | F-0001>
-//   pnpm feature approve <VISION | E-05 | F-0001> --by <名字> [--stage <阶段>]
-//   pnpm feature skip F-0001 --by <名字> --reason "<原因>"
-//   pnpm feature archive F-0001
+//   pnpm feature approve <VISION | E-05 | F-0001 ...> --by <名字> [--stage <阶段>]
+//   pnpm feature release-notes <版本，例如 v2.1.0>
+//   pnpm feature archive <F-0001 ...> --release <版本>
 //   pnpm feature adr <slug> "<标题>" [--feature F-0001]
 //   pnpm feature incident <slug> "<标题>" [--feature F-0001]
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
@@ -24,24 +24,25 @@ const PRODUCT_DOCS = { VISION: 'vision.md', 'CAPABILITY-MAP': 'capability-map.md
 // Epic 获批前必须先确认的产品级文档
 const EPIC_PREREQUISITES = ['VISION', 'CAPABILITY-MAP'];
 
+// 一个人从需求做到开发：每个需求只有两个维护者确认点——需求说明（01-spec）和最后一个阶段（验收 / 调研报告）。
+// 发布、运维观察和复盘按版本做（docs/40-ops/releases/），不在单个需求里。
 const STAGES = {
-  feature: ['01-intake', '02-prd', '03-design', '05-implementation',
-    '06-test-report', '07-release', '08-ops', '09-retro'],
-  spike: ['01-intake', '02-research', '09-retro'],
+  feature: ['01-spec', '02-design', '03-implementation', '04-test-report'],
+  spike: ['01-spec', '02-research'],
 };
 const STAGE_NAMES = {
-  '01-intake': '立项', '02-prd': '产品文档', '02-research': '调研', '03-design': '技术设计',
-  '05-implementation': '开发', '06-test-report': '测试与验收',
-  '07-release': '发布', '08-ops': '运维观察', '09-retro': '复盘',
+  '01-spec': '需求说明', '02-research': '调研', '02-design': '技术设计',
+  '03-implementation': '开发', '04-test-report': '测试与验收',
 };
-// 依赖方达到这个阶段并确认后，才算「完成」，依赖它的需求才能开始开发
-const DONE_STAGE = { feature: '06-test-report', spike: '02-research' };
+// 最后一个阶段确认后，需求就算「完成」，依赖它的需求才能开始开发
+const DONE_STAGE = { feature: '04-test-report', spike: '02-research' };
 // 需要依赖全部完成才能进入的阶段
-const GATED_STAGE = { feature: '05-implementation', spike: '02-research' };
-const DONE = new Set(['approved', 'skipped']);
-// 这些阶段由 agent 连续推进：review 时检查通过就自动确认，维护者在「测试与验收」时一并审阅
-const AUTO_STAGES = new Set(['03-design', '05-implementation']);
+const GATED_STAGE = { feature: '03-implementation', spike: '02-research' };
+const DONE = new Set(['approved']);
+// 这些阶段由 agent 连续推进：review 时检查通过就自动确认并创建下一阶段，维护者在「测试与验收」时一并审阅
+const AUTO_STAGES = new Set(['02-design', '03-implementation']);
 const AUTO_BY = 'auto';
+const RELEASES = 'docs/40-ops/releases';
 
 const [command, ...rest] = process.argv.slice(2);
 const positional = rest.filter((arg, i) => !arg.startsWith('--') && !rest[i - 1]?.startsWith('--'));
@@ -127,7 +128,7 @@ const allEpics = () => listFiles(EPICS).map((f) => f.slice(0, 4)).filter((id) =>
 // ---------- 需求 ----------
 
 function loadFeature(dir, archived = false) {
-  const intake = join(dir, '01-intake.md');
+  const intake = join(dir, '01-spec.md');
   const meta = readFrontmatter(intake);
   const type = meta.type === 'spike' ? 'spike' : 'feature';
   const stages = STAGES[type].filter((stage) => existsSync(join(dir, `${stage}.md`)))
@@ -135,7 +136,7 @@ function loadFeature(dir, archived = false) {
   const heading = readFileSync(intake, 'utf8').match(/^# F-\d{4} (.*?)：/m);
   return {
     dir, archived, type, id: dir.split('/').pop().slice(0, 6), title: heading?.[1] ?? '',
-    epic: meta.epic ?? '', depends: splitList(meta.depends_on), stages, current: stages.at(-1),
+    epic: meta.epic ?? '', depends: splitList(meta.depends_on), releasedIn: meta.released_in ?? '', stages, current: stages.at(-1),
   };
 }
 
@@ -154,11 +155,11 @@ function findFeature(id, { allowArchived = false } = {}) {
   return feature;
 }
 
-// ---------- 实现清单（03-design.md 的「实现清单」） ----------
+// ---------- 实现清单（02-design.md 的「实现清单」） ----------
 
 // 返回未勾选的清单项；没有清单时返回 null
 function openChecklist(feature) {
-  const file = join(feature.dir, '03-design.md');
+  const file = join(feature.dir, '02-design.md');
   if (!existsSync(file)) return null;
   const text = readFileSync(file, 'utf8');
   const section = text.match(/^## 实现清单\n([\s\S]*?)(?=^## |(?![\s\S]))/m)?.[1];
@@ -216,14 +217,18 @@ const featureEdges = (features) => (id) => (features.find((f) => f.id === id)?.d
 
 function nextAction(feature) {
   const { current, type } = feature;
-  if (feature.archived) return '已归档';
+  if (feature.archived) return feature.releasedIn ? `已归档（发布版本：${feature.releasedIn}）` : '已归档';
   if (current.status === 'draft') {
     const auto = AUTO_STAGES.has(current.stage) ? '（自动确认，接着进入下一阶段）' : '';
     return `编写 ${current.stage}.md，完成后 pnpm feature review ${feature.id}${auto}`;
   }
   if (current.status === 'review') return `等待维护者确认「${STAGE_NAMES[current.stage]}」`;
   const stages = STAGES[type];
-  if (current.stage === stages.at(-1)) return `pnpm feature archive ${feature.id}`;
+  if (current.stage === stages.at(-1)) {
+    return type === 'spike'
+      ? `调研已完成，可以归档：pnpm feature archive ${feature.id} --release none`
+      : '已验收，等待发版：用 fc-release 写版本发布文档，发版后 pnpm feature archive <编号...> --release <版本>';
+  }
   const upcoming = stages[stages.indexOf(current.stage) + 1];
   if (upcoming === GATED_STAGE[type]) {
     const unmet = unmetDependencies(feature.depends);
@@ -272,6 +277,31 @@ function validateDepends(featureId, deps) {
   if (cycle) fail(`依赖成环：${cycle.join(' → ')}`);
 }
 
+// 上一阶段确认后创建下一阶段文件；返回创建的阶段，或不能创建的原因
+function createNextStage(feature) {
+  const { current, type } = feature;
+  const stages = STAGES[type];
+  const index = stages.indexOf(current.stage);
+  if (index === stages.length - 1) return { error: '已经是最后一个阶段' };
+  const pending = feature.stages.filter((s) => !DONE.has(s.status));
+  if (pending.length) return { error: `还有未确认的阶段：${pending.map((s) => s.stage).join('、')}` };
+  const stage = stages[index + 1];
+  if (stage === GATED_STAGE[type]) {
+    const unmet = unmetDependencies(feature.depends);
+    if (unmet.length) return { error: `依赖未完成，不能进入「${STAGE_NAMES[stage]}」：${unmet.join('；')}` };
+  }
+  const file = join(feature.dir, `${stage}.md`);
+  if (!existsSync(file)) writeFileSync(file, render(`${stage}.md`, { id: feature.id, title: feature.title }));
+  return { stage, file };
+}
+
+function reportNext(feature) {
+  if (feature.current.stage === STAGES[feature.type].at(-1)) { console.log(`  下一步：${nextAction(feature)}`); return; }
+  const result = createNextStage(feature);
+  if (result.error) console.log(`  下一阶段：${result.error}`);
+  else console.log(`  ✓ 已创建 ${result.file}（${STAGE_NAMES[result.stage]}）`);
+}
+
 // ---------- 命令 ----------
 
 switch (command) {
@@ -294,6 +324,8 @@ switch (command) {
     const active = allFeatures().filter((f) => !f.archived);
     console.log(active.length ? '需求' : '需求：还没有。pnpm feature new <slug> "<标题>" --epic E-NN 新建。');
     active.forEach((f) => printFeature(f, false));
+    const unreleased = active.filter((f) => f.type === 'feature' && isFeatureDone(f));
+    if (unreleased.length) console.log(`待发布（已验收）：${unreleased.map((f) => f.id).join('、')}`);
     break;
   }
 
@@ -343,8 +375,8 @@ switch (command) {
     validateDepends(id, deps);
     const dir = join(FEATURES, `${id}-${slug}`);
     mkdirSync(dir, { recursive: true });
-    const file = join(dir, '01-intake.md');
-    writeFileSync(file, render('01-intake.md', { id, title }));
+    const file = join(dir, '01-spec.md');
+    writeFileSync(file, render('01-spec.md', { id, title }));
     writeFrontmatter(file, { epic: epicId, type, depends_on: `[${deps.join(', ')}]` });
     console.log(`✓ 已创建 ${file}（${type === 'spike' ? '调研' : '功能'}，属于 ${epicId}）`);
     console.log(`  记得在 ${epic.file} 的候选需求表里回填 ${id}`);
@@ -355,27 +387,17 @@ switch (command) {
     const feature = findFeature(positional[0]);
     const deps = flag('clear') ? [] : positional.slice(1);
     validateDepends(feature.id, deps);
-    writeFrontmatter(join(feature.dir, '01-intake.md'), { depends_on: `[${deps.join(', ')}]` });
+    writeFrontmatter(join(feature.dir, '01-spec.md'), { depends_on: `[${deps.join(', ')}]` });
     console.log(`✓ ${feature.id} 依赖：${deps.length ? deps.join('、') : '无'}`);
     break;
   }
 
   case 'next': {
     const feature = findFeature(positional[0]);
-    const { current, type } = feature;
-    if (!DONE.has(current.status)) fail(`${current.stage} 还是 ${current.status}，维护者确认后才能进入下一阶段`);
-    const stages = STAGES[type];
-    const index = stages.indexOf(current.stage);
-    if (index === stages.length - 1) fail(`已经是最后一个阶段，复盘确认后用 pnpm feature archive ${feature.id}`);
-    const pending = feature.stages.filter((s) => !DONE.has(s.status));
-    if (pending.length) fail(`前面还有未确认的阶段：${pending.map((s) => s.stage).join('、')}`);
-    const stage = stages[index + 1];
-    if (stage === GATED_STAGE[type]) {
-      const unmet = unmetDependencies(feature.depends);
-      if (unmet.length) fail(`依赖未完成，不能进入「${STAGE_NAMES[stage]}」：${unmet.join('；')}`);
-    }
-    writeFileSync(join(feature.dir, `${stage}.md`), render(`${stage}.md`, { id: feature.id, title: feature.title }));
-    console.log(`✓ 已创建 ${feature.dir}/${stage}.md（${STAGE_NAMES[stage]}）`);
+    if (!DONE.has(feature.current.status)) fail(`${feature.current.stage} 还是 ${feature.current.status}，确认后才能进入下一阶段`);
+    const result = createNextStage(feature);
+    if (result.error) fail(result.error);
+    console.log(`✓ 已创建 ${result.file}（${STAGE_NAMES[result.stage]}）`);
     break;
   }
 
@@ -391,16 +413,17 @@ switch (command) {
     const feature = findFeature(id);
     const { current } = feature;
     if (current.status !== 'draft') fail(`${current.stage} 当前是 ${current.status}，只有 draft 可以提交确认`);
-    if (current.stage === '03-design' && openChecklist(feature) === null) {
-      fail('03-design.md 需要「## 实现清单」一节，用 - [ ] 列出要完成的步骤');
+    if (current.stage === '02-design' && openChecklist(feature) === null) {
+      fail('02-design.md 需要「## 实现清单」一节，用 - [ ] 列出要完成的步骤');
     }
-    if (current.stage === '05-implementation') {
+    if (current.stage === '03-implementation') {
       const open = openChecklist(feature);
       if (open?.length) fail(`实现清单还有 ${open.length} 项未勾选：${open.map((item) => item.replace(/\*\*/g, '').slice(0, 24)).join('；')}`);
     }
     if (AUTO_STAGES.has(current.stage)) {
       writeFrontmatter(current.file, { status: 'approved', approved_by: AUTO_BY, approved_at: today() });
-      console.log(`✓ ${feature.id} ${current.stage} 检查通过，已自动确认（维护者在「测试与验收」时一并审阅）。接着运行 pnpm feature next ${feature.id}`);
+      console.log(`✓ ${feature.id} ${current.stage} 检查通过，已自动确认（维护者在「测试与验收」时一并审阅）`);
+      reportNext(findFeature(feature.id));
       break;
     }
     writeFrontmatter(current.file, { status: 'review' });
@@ -410,46 +433,58 @@ switch (command) {
 
   case 'approve': {
     const by = requireBy();
-    const id = positional[0];
-    const doc = id?.startsWith('F-') ? null : loadDoc(id);
-    if (doc) {
-      if (doc.status !== 'review') fail(`${id} 当前是 ${doc.status}，先用 pnpm feature review ${id} 提交确认`);
-      if (doc.kind === 'epic') requireDocsApproved(EPIC_PREREQUISITES, '确认 Epic ');
-      writeFrontmatter(doc.file, { status: 'approved', approved_by: by, approved_at: today() });
-      console.log(`✓ ${id} 已由 ${by} 确认`);
-      break;
+    if (!positional.length) fail('需要编号：pnpm feature approve <VISION | E-05 | F-0001 ...> --by <名字>');
+    // 可以一次确认多个，例如维护者说「F-0006 到 F-0009 的需求说明都确认」
+    for (const id of positional) {
+      const doc = id.startsWith('F-') ? null : loadDoc(id);
+      if (doc) {
+        if (doc.status !== 'review') fail(`${id} 当前是 ${doc.status}，先用 pnpm feature review ${id} 提交确认`);
+        if (doc.kind === 'epic') requireDocsApproved(EPIC_PREREQUISITES, '确认 Epic ');
+        writeFrontmatter(doc.file, { status: 'approved', approved_by: by, approved_at: today() });
+        console.log(`✓ ${id} 已由 ${by} 确认`);
+        continue;
+      }
+      const feature = findFeature(id);
+      // --stage 用于确认被退回重审的前面阶段（例如开发时改了需求说明，01-spec 回到 review）
+      const stageName = option('stage');
+      const target = stageName ? feature.stages.find((s) => s.stage === stageName) : feature.current;
+      if (!target) fail(`${id} 没有阶段 ${stageName}`);
+      if (target.status !== 'review') fail(`${id} ${target.stage} 当前是 ${target.status}，先用 pnpm feature review ${id} 提交确认`);
+      writeFrontmatter(target.file, { status: 'approved', approved_by: by, approved_at: today() });
+      console.log(`✓ ${id} ${target.stage} 已由 ${by} 确认`);
+      if (target === feature.current) reportNext(findFeature(id));
     }
-    const feature = findFeature(id);
-    const featureId = feature.id;
-    // --stage 用于确认被退回重审的前面阶段（例如设计阶段改了 PRD，PRD 回到 review）
-    const stageName = option('stage');
-    const target = stageName ? feature.stages.find((s) => s.stage === stageName) : feature.current;
-    if (!target) fail(`${featureId} 没有阶段 ${stageName}`);
-    if (target.status !== 'review') fail(`${target.stage} 当前是 ${target.status}，先用 pnpm feature review ${featureId} 提交确认`);
-    writeFrontmatter(target.file, { status: 'approved', approved_by: by, approved_at: today() });
-    console.log(`✓ ${featureId} ${target.stage} 已由 ${by} 确认`);
     break;
   }
 
-  case 'skip': {
-    const by = requireBy();
-    const reason = option('reason') ?? fail('需要 --reason "<原因>"');
-    const { current, id } = findFeature(positional[0]);
-    if (['01-intake', '02-prd', '02-research', '03-design', '06-test-report'].includes(current.stage)) fail(`${STAGE_NAMES[current.stage]}不能跳过`);
-    if (DONE.has(current.status)) fail(`${current.stage} 已经是 ${current.status}`);
-    writeFrontmatter(current.file, { status: 'skipped', approved_by: by, approved_at: today() });
-    writeFileSync(current.file, readFileSync(current.file, 'utf8').replace(/\n---\n/, `\n---\n\n> 已跳过（${today()}，${by}）：${reason}\n`));
-    console.log(`✓ ${id} ${current.stage} 已跳过`);
+  case 'release-notes': {
+    const version = positional[0] ?? fail('需要版本号：pnpm feature release-notes v2.1.0');
+    if (!/^v\d+\.\d+\.\d+/.test(version)) fail('版本号格式是 v2.1.0');
+    const file = join(RELEASES, `${version}.md`);
+    if (existsSync(file)) fail(`${file} 已存在`);
+    const done = allFeatures().filter((f) => !f.archived && f.type === 'feature' && isFeatureDone(f));
+    const list = done.length ? done.map((f) => `| [${f.id}](../../features/archive/${f.dir.split('/').pop()}/04-test-report.md) | ${f.title} | ${f.epic} |`).join('\n') : '| | | |';
+    // 链接指向归档后的位置：发版后这些需求会用 pnpm feature archive 归档
+    mkdirSync(RELEASES, { recursive: true });
+    writeFileSync(file, render('release.md', { version, date: today(), features: list }));
+    console.log(`✓ 已创建 ${file}，包含 ${done.length} 个已验收的需求：${done.map((f) => f.id).join('、') || '无'}`);
     break;
   }
 
   case 'archive': {
-    const feature = findFeature(positional[0]);
-    if (feature.current.stage !== '09-retro' || feature.current.status !== 'approved') fail('复盘（09-retro）确认后才能归档');
+    const release = option('release') ?? fail('需要 --release <版本>（随哪个版本发布；调研写 none）');
+    if (!positional.length) fail('需要编号：pnpm feature archive <F-0001 ...> --release <版本>');
+    const features = positional.map((id) => findFeature(id));
+    for (const feature of features) {
+      if (!isFeatureDone(feature)) fail(`${feature.id} 的「${STAGE_NAMES[DONE_STAGE[feature.type]]}」还没确认，不能归档`);
+    }
     mkdirSync(ARCHIVE, { recursive: true });
-    const target = join(ARCHIVE, feature.dir.split('/').pop());
-    renameSync(feature.dir, target);
-    console.log(`✓ 已归档到 ${target}`);
+    for (const feature of features) {
+      writeFrontmatter(join(feature.dir, '01-spec.md'), { released_in: release });
+      const target = join(ARCHIVE, feature.dir.split('/').pop());
+      renameSync(feature.dir, target);
+      console.log(`✓ ${feature.id} 已归档到 ${target}`);
+    }
     break;
   }
 

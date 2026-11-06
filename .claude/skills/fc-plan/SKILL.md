@@ -8,7 +8,7 @@ description: 维护 FlyCut 的产品规划：产品愿景（目标用户、竞�
 文件都在 `docs/10-product/`：`vision.md`（VISION）、`capability-map.md`（CAPABILITY-MAP）、`roadmap.md`（ROADMAP）、`epics/E-NN-<slug>.md`。规则见 `docs/00-process/README.md` 的「三层结构」和「大需求怎么拆」。
 
 1. 先 `pnpm feature status` 看各文档的确认状态。
-2. 修改已确认（approved）的文档：先说明要改什么、为什么，维护者同意后再改，改完把状态改回 `review`（直接编辑 frontmatter 的 `status`，并清空 `approved_by`、`approved_at`），再请维护者确认。
+2. 修改已确认（approved）的文档：直接改，把状态改回 `review`（编辑 frontmatter 的 `status`，并清空 `approved_by`、`approved_at`），在总结里说明改了什么、为什么，请维护者确认一次。几份文档一起改时一起提交确认，维护者可以一次 `approve` 多个编号。
 3. 新的一块能力用 `pnpm feature epic <slug> "<标题>"` 新建 Epic，并加进 capability-map.md 和 roadmap.md。
 4. 拆候选需求：
    - 按「用户能完成的一步」拆，每个候选满足：用户能感受到、可以单独发布、AC 约 10 条以内、约两周做完。

@@ -8,7 +8,7 @@ approved_at: 2026-11-05
 
 # F-0002 项目数据保存到 Host：交互原型
 
-> 2026-11-05：需求流程取消了交互原型阶段，原型入口（`prototype.html`、`src/prototypes/`）和原型测试已删除。本文件只作为界面状态和交互的记录保留；`src/components/Project/` 的展示组件仍在，开发时按 03-design.md 接入真实数据，界面验收改用 `tests/e2e/features/F-0002.spec.ts`。
+> 2026-11-05：需求流程取消了交互原型阶段，原型入口（`prototype.html`、`src/prototypes/`）和原型测试已删除。本文件只作为界面状态和交互的记录保留；`src/components/Project/` 的展示组件仍在，开发时按 02-design.md 接入真实数据，界面验收改用 `tests/e2e/features/F-0002.spec.ts`。
 
 ## 原型入口
 

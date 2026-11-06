@@ -1,6 +1,6 @@
 ---
 id: F-0001
-stage: 01-intake
+stage: 01-spec
 status: approved
 approved_by: zhangxiang.chen
 approved_at: 2026-11-05
@@ -9,7 +9,9 @@ type: spike
 depends_on: []
 ---
 
-# F-0001 中文口播转写质量基准：立项
+# F-0001 中文口播转写质量基准：需求说明
+
+> 2026-11-05 流程调整：由原立项（01-intake）改名而来，内容未改。
 
 ## 来源
 

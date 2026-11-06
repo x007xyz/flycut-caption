@@ -8,7 +8,7 @@ FlyCut Caption 是智能视频字幕裁剪工具：上传视频/音频 → ASR �
 
 1. 读 [LESSONS.md](LESSONS.md)：之前踩过的坑和照做的做法。
 2. 读 [docs/code-standards.md](docs/code-standards.md)：验收标准，写代码和交付前都要对照。
-3. 新功能和较大的改动走需求流程（[docs/00-process/README.md](docs/00-process/README.md)）：立项、PRD、测试与验收及之后的阶段要维护者确认后才能进入下一阶段，agent 不能自己确认；技术设计 → 开发 → 测试与验收由 agent 连续推进，维护者在验收时看报告、截图和录屏一并审阅；依赖未完成的需求不能开始开发。小的 bug 修复和文档修正可以直接做。
+3. 新功能和较大的改动走需求流程（[docs/00-process/README.md](docs/00-process/README.md)）：每个需求只有两个维护者确认点——需求说明（`01-spec`，立项和 PRD 合在一起，可以一批一起确认）和测试与验收，agent 不能自己确认；中间的技术设计 → 开发 → 测试由 agent 连续推进；发布、运维观察和复盘按版本做；依赖未完成的需求不能开始开发。小的 bug 修复和文档修正可以直接做。
 4. 产品方向（目标用户：口播创作者；平台：先桌面端再 Web）见 [docs/10-product/vision.md](docs/10-product/vision.md)。
 
 ## 按改动范围读文档
@@ -28,7 +28,8 @@ FlyCut Caption 是智能视频字幕裁剪工具：上传视频/音频 → ASR �
 | 任务 | 先读 |
 |---|---|
 | 产品规划、拆 Epic、竞品与获客分析 | [docs/10-product/](docs/10-product/README.md)，用 `fc-plan` |
-| 新需求：立项 → PRD → 技术设计 → 开发 → 验收 → 发布 → 运维 → 复盘 | [docs/00-process/README.md](docs/00-process/README.md)，各阶段用 `.claude/skills/fc-*` 对应的 Skill（调研类用 `fc-research`）；进度用 `pnpm feature status` |
+| 新需求：需求说明 → 设计 / 开发 / 验收 | [docs/00-process/README.md](docs/00-process/README.md)，用 `fc-spec` → `fc-build`（调研类 `fc-spec` → `fc-research`）；进度用 `fc-status` / `pnpm feature status` |
+| 发版、发布后观察与复盘（按版本） | `fc-release`、`fc-retro`，文档在 [docs/40-ops/releases/](docs/40-ops/releases/) |
 | 写代码、修 bug | 对应子系统文档 + [docs/code-standards.md](docs/code-standards.md) |
 | 审查代码或 PR | [docs/code-standards.md](docs/code-standards.md) 逐条对照 + [docs/decisions.md](docs/decisions.md) |
 | 合并、打 tag、发版 | [docs/code-standards.md](docs/code-standards.md) 第 6 条；发版只用 `pnpm release` |

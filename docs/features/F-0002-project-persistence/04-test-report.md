@@ -1,6 +1,6 @@
 ---
 id: F-0002
-stage: 06-test-report
+stage: 04-test-report
 status: approved
 approved_by: zhangxiang.chen
 approved_at: 2026-11-05
@@ -17,7 +17,7 @@ approved_at: 2026-11-05
 - **Host**：新插件 `projects`（`server/plugins/projects.ts`），项目存在 `<home>/projects/<id>/`，按 ADR-0001 拆成 `project.json`、每个视频的 `transcript.json` / `edits.json` / `thumbnail.jpg`；所有写入「临时文件 → 改名」，同一项目串行。上传的媒体用 `AssetService.claim` 移出 24 小时清理的资产目录；桌面端按 ADR-0002 记录原文件位置，由 Tauri 外壳经只认外壳密钥的通道登记，RPC 只收不透明的 `mediaRef`。RPC：`list / create / open / saveTranscript / saveEdits / duplicate / relinkMedia / thumbnail`。Gateway 增加插件 HTTP 路由机制，项目媒体地址支持 Range。
 - **前端**：`ProjectsApp` 用 URL hash 在「我的项目」和编辑器之间切换；`projectService`（前端插件）负责新建、打开、自动保存（1.5 秒停顿、单请求在途、⌘S / Ctrl+S）、失败退避重试、冲突、离开保护和媒体重选；字幕样式对移进 `appStore`，随项目保存。
 - **ADR**：沿用已确认的 ADR-0001、ADR-0002，本需求没有新写 ADR。
-- **与设计的偏差**：清单 2–5 合并成一次提交；Web 媒体路由随清单 1 完成；自动保存放在服务里而不是 Hook；样式对放进 `appStore`。详见 [05-implementation.md](05-implementation.md)。
+- **与设计的偏差**：清单 2–5 合并成一次提交；Web 媒体路由随清单 1 完成；自动保存放在服务里而不是 Hook；样式对放进 `appStore`。详见 [03-implementation.md](03-implementation.md)。
 
 ## 自行决定的事项
 

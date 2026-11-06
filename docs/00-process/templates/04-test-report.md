@@ -1,6 +1,6 @@
 ---
 id: {{id}}
-stage: 06-test-report
+stage: 04-test-report
 status: draft
 approved_by:
 approved_at:

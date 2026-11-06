@@ -1,6 +1,6 @@
 ---
 id: F-0002
-stage: 03-design
+stage: 02-design
 status: approved
 approved_by: auto
 approved_at: 2026-11-05
@@ -10,7 +10,7 @@ approved_at: 2026-11-05
 
 ## UI / UX
 
-界面状态和文案以 PRD 的 AC-11 到 AC-27 为准（2026-11-05 从原型记录 [03-ux.md](03-ux.md) 整理进 PRD）。`src/components/Project/` 的展示组件保留，本节写它们怎么接到真实数据：
+界面状态和文案以 PRD 的 AC-11 到 AC-27 为准（2026-11-05 从原型记录 [ux.md](ux.md) 整理进 PRD）。`src/components/Project/` 的展示组件保留，本节写它们怎么接到真实数据：
 
 | 原型组件 | 数据来源 | 动作 |
 |---|---|---|

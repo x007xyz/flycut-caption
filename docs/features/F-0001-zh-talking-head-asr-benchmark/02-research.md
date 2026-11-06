@@ -10,7 +10,7 @@ approved_at:
 
 ## 要回答的问题
 
-来自 [01-intake.md](01-intake.md)：
+来自 [01-spec.md](01-spec.md)：
 
 1. 各模型 / Provider 在中文口播上的字错率。
 2. 语气词召回率：嗯 / 啊 / 呃 / 额 / 那个 / 就是 等是否被原样转写。
