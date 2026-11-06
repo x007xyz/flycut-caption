@@ -228,7 +228,7 @@ fn recognize(args: &Args, wav_path: &Path) -> Result<RecognitionOutput, String> 
         .as_ref()
         .ok_or_else(|| "缺少 --recognizer-config 参数".to_string())?;
 
-    let recognizer = build_recognizer(config, &args.model, args.timestamp_mode)?;
+    let recognizer = build_recognizer(config, &args.model, args.timestamp_mode, &args.language)?;
 
     recognize_with_vad(
         &recognizer,
@@ -242,10 +242,23 @@ fn recognize(args: &Args, wav_path: &Path) -> Result<RecognitionOutput, String> 
 }
 
 /// 按 model_type 分发到对应 sherpa-onnx Config，构造 OfflineRecognizer。
+/// Whisper 的识别语言：调用方给了具体语言（`--language zh`）就用它；
+/// `auto` 或没给时用模型配置；sherpa-onnx 的 Whisper 不认识 `auto`，自动检测要传空字符串。
+fn whisper_language(requested: &str, configured: Option<&str>) -> String {
+    let pick = |value: &str| -> Option<String> {
+        let value = value.trim();
+        if value.is_empty() || value.eq_ignore_ascii_case("auto") { None } else { Some(value.to_string()) }
+    };
+    pick(requested)
+        .or_else(|| configured.and_then(pick))
+        .unwrap_or_default()
+}
+
 fn build_recognizer(
     config: &RecognizerConfig,
     model_dir: &Path,
     timestamp_mode: TimestampMode,
+    requested_language: &str,
 ) -> Result<OfflineRecognizer, String> {
     let want_token_timestamps = matches!(
         timestamp_mode,
@@ -282,7 +295,11 @@ fn build_recognizer(
             mc.whisper = OfflineWhisperModelConfig {
                 encoder: resolve(&config.whisper_encoder),
                 decoder: resolve(&config.whisper_decoder),
-                language: config.language.clone().or(Some("en".to_string())),
+                // 英文专用模型（*.en）配置里没有 language，保持 en；多语模型按请求语言，否则自动检测
+                language: Some(match config.language.as_deref() {
+                    None => "en".to_string(),
+                    configured => whisper_language(requested_language, configured),
+                }),
                 task: config.task.clone().or(Some("transcribe".to_string())),
                 enable_token_timestamps: want_token_timestamps,
                 enable_segment_timestamps: false,
@@ -1233,6 +1250,15 @@ fn usage() -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn whisper_language_never_passes_auto() {
+        use super::whisper_language;
+        assert_eq!(whisper_language("zh", Some("auto")), "zh");
+        assert_eq!(whisper_language("auto", Some("auto")), "");
+        assert_eq!(whisper_language("", Some("auto")), "");
+        assert_eq!(whisper_language("auto", Some("ja")), "ja");
+    }
+
     use super::*;
 
     fn words_with(tokens: &[&str], boundary: WordBoundary) -> Vec<String> {
