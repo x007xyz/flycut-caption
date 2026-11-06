@@ -1,0 +1,12 @@
+{
+  "name": "f-0016-render-experiments",
+  "private": true,
+  "type": "module",
+  "description": "F-0016 一次性渲染方案原型，不进构建、不进测试",
+  "dependencies": {
+    "@lottiefiles/dotlottie-web": "^0.82.1",
+    "@napi-rs/canvas": "^1.1.0",
+    "jassub": "^2.5.35",
+    "playwright-core": "1.64.1"
+  }
+}

@@ -1,0 +1,46 @@
+[
+  {
+    "variant": "anim-landscape",
+    "frames": 12,
+    "maxBboxOffset": 13,
+    "meanDiffRatio": 0.4421,
+    "maxDiffRatio": 0.6989,
+    "severeRatio": 0.5992,
+    "mae": 81.42,
+    "missing": 0,
+    "pass": false
+  },
+  {
+    "variant": "static-box",
+    "frames": 12,
+    "maxBboxOffset": 1,
+    "meanDiffRatio": 0.0019,
+    "maxDiffRatio": 0.0043,
+    "severeRatio": 0.0043,
+    "mae": 2.8,
+    "missing": 0,
+    "pass": true
+  },
+  {
+    "variant": "static-outline",
+    "frames": 12,
+    "maxBboxOffset": 1,
+    "meanDiffRatio": 0.0054,
+    "maxDiffRatio": 0.0074,
+    "severeRatio": 0.0074,
+    "mae": 2.47,
+    "missing": 0,
+    "pass": true
+  },
+  {
+    "variant": "static-shadow",
+    "frames": 12,
+    "maxBboxOffset": 1,
+    "meanDiffRatio": 0.0949,
+    "maxDiffRatio": 0.1045,
+    "severeRatio": 0.015,
+    "mae": 11.44,
+    "missing": 0,
+    "pass": true
+  }
+]

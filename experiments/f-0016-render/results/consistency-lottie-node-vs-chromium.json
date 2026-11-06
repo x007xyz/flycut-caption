@@ -1,0 +1,13 @@
+[
+  {
+    "variant": "badge",
+    "frames": 4,
+    "maxBboxOffset": 0,
+    "meanDiffRatio": 0,
+    "maxDiffRatio": 0,
+    "severeRatio": 0,
+    "mae": 0,
+    "missing": 0,
+    "pass": true
+  }
+]

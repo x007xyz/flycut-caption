@@ -1,0 +1,2 @@
+{"engine":"chromium-post","variant":"anim-landscape","duration":60,"fullFrame":false,"frames":1500,"drawnFrames":1267,"wallSec":203.4,"speedX":0.3,"nodeCpuSec":110.2,"nodePeakMB":721,"ffmpegPeakMB":2038,"ffmpegCpuSec":31.8,"cores":10,"date":"2026-11-06T05:47:52.880Z"}
+{"engine":"skia","variant":"anim-landscape","duration":60,"fullFrame":false,"frames":1500,"drawnFrames":1267,"wallSec":6,"speedX":10,"nodeCpuSec":3.2,"nodePeakMB":324,"ffmpegPeakMB":1220,"ffmpegCpuSec":34.5,"cores":10,"date":"2026-11-06T05:47:58.935Z"}

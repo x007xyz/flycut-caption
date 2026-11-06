@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>F-0016 渲染原型</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #111; color: #ddd; font: 13px/1.5 -apple-system, sans-serif; }
+  #stage { position: relative; width: min(100vw, 960px); margin: 0 auto; background: #000; }
+  #stage video, #stage canvas.overlay { display: block; width: 100%; height: auto; }
+  #stage canvas.overlay, #stage .jassub { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  #log { white-space: pre-wrap; padding: 8px 12px; font-family: ui-monospace, monospace; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="log">loading…</div>
+<script type="module">
+import { buildScene, sampleTimes, FONT_FAMILY } from '../shared/scene.mjs';
+import { drawFrame, frameKey, layoutCue, subtitleBand } from '../shared/draw.mjs';
+import { VARIANTS } from '../shared/variants.mjs';
+
+const q = new URLSearchParams(location.search);
+const log = (s) => { document.getElementById('log').textContent = s; };
+
+// 字体：和后端读同一份 OTF 文件，不用 @fontsource 的分片 woff2。
+async function loadFonts() {
+  for (const [w, f] of [[400, 'Regular'], [700, 'Bold']]) {
+    const face = new FontFace(FONT_FAMILY, `url(/fonts/NotoSansSC-${f}.otf)`, { weight: String(w) });
+    await face.load();
+    document.fonts.add(face);
+  }
+}
+async function loadSticker() {
+  const img = new Image();
+  img.src = '/assets/sticker.png';
+  await img.decode();
+  return img;
+}
+
+await loadFonts();
+const sticker = await loadSticker();
+const variantById = Object.fromEntries(VARIANTS.map((v) => [v.id, v]));
+
+// ---------- 一致性取样：返回每个取样时间点的字幕层 PNG ----------
+window.snap = async (id, layoutsJson) => {
+  const scene = buildScene(variantById[id]);
+  if (layoutsJson) scene.layouts = JSON.parse(layoutsJson);
+  const c = document.createElement('canvas');
+  c.width = scene.width; c.height = scene.height;
+  const ctx = c.getContext('2d');
+  const out = [];
+  for (const t of sampleTimes(scene)) {
+    drawFrame(ctx, scene, t, { sticker });
+    out.push({ t, png: c.toDataURL('image/png') });
+  }
+  return out;
+};
+// 浏览器端排版结果（供「排版一次、两端渲染」测试）
+window.layouts = (id) => {
+  const scene = buildScene(variantById[id]);
+  const ctx = document.createElement('canvas').getContext('2d');
+  return JSON.stringify(scene.cues.map((cue) => layoutCue(ctx, scene, cue)));
+};
+
+// ---------- 方案 B：后端驱动的无头浏览器逐帧渲染（只渲染字幕条带，重复帧不回传） ----------
+let ex = null;
+window.exportInit = (id, duration, fps) => {
+  const scene = buildScene({ ...variantById[id], duration, fps });
+  const band = subtitleBand(scene);
+  const c = new OffscreenCanvas(scene.width, band.height);
+  ex = { scene, band, ctx: c.getContext('2d', { willReadFrequently: true }), lastKey: null };
+  return { width: scene.width, height: band.height, y: band.y };
+};
+window.exportBatch = (startFrame, count) => {
+  const { scene, band, ctx } = ex;
+  const res = [];
+  for (let f = startFrame; f < startFrame + count; f += 1) {
+    const t = f / scene.fps;
+    const key = frameKey(scene, t);
+    if (key === ex.lastKey) { res.push(null); continue; }
+    ex.lastKey = key;
+    drawFrame(ctx, scene, t, { sticker, layer: band });
+    const data = ctx.getImageData(0, 0, scene.width, band.height).data;
+    // base64 编码 RGBA（Playwright evaluate 只能回传可序列化数据）
+    let bin = '';
+    const CH = 0x8000;
+    for (let i = 0; i < data.length; i += CH) bin += String.fromCharCode.apply(null, data.subarray(i, i + CH));
+    res.push(btoa(bin));
+  }
+  return res;
+};
+
+// 方案 B 的优化版：页面自己循环渲染，用 HTTP POST 把二进制 RGBA 直接发给 Host（不经过 base64 / evaluate 序列化）
+window.exportRun = async (id, duration, fps, postUrl) => {
+  const info = window.exportInit(id, duration, fps);
+  const { scene, band, ctx } = ex;
+  const frames = Math.round(duration * fps);
+  let drawn = 0;
+  for (let f = 0; f < frames; f += 1) {
+    const t = f / fps;
+    const key = frameKey(scene, t);
+    if (key === ex.lastKey) continue;
+    ex.lastKey = key;
+    drawFrame(ctx, scene, t, { sticker, layer: band });
+    const data = ctx.getImageData(0, 0, scene.width, band.height).data;
+    await fetch(`${postUrl}?f=${f}`, { method: 'POST', body: data, mode: 'cors' });
+    drawn += 1;
+  }
+  await fetch(`${postUrl}?end=${frames}`, { method: 'POST', mode: 'cors' });
+  return { ...info, drawn };
+};
+
+// ---------- 前端预览：视频 + 字幕层，记录帧耗时、掉帧、拖动延迟 ----------
+async function setupPlay() {
+  const id = q.get('variant') ?? 'anim-landscape';
+  const engine = q.get('engine') ?? 'canvas';
+  const src = q.get('video') ?? '/media/external/x-isnail-2115609565043597572.mp4';
+  const stage = document.getElementById('stage');
+  const video = document.createElement('video');
+  video.src = src; video.muted = true; video.playsInline = true; video.crossOrigin = 'anonymous';
+  stage.appendChild(video);
+  await new Promise((r) => video.addEventListener('loadedmetadata', r, { once: true }));
+  const scene = buildScene({ ...variantById[id], duration: Math.min(video.duration, 3600) });
+  const stats = { engine, variant: id, ua: navigator.userAgent, callbacks: 0, draws: 0, drawMs: [], skippedPresented: 0, lastPresented: null, seeks: [] };
+  window.stats = stats;
+
+  let renderAt = () => {};
+  let forceNext = false;
+  if (engine === 'canvas') {
+    const canvas = document.createElement('canvas');
+    canvas.className = 'overlay';
+    stage.appendChild(canvas);
+    // res=display：画布按显示尺寸 × 设备像素比（例如 960 CSS 像素 × 2 = 1920），否则固定为场景尺寸
+    const k = q.get('res') === 'display' ? (stage.clientWidth * devicePixelRatio) / scene.width : 1;
+    canvas.width = Math.round(scene.width * k); canvas.height = Math.round(scene.height * k);
+    stats.canvasSize = [canvas.width, canvas.height];
+    const ctx = canvas.getContext('2d');
+    let lastKey = null;
+    renderAt = (t) => {
+      const key = frameKey(scene, t);
+      // nodedupe=1：每帧都重画（最坏情况）；默认帧状态不变就不重画
+      if (key === lastKey && q.get('nodedupe') !== '1' && !forceNext) return false;
+      forceNext = false;
+      lastKey = key;
+      const t0 = performance.now();
+      drawFrame(ctx, scene, t, { sticker, scale: k });
+      stats.drawMs.push(performance.now() - t0);
+      stats.draws += 1;
+      return true;
+    };
+  } else if (engine === 'jassub') {
+    const { default: JASSUB } = await import('/harness/vendor/jassub/jassub.js');
+    const { sceneToAss } = await import('../shared/to-ass.mjs');
+    const t0 = performance.now();
+    const V = new URL('/harness/vendor/jassub/', location.href).href;
+    const inst = new JASSUB({
+      video,
+      subContent: sceneToAss(scene),
+      fonts: [new URL('/fonts/NotoSansSC-Regular.otf', location.href).href, new URL('/fonts/NotoSansSC-Bold.otf', location.href).href],
+      workerUrl: `${V}worker.js`,
+      wasmUrl: `${V}jassub-worker.wasm`, wasmWorkerUrl: `${V}jassub-worker.js`,
+      modernWasmUrl: `${V}jassub-worker-modern.wasm`, modernWasmWorkerUrl: `${V}jassub-worker-modern.js`,
+    });
+    window.jassub = inst;
+    await inst.ready;
+    stats.initMs = performance.now() - t0;
+    // JASSUB 自己按 rVFC 渲染；这里只统计它的渲染耗时（debug 模式下才有），播放统计照常
+    renderAt = () => false;
+  }
+
+  // 拖动后强制按新时间重画一次（跳过帧状态去重）
+  const renderAtForce = (t) => { forceNext = true; renderAt(t); };
+  const onFrame = (now, meta) => {
+    stats.callbacks += 1;
+    if (stats.lastPresented != null && meta.presentedFrames - stats.lastPresented > 1) stats.skippedPresented += meta.presentedFrames - stats.lastPresented - 1;
+    stats.lastPresented = meta.presentedFrames;
+    renderAt(meta.mediaTime);
+    if (pendingSeek && Math.abs(meta.mediaTime - pendingSeek.target) < 0.2) {
+      stats.seeks.push(performance.now() - pendingSeek.t0);
+      pendingSeek.resolve();
+      pendingSeek = null;
+    }
+    video.requestVideoFrameCallback(onFrame);
+  };
+  let pendingSeek = null;
+  video.requestVideoFrameCallback(onFrame);
+
+  // 播放 sec 秒，返回统计
+  window.playFor = async (start, sec, rate = 1) => {
+    Object.assign(stats, { callbacks: 0, draws: 0, drawMs: [], skippedPresented: 0, lastPresented: null });
+    video.currentTime = start; video.playbackRate = rate;
+    await new Promise((r) => video.addEventListener('seeked', r, { once: true }));
+    const q0 = video.getVideoPlaybackQuality();
+    await video.play();
+    await new Promise((r) => setTimeout(r, sec * 1000));
+    video.pause();
+    const q1 = video.getVideoPlaybackQuality();
+    const sorted = [...stats.drawMs].sort((a, b) => a - b);
+    const pct = (p) => (sorted.length ? +sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))].toFixed(2) : null);
+    return {
+      engine, variant: id, sec, rate, canvasSize: stats.canvasSize,
+      videoFrames: q1.totalVideoFrames - q0.totalVideoFrames,
+      droppedVideoFrames: q1.droppedVideoFrames - q0.droppedVideoFrames,
+      rvfcCallbacks: stats.callbacks, skippedPresented: stats.skippedPresented,
+      draws: stats.draws, drawP50: pct(0.5), drawP95: pct(0.95), drawP99: pct(0.99), drawMax: sorted.at(-1) ?? null,
+      heapMB: performance.memory ? +(performance.memory.usedJSHeapSize / 1048576).toFixed(1) : null,
+    };
+  };
+  // 拖动进度条：跳到 n 个随机时间点，测从设置 currentTime 到字幕层画好那一帧的耗时
+  window.seekTest = async (n = 20) => {
+    stats.seeks = [];
+    video.pause();
+    let s = 7;
+    for (let i = 0; i < n; i += 1) {
+      s = (s * 9301 + 49297) % 233280;
+      const target = scene.cues[Math.floor((s / 233280) * scene.cues.length)].start + 0.3;
+      // 统一用 seeked 事件：WKWebView 暂停时拖动不触发 requestVideoFrameCallback
+      // 计时：设置 currentTime → seeked → 按新时间画字幕层（JASSUB 自己处理）→ 下一次绘制（rAF）
+      const t0 = performance.now();
+      video.currentTime = target;
+      const ok = await Promise.race([
+        new Promise((r) => video.addEventListener('seeked', () => r(true), { once: true })),
+        new Promise((r) => setTimeout(() => r(false), 3000)),
+      ]);
+      if (!ok) { stats.seekTimeouts = (stats.seekTimeouts ?? 0) + 1; continue; }
+      renderAtForce(video.currentTime);
+      await new Promise((r) => requestAnimationFrame(() => r()));
+      stats.seeks.push(performance.now() - t0);
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    const sorted = [...stats.seeks].sort((a, b) => a - b);
+    n = sorted.length;
+    if (!n) return { n: 0, timeouts: stats.seekTimeouts ?? 0 };
+    return { timeouts: stats.seekTimeouts ?? 0, n, p50: +sorted[Math.floor(n * 0.5)].toFixed(1), p95: +sorted[Math.min(n - 1, Math.floor(n * 0.95))].toFixed(1), max: +sorted.at(-1).toFixed(1) };
+  };
+  // 方案 D 一致性：在取样时间点把「视频帧 + JASSUB 字幕层」合成为一张 PNG（与 ffmpeg ass 硬烧的帧比较）
+  window.snapComposite = async () => {
+    const out = [];
+    const c = document.createElement('canvas'); c.width = scene.width; c.height = scene.height;
+    const g = c.getContext('2d');
+    for (const t0 of sampleTimes(scene)) {
+      // 对齐到 25fps 的帧边界，保证与 ffmpeg 抽到同一帧、libass 用同一个时间
+      const t = Math.floor(t0 * 25) / 25 + 0.004;
+      video.currentTime = t;
+      await new Promise((r) => video.addEventListener('seeked', r, { once: true }));
+      await new Promise((r) => setTimeout(r, 400));
+      // 背景直接填纯色（与 ffmpeg 解码出的纯色视频一致），避免 drawImage(video) 在部分帧上没画出来
+      g.fillStyle = q.get('bg') ?? '#3a5a3e'; g.fillRect(0, 0, scene.width, scene.height);
+      const sub = window.jassub?._canvas ?? stage.querySelector('canvas.overlay');
+      g.drawImage(sub, 0, 0, scene.width, scene.height);
+      out.push({ t: t0, png: c.toDataURL('image/png'), subCanvas: [sub.width, sub.height] });
+    }
+    return out;
+  };
+  log(`ready: engine=${engine} variant=${id} video=${src} ${video.videoWidth}x${video.videoHeight}`);
+  window.ready = true;
+}
+
+if (q.get('mode') === 'play') await setupPlay();
+else { log('ready (snap / export mode)'); window.ready = true; }
+</script>
+</body>
+</html>
