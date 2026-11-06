@@ -46,10 +46,15 @@ FlyCut Cloud 服务端、账号和计费（不在本仓库）；本仓库内的�
 | E-08/3 | TTS Provider 能力：协议、能力声明（含声音克隆）、HTTP Provider 支持 TTS | feature | E-05/1 | |
 | E-08/4 | 桌面端自动更新：Tauri updater、更新包签名密钥的保管、更新通道 | feature | E-08/8 | |
 | E-08/5 | 崩溃收集与匿名使用统计：是否做、收集什么、如何征得同意 | spike | — | |
-| E-08/6 | Web 端连接 FlyCut Cloud 托管的 Host：连接配置、Cloud 鉴权接入、大文件断点续传、断线重连；附单用户自部署说明 | feature | — | |
+| E-08/6 | Web 端连接 FlyCut Cloud 托管的 Host：连接配置、Cloud 鉴权与会话接入、状态及重连；附单用户自部署说明，不含大文件续传 | feature | — | F-0014 |
+| E-08/9 | 大文件断点续传与断线恢复：分片完整性、上传恢复、任务状态核验与重复操作保护 | feature | F-0014 | F-0015 |
 | E-08/7 | AI 模型设置存到 Host：配置和 API Key 由 Host 保存，前端、CLI、MCP 共用；从浏览器本地存储迁移 | feature | — | |
 | E-08/8 | 安装包签名与公证：macOS 签名 + 公证、Windows 代码签名，接入发版流程 | feature | — | |
 
 ## 相关决定
 
 [decisions.md 架构](../../decisions.md#架构)、[模型 Provider](../../decisions.md#模型-provider)、[目标用户与平台](../../decisions.md#目标用户与平台)
+
+## 2026-11-05 拆分确认
+
+维护者对批量立项建议回复“其他按你说的做”，确认将E-08/6原范围拆为E-08/6连接会话与E-08/9续传恢复；阶段一功能对齐仍为汇总验收，不以连接成功代替各功能验证。
