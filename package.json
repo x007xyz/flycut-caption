@@ -95,7 +95,8 @@
     "dev:web": "vite",
     "test:architecture": "tsx --tsconfig server/tsconfig.json --test tests/architecture/*.test.ts",
     "check:host": "tsc -p server/tsconfig.json --noEmit",
-    "package:host": "pnpm build:host && node scripts/package-host.mjs"
+    "package:host": "pnpm build:host && node scripts/package-host.mjs",
+    "eval:asr": "node scripts/eval-asr.mjs"
   },
   "peerDependencies": {
     "i18next": ">=25.0.0",

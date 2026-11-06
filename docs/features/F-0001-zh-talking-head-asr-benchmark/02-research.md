@@ -30,6 +30,17 @@ approved_at:
 
 | 方案 | 说明 | 资料来源 |
 |---|---|---|
+| SenseVoice small int8（sherpa-onnx） | 当前默认推荐；中英日韩粤；已下载 | `models.json`（`recommended`） |
+| Paraformer zh int8 2023-09-14（sherpa-onnx） | 中文推荐；已下载 | `models.json` |
+| Paraformer zh int8 2024-03-09 / small | 新版 Paraformer，约 997 MB / 较小 | `models.json`，**未下载** |
+| Zipformer CTC zh int8 2025-07-03 | 约 301 MB | `models.json`，**未下载** |
+| TeleSpeech CTC int8 zh | 约 183 MB | `models.json`，**未下载** |
+| FireRedASR large zh_en | 约 1.47 GB，中英 | `models.json`，**未下载** |
+| Whisper small / medium multilingual | 约 639 MB / 1.93 GB | `models.json`，**未下载** |
+| FlyCut Cloud | 需要服务地址和 API Key | 未测：本机没有配置 |
+| FunASR Provider | 需要单独的 Python 环境 | 未测：本机没有配置 |
+
+`models.json` 里所有中文模型的 `timestamp.token_timestamp_verified` 都是 `false`：字词时间戳都没有经过校验，这直接关系到问题 3。
 
 ## 实验
 
@@ -77,14 +88,48 @@ approved_at:
 
 峰值内存用 `/usr/bin/time -l` 测，包含 Node 和 sidecar 子进程。
 
+### 评测命令（步骤 4，2026-11-05 完成）
+
+- `pnpm eval:asr`：读 `tests/fixtures/asr-reference/*.md`，用已下载的 sherpa-onnx 模型转写每段评测范围（FSMN VAD），输出字错率（替换 / 删除 / 插入）、语气词召回与多出的语气词、口头禅（那个、就是）召回、实时率、峰值内存；结果在 `test-results/asr-eval/report.{md,json}`，模型输出缓存在 `cache/`。
+- 参考文本还有未听校的 `{A|B}` 时命令拒绝运行；`--allow-draft` 分歧处取 A 试算，报告顶部标明「不能当结论」。
+- `pnpm eval:asr --long`：两段 COSCUP 全片拼成约 60 分钟，只记耗时、内存和是否跑完。
+- 指标实现在 `tests/lib/asrEval.mjs`（写法统一复用 `tests/lib/referenceDraft.mjs`），单元测试 `tests/asr-eval.test.mjs`。
+- 尚未实现：字词时间戳误差（步骤 3 的参考时间戳要在听校之后用强制对齐生成）。
+
 ### 结果
 
-（等听校完成后计算）
+**初稿试算（2026-11-05，`--allow-draft`，不能当结论）**：
+
+| 样本 | 模型 | 字错率 | 替换 / 删除 / 插入 | 语气词召回 | 多出的语气词 | 实时率 | 峰值内存 |
+|---|---|---|---|---|---|---|---|
+| `coscup-3UegVxMFyeo` | SenseVoice small int8 | 4.4% | 145 / 68 / 65 | 98.9%（93/94） | 6 | 0.078 | 1.91 GB |
+| `coscup-3UegVxMFyeo` | Paraformer zh int8 2023 | 5.6% | 154 / 70 / 131 | 97.9%（92/94） | 12 | 0.066 | 1.95 GB |
+| `coscup-BWgFrY91F_I` | SenseVoice small int8 | 8.0% | 243 / 232 / 99 | 98.1%（53/54） | 6 | 0.082 | 1.69 GB |
+| `coscup-BWgFrY91F_I` | Paraformer zh int8 2023 | 8.7% | 260 / 76 / 287 | 100%（54/54） | 32 | 0.070 | 1.65 GB |
+
+为什么不能当结论：初稿的底稿 A 是在 SenseVoice 输出上精校的，分歧处又取 A，数字天然偏向 SenseVoice；语气词更明显——精校版的「呃」基本沿用 SenseVoice（52 个），Paraformer 识别出 79 个，「多出的 32 个」里很可能有真实语气词被 SenseVoice 漏掉。听校之后重跑同一命令即可得到正式结果。
+
+**长音频（问题 4，2026-11-05，`pnpm eval:asr --long`）**：两段 COSCUP 全片拼成 60.0 分钟，维护者的 Mac：
+
+| 模型 | 耗时 | 实时率 | 峰值内存 | 句数 | 是否跑完 |
+|---|---|---|---|---|---|
+| SenseVoice small int8 | 286 秒 | 0.079 | 2.39 GB | 1173 | ✅ 最后一句结束于 60.0 分钟 |
+| Paraformer zh int8 2023 | 243 秒 | 0.068 | 2.47 GB | 425 | ✅ 最后一句结束于 60.0 分钟 |
+
+Paraformer 输出不带标点，按标点断句后每句平均 8.5 秒（SenseVoice 约 3 秒），直接当字幕会太长，需要额外断句。
+
+能先看出的方向：两个模型字错率在同一量级（4–9%），差距小于初稿偏差；两者都会转写语气词，没有观察到自动删除；实时率都在 0.07–0.08，约 30 分钟音频 2 分钟多跑完。
 
 ## 结论
 
-<!-- 逐条回答「要回答的问题」；需要长期遵守的决定写成 ADR（pnpm feature adr），这里放链接 -->
+**进行中（2026-11-05）**：问题 1–3、5 要等参考文本听校完成；问题 4 已有结论。
+
+1. 字错率：待听校。初稿试算 SenseVoice 与 Paraformer 在 4–9% 之间，差距小于初稿偏差。其他模型待下载（约 3.6 GB，需维护者同意）。
+2. 语气词召回：待听校。已确认两个模型都会转写语气词，没有自动删除。
+3. 字词时间戳误差：待听校后用强制对齐生成参考时间戳；`models.json` 里所有中文模型都标着 `token_timestamp_verified: false`。
+4. **长音频：可以稳定跑完。** 60 分钟音频两个模型都完整跑完，4–5 分钟、峰值内存约 2.4–2.5 GB，满足桌面端使用。
+5. 默认推荐与「可用标准」：待 1–3 的正式结果；届时写 ADR。
 
 ## 对后续需求的影响
 
-<!-- 哪些候选需求可以开始、需要调整或取消；回填到所属 Epic 文档 -->
+待结论确定后填写。目前可以先说的：长音频不需要另做分段处理（E-01 相关候选不用为此加工作量）；Paraformer 作为字幕源需要断句。
