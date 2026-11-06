@@ -114,14 +114,14 @@ approved_at:
 
 **评测中发现的产品问题**：
 
-1. **多语 Whisper 在应用里每次都识别失败**（`Invalid language: auto`）：`models.json` 给的 `language: auto` 原样传给 sherpa-onnx，而它只认空字符串表示自动检测；sidecar 对 Whisper 又忽略了 `--language`。已修复（`5038934`）。
-2. **Zipformer CTC zh 2025-07-03 在应用里输出乱码**：模型用 byte-level BPE，输出 `Ɛģň Əťļ …` 这类字节符号，sidecar 没有把它们还原成汉字。用户下载这个模型会得到乱码。修复要改 sidecar 解码，超出本调研范围，建议单独修（bug），修好后重测。
+1. **多语 Whisper 在应用里每次都识别失败**（`Invalid language: auto`）：`models.json` 给的 `language: auto` 原样传给 sherpa-onnx，而它只认空字符串表示自动检测；sidecar 对 Whisper 又忽略了 `--language`。已修复（`5038934`），并经开发模式 Host 的 `workflow.start`（与应用相同的路径）验证 `zh`、`auto` 都能识别。
+2. **Zipformer CTC zh 2025-07-03 在应用里输出乱码**：模型用 byte-level BPE，输出 `Ɛģň Əťļ …` 这类字节符号，sidecar 没有把它们还原成汉字。维护者 2026-11-05 决定：TeleSpeech、Zipformer CTC 后续不再考虑，不修解码、不再评测。
 
 **能先看出的方向**（不依赖初稿偏差的部分）：
 
 - **Whisper 不适合口播剪辑**：几乎不转写语气词（召回 3–6%），还整段漏掉内容（删除是主要错误），去口癖和逐字剪辑都用不了。
-- **TeleSpeech 质量明显不够**，Zipformer 要先修解码。
-- **能做字词级剪切的只有 SenseVoice、Paraformer 2023**（以及修好后的 Zipformer、TeleSpeech）：Paraformer 2024、FireRedASR、Whisper 只有句级时间戳。
+- **TeleSpeech、Zipformer CTC 不再考虑**（维护者 2026-11-05 决定）：TeleSpeech 字错率 27–53%，Zipformer 输出乱码。
+- **能做字词级剪切的只有 SenseVoice、Paraformer 2023**：Paraformer 2024、FireRedASR、Whisper 只有句级时间戳。
 - **FireRedASR 字错率与前两名同一量级，但慢 6–8 倍、内存 4–5 GB**，不适合作桌面端默认。
 - 真正的竞争在 SenseVoice 和 Paraformer 2023 之间，差距小于初稿偏差，要等听校后的正式结果决定。
 
@@ -142,7 +142,7 @@ Paraformer 输出不带标点，按标点断句后每句平均 8.5 秒（SenseVo
 
 **进行中（2026-11-05）**：问题 1–3、5 要等参考文本听校完成；问题 4 已有结论。
 
-1. 字错率：待听校。初稿试算 7 个模型：SenseVoice、Paraformer 2023/2024、FireRedASR 在 4–12%；Whisper 19–26%、TeleSpeech 27–53% 明显落后；Zipformer 输出乱码（产品 bug，待修）。前四名之间的差距小于初稿偏差。FlyCut Cloud、FunASR Provider 未测（本机没有配置）。
+1. 字错率：待听校。初稿试算 7 个模型：SenseVoice、Paraformer 2023/2024、FireRedASR 在 4–12%；Whisper 19–26% 明显落后；TeleSpeech（27–53%）和输出乱码的 Zipformer CTC 按维护者决定不再考虑。正式评测只跑其余 5 个。前四名之间的差距小于初稿偏差。FlyCut Cloud、FunASR Provider 未测（本机没有配置）。
 2. 语气词召回：待听校。**Whisper 几乎不转写语气词（3–6%）**，其余可用模型都保留语气词，没有自动删除。
 3. 字词时间戳误差：待听校后用强制对齐生成参考时间戳；`models.json` 里所有中文模型都标着 `token_timestamp_verified: false`。
 4. **长音频：可以稳定跑完。** 60 分钟音频两个模型都完整跑完，4–5 分钟、峰值内存约 2.4–2.5 GB，满足桌面端使用。

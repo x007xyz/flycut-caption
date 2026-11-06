@@ -2,7 +2,7 @@
 // 中文口播转写评测（F-0001）：对每段逐字参考文本，用内置 sherpa-onnx 各模型转写评测范围，
 // 输出字错率、语气词召回、口头禅召回、实时率和峰值内存。
 //
-//   pnpm eval:asr                              # 已下载的全部模型 × tests/fixtures/asr-reference/ 下全部参考文本
+//   pnpm eval:asr                              # 已下载的模型（不含 EXCLUDED）× tests/fixtures/asr-reference/ 下全部参考文本
 //   pnpm eval:asr --models sensevoice-…,paraformer-…
 //   pnpm eval:asr --allow-draft                # 参考文本还没听校完时试算（分歧处取 A，结果不能当结论）
 //   pnpm eval:asr --long                       # 长音频：两段 COSCUP 拼成约 60 分钟，只记耗时和内存
@@ -28,8 +28,10 @@ const missing = [!sidecar && 'funasr-asr sidecar（pnpm build:funasr-sidecar）'
 if (missing.length) { console.error(`缺少：${missing.join('、')}`); process.exit(1); }
 
 const manifest = loadManifest(root);
+/** 不再参加评测的模型（维护者 2026-11-05 决定，见 F-0001 调研报告）：TeleSpeech 质量不够，Zipformer CTC 输出乱码。 */
+const EXCLUDED = new Set(['telespeech_ctc', 'zipformer_ctc']);
 const modelIds = values.models ? values.models.split(',').map((s) => s.trim())
-  : manifest.models.filter((m) => m.enabled && resolveModelDir(m.id, root)).map((m) => m.id);
+  : manifest.models.filter((m) => m.enabled && !EXCLUDED.has(m.family) && resolveModelDir(m.id, root)).map((m) => m.id);
 const models = modelIds.map((id) => {
   const dir = resolveModelDir(id, root); if (!dir) { console.error(`模型 ${id} 没有下载`); process.exit(1); }
   return { ...loadModelFromManifest(id, root), dir };
