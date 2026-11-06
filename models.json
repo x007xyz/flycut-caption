@@ -1379,7 +1379,7 @@
       "id": "telespeech-ctc-int8-zh-2024-06-04",
       "name": "TeleSpeech CTC 中文 INT8",
       "family": "telespeech_ctc",
-      "enabled": true,
+      "enabled": false,
       "recommended": false,
       "languages": [
         "zh"
@@ -1435,7 +1435,7 @@
       "id": "zipformer-ctc-zh-int8-2025-07-03",
       "name": "Zipformer CTC 中文 INT8",
       "family": "zipformer_ctc",
-      "enabled": true,
+      "enabled": false,
       "recommended": false,
       "languages": [
         "zh"
