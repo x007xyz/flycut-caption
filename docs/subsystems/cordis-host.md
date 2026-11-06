@@ -13,6 +13,7 @@
 - 视频导出通过后端 `server/plugins/export.ts` 的 Cordis 插件执行；前端只负责导出参数、任务进度和保存结果，Host 返回结果资产。Web 端 WebAV/FFmpeg 保留为明确的本地回退引擎；桌面只用 Host 导出，并通过 `save_host_asset` 复制到用户选定路径。
 - Host 插件组合按 Profile 分层解析（`server/profile.ts`）：新内置插件要在 `BUILTINS` 登记 `provides`，否则依赖检查会把注入它的插件判为不满足。外部插件通过 `profile.patch.yml`（或 `.json`）的 `plugins` 加载。`js-yaml` 是 Host 包（`server/package.json`）的依赖，根包只放在 devDependencies。
 - **Host 可能部署在远程**：`server` Profile 下 Gateway 不注册 `host.shutdown`，`endpoints` 不接受回环和内网服务地址。新插件如果会读取客户端指定的 Host 本地路径或执行文件，要提供同样的配置开关，在 `server/profile.ts` 的 `PROFILE_CONFIG.server` 中关闭，并用 `ctx.rpc.capability` 告知前端。部署参数见 [architecture-current.md](../architecture-current.md) 的「部署形态」。
+- **项目数据**（F-0002、F-0003）：`server/plugins/projects.ts` 是 `<home>/projects` 唯一的读写入口，契约在 `shared/projects.ts`，格式与迁移见 ADR-0001、ADR-0003。格式 2 的自动保存用 `projects.saveVideoEdits`（按视频比较修订号）和 `projects.saveProjectStyle`（按项目样式比较）；旧的 `projects.saveEdits` 只为兼容保留。回收站里的项目对所有读写都不可见，写入接口返回 `trashed` / `deleted` 而不是写进去；彻底删除只删项目目录，不跟随链接、不碰 linked 媒体的原文件。回收站保留期限和到期检查间隔是插件配置 `trashRetentionHours`、`purgeIntervalMs`（验收时用 Profile 补丁调小）。
 - 业务 store 是每个 Context 一份：组件用 `useXStore(selector)`，回调里用 `useRuntimeStoreApi(key).getState()`；不要再写 `useXStore.getState()` 或在 runtime 外使用这些 store。
 
 ## 命令

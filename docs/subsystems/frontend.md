@@ -22,6 +22,7 @@
 
 ## 规则
 
+- **项目模式**（`src/components/Project/ProjectsApp.tsx`、`src/services/projectService.ts`）：路由 `#/projects`（首页）、`#/trash`、`#/projects/<id>`（详情）、`#/projects/<id>/videos/<videoId>`（编辑器）。编辑器一次只装一个视频；切换视频走 `ctx.projects.switchVideo`：先保存当前视频，再整体载入目标视频并清空撤销栈，转写进行中不能切换。字幕样式分两部分保存：跟随项目的视频改样式写项目样式，单独设置的视频和所有视频的画幅按视频保存；比较样式时不看画幅。
 - 业务状态放 `src/stores`，通过 `useXStore(selector)` 读取；不要新建全局 React Context 承载业务状态。
 - 服务通过 `useClientRuntime()` 获取 `ctx.asr` / `ctx.ai`，不要写模块级单例。
 - 新的 Shadcn 组件用 `pnpm dlx shadcn@latest add <component-name>` 添加，不要手抄。
