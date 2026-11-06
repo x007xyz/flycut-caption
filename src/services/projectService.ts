@@ -149,8 +149,10 @@ export class ProjectService {
   private recoveryStorage: RecoveryStorage;
   /** 当前编辑会话：每次载入一个视频的编辑器开一个新会话，各自只覆盖自己的副本 */
   private session: { id: string; recorder: RecoveryRecorder; release: () => void } | null = null;
-  /** 当前连接的 Host 身份（副本按它隔离）；连接换了 Host 时重新读取 */
+  /** 当前连接的 Host 身份（副本按它隔离）；连接断开重连后重新读取 */
   private hostId: string | null = null;
+  private identity: Promise<string> | null = null;
+  private connected = false;
   /** 打开项目的代次：返回首页或打开别的项目后，旧的打开和检查结果作废 */
   private openGeneration = 0;
   /** 本次检查找到的副本内容，按 key */
@@ -810,11 +812,24 @@ export class ProjectService {
   private setRecovery(recovery: RecoveryState) { this.state.set({ recovery }); }
   private patchRecovery(patch: Partial<RecoveryState>) { this.state.set({ recovery: { ...this.state.recovery, ...patch } }); }
 
-  /** 当前连接的 Host 身份。旧 Host 不支持时抛错：恢复保护显示为不可用，普通保存照常工作。 */
-  private async hostIdentity() {
-    const { hostId } = await this.connection.call('projects.identity');
-    this.hostId = hostId;
-    return hostId;
+  /**
+   * 当前连接的 Host 身份。身份是稳定的，同一个连接只读一次并缓存：打开长视频时页面可能忙上几十秒，
+   * 不能让检查恢复内容卡在这之后的一次请求上（请求超时会被误报成检查失败）。
+   * 读取失败不缓存，下次重试；旧 Host 不支持时抛错：恢复保护显示为不可用，普通保存照常工作。
+   */
+  hostIdentity(): Promise<string> {
+    if (!this.identity) {
+      const pending = this.connection.call('projects.identity').then(({ hostId }) => { this.hostId = hostId; return hostId; });
+      this.identity = pending;
+      pending.catch(() => { if (this.identity === pending) this.identity = null; });
+    }
+    return this.identity;
+  }
+
+  /** 连接状态变化：断开后重连的可能已经是另一个 Host（同一个地址），重新读取身份。 */
+  connectionChanged(status: 'connecting' | 'connected' | 'disconnected') {
+    if (this.connected && status !== 'connected') this.identity = null;
+    this.connected = status === 'connected';
   }
 
   /** 开始一个编辑会话：新的会话 ID 和记录器，并占住会话锁（其他窗口检查时跳过还开着的会话）。 */
@@ -1128,6 +1143,9 @@ function tauriFileUrl(path: string) {
 export const projectsClientPlugin = { name: 'flycut-projects-client', inject: ['connection', 'stores'], apply(ctx: Context) {
   const service = new ProjectService(ctx);
   ctx.provide('projects', service);
+  // F-0004：先读好 Host 身份，打开项目时检查恢复内容不用再等 Host
+  void service.hostIdentity().catch(error => console.warn('读取 Host 身份失败', error));
+  ctx.effect(() => ctx.connection.subscribe(() => service.connectionChanged(ctx.connection.snapshot())));
   // 首页卡片上的转写进度（AC-14）：识别开始时记下它属于哪个项目，离开编辑器后也能继续显示
   ctx.effect(() => ctx.stores.app.subscribe((app, previous) => {
     const project = ctx.stores.project.getState();

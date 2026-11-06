@@ -265,7 +265,9 @@ for (const theme of THEMES) {
     test(`F-0004/AC-2 检查中挡住编辑区，可以返回首页；检查失败不当作没有副本 (${theme})`, async ({ page }) => {
       const fake = fakeProject();
       await prepare(page, theme);
-      const host = await mockHost(page, { ...fake.handlers, 'projects.identity': pending });
+      // Host 身份一直没有回复（真实环境里 30 秒后请求超时失败）
+      let timeOut!: () => void;
+      const host = await mockHost(page, { ...fake.handlers, 'projects.identity': () => new Promise((_, reject) => { timeOut = () => reject(new RpcError('timeout')); }) });
       await editor(page);
       const checking = dialog(page).getByRole('status').filter({ hasText: '正在检查恢复内容…' });
       await expect(checking).toBeVisible();
@@ -276,6 +278,7 @@ for (const theme of THEMES) {
       await expect(page.getByRole('heading', { name: '我的项目' })).toBeVisible();
       // Host 身份读取失败：进入 AC-6，不直接进入编辑
       host.set('projects.identity', () => { throw new RpcError('down'); });
+      timeOut();
       await editor(page);
       await expect(dialog(page).getByRole('heading', { name: '无法完成恢复' })).toBeVisible();
       host.set('projects.identity', () => ({ hostId: E2E_HOST_ID, recovery: 1 }));
@@ -460,6 +463,11 @@ for (const theme of THEMES) {
       await expect(page.getByRole('heading', { name: '我的项目' })).toBeVisible();
       expect(await copies(page)).toHaveLength(1);
       expect(calls(host, 'projects.saveVideoEdits')).toHaveLength(0);
+      // 再打开一次仍然提示；Host 身份不再重新读取（打开长视频时页面会忙很久，检查不能再等一次 Host 请求）
+      const identityCalls = calls(host, 'projects.identity').length;
+      await editor(page);
+      await expect(dialog(page).getByRole('heading', { name: '发现未保存的修改' })).toBeVisible();
+      expect(calls(host, 'projects.identity')).toHaveLength(identityCalls);
     });
 
     test(`F-0004/AC-10 记录失败时持续提示，不影响 Host 自动保存；重试成功后提示消失 (${theme})`, async ({ page }) => {
