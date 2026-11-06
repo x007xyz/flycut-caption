@@ -1,7 +1,7 @@
 ---
 id: F-0002
 stage: 06-test-report
-status: draft
+status: review
 approved_by:
 approved_at:
 ---
