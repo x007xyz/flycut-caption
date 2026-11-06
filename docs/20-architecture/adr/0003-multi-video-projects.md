@@ -1,8 +1,8 @@
 ---
 id: ADR-0003
-status: proposed
+status: accepted
 date: 2026-11-05
-deciders:
+deciders: zhangxiang.chen
 feature: F-0003
 superseded_by:
 ---
@@ -15,7 +15,7 @@ F-0003 已确认：一个项目多个视频，视频独立编辑；同视频或�
 
 ## 决策
 
-作为 ADR-0001 的格式 2 扩展，维护者在 F-0003 验收时一并审阅，不修改已接受的格式 1 契约。以下按实际实现写（2026-11-05，提交 52cd7be）。
+作为 ADR-0001 的格式 2 扩展，不修改已接受的格式 1 契约。维护者 zhangxiang.chen 于 2026-11-06 在 F-0003 验收时确认，包括下面与原设计不同的四处。以下按实际实现写（2026-11-05，提交 52cd7be）。
 
 - **修订号**：保留项目级 `revision`（每次成功写入加一）和旧保存接口 `projects.saveEdits` 的 `baseRevision` 含义。新增每个视频的 `revision` 和项目样式的 `styleRevision`；新保存方法 `projects.saveVideoEdits`、`projects.saveProjectStyle` 只比较各自目标的修订号，所以两个窗口改不同视频互不冲突，改同一视频或同一份项目样式会冲突。项目内的磁盘写入仍由同一项目队列串行。重命名、移到回收站、恢复不比较修订号（后写的生效）。
 - **样式**：`project.json` 的 `style` 存主、副字幕样式；视频有 `styleSource: project | custom`，单独设置时样式存在这个视频的 `edits.json`；画幅 `aspectPreset` 始终按视频存在 `edits.json`。
