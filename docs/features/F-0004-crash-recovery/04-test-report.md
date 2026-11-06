@@ -1,9 +1,9 @@
 ---
 id: F-0004
 stage: 04-test-report
-status: review
-approved_by:
-approved_at:
+status: approved
+approved_by: zhangxiang.chen
+approved_at: 2026-11-06
 ---
 
 # F-0004 崩溃恢复：测试与验收
@@ -17,7 +17,7 @@ approved_at:
 - 编辑器每个会话把还没写进 Host 的完整编辑状态（字幕、删除标记、译文、样式来源、样式、画幅）记成一份 IndexedDB 副本。键是 Host 身份 + 项目 + 视频 + 会话。停止编辑 250ms 后记录，连续编辑最多每 1 秒记录一次。Host 保存成功后，副本删除或换成新的基准修订号。
 - 打开视频时检查副本，跳过还开着的窗口（Web Lock）。与 Host 内容相同的副本说明已经写入，不提示，直接删掉。其余的让用户恢复、放弃或稍后处理。恢复前重新读 Host，基准修订号不对就让用户选择覆盖、另存为新项目或取消。写入失败先查询确认，查不到时说明「暂时无法确认保存结果」，副本保留。
 - Host 新增 `projects.identity`（Host home 里的稳定随机 ID）。`projects.duplicate` 可带客户端生成的 `copyId`，重试不会建出第二个副本。项目存储格式不变。
-- 新 ADR：[ADR-0004](../../20-architecture/adr/0004-client-recovery-copies.md)，状态 proposed，已按实现重写，确认本报告时一并改为 accepted。`docs/decisions.md` 记下已批准的本地副本例外。
+- 新 ADR：[ADR-0004](../../20-architecture/adr/0004-client-recovery-copies.md)，已按实现重写，维护者 zhangxiang.chen 于 2026-11-06 验收时确认为 accepted（含两项「请确认」）。`docs/decisions.md` 记下已批准的本地副本例外。
 - **与设计的主要偏差：** 设计打算在 Host 加持久操作回执和可恢复事务。实现改为按内容比较副本和 Host，因为 F-0003（ADR-0003）已经决定项目写入不做事务恢复记录。完整列表见 03「与设计的偏差」和 ADR-0004 最后一节。
 
 ## 自行决定的事项

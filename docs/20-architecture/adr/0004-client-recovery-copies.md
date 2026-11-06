@@ -1,8 +1,8 @@
 ---
 id: ADR-0004
-status: proposed
+status: accepted
 date: 2026-11-05
-deciders:
+deciders: zhangxiang.chen
 feature: F-0004
 superseded_by:
 ---
