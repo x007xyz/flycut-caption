@@ -23,6 +23,7 @@
 ## 规则
 
 - **项目模式**（`src/components/Project/ProjectsApp.tsx`、`src/services/projectService.ts`）：路由 `#/projects`（首页）、`#/trash`、`#/projects/<id>`（详情）、`#/projects/<id>/videos/<videoId>`（编辑器）。编辑器一次只装一个视频；切换视频走 `ctx.projects.switchVideo`：先保存当前视频，再整体载入目标视频并清空撤销栈，转写进行中不能切换。字幕样式分两部分保存：跟随项目的视频改样式写项目样式，单独设置的视频和所有视频的画幅按视频保存；比较样式时不看画幅。
+- **崩溃恢复**（F-0004、ADR-0004）：`src/recovery/` 是唯一允许前端在本地存业务内容的地方，而且只是临时恢复副本：IndexedDB 库 `flycut-recovery`，每个编辑会话一份完整快照（字幕、删除标记、译文、样式来源、样式、画幅），按 Host 身份 + 项目 + 视频 + 会话隔离；Host 保存成功或用户放弃后删除。不要在别处写业务数据到 localStorage / IndexedDB。记录器由 `ctx.projects` 在 `onEdit` 里驱动（停止编辑 250ms、连续编辑最多 1 秒记录一次），打开项目时 `checkRecovery` 检查副本；还开着的会话用 Web Lock 标记，其他窗口跳过。恢复流程的状态在 `stores.project.recovery`，`phase` 不是 `idle` 时编辑器被对话框挡住、不自动保存。副本是否已经写进 Host 按内容比较（`src/recovery/copy.ts`），不比较时间。
 - 业务状态放 `src/stores`，通过 `useXStore(selector)` 读取；不要新建全局 React Context 承载业务状态。
 - 服务通过 `useClientRuntime()` 获取 `ctx.asr` / `ctx.ai`，不要写模块级单例。
 - 新的 Shadcn 组件用 `pnpm dlx shadcn@latest add <component-name>` 添加，不要手抄。

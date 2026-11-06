@@ -23,7 +23,7 @@ const transcript = {
 /** 一个会记住保存结果的假项目：修订号、这个视频的修改、项目样式。 */
 function fakeProject() {
   const state = { revision: 3, styleRevision: 0, updatedAt: T0, edits: undefined as undefined | { chunks: { id: string; text: string }[] },
-    projectStyle: undefined as unknown, status: 'ok' as 'ok' | 'trashed' };
+    projectStyle: undefined as unknown, status: 'ok' as 'ok' | 'trashed', mediaMissing: false };
   const open = ({ projectId }: { projectId: string }) => {
     if (state.status === 'trashed') return { status: 'trashed', name: NAME };
     return {
@@ -34,7 +34,8 @@ function fakeProject() {
       videos: [{ id: VIDEO_ID, name: `${NAME}.mp4`, durationSeconds: 6, createdAt: T0, updatedAt: state.updatedAt, hasTranscript: true, mediaMissing: false,
         hasThumbnail: false, styleSource: 'project', revision: state.revision }],
       transcript, edits: state.edits, projectStyle: state.projectStyle,
-      media: { status: 'ok', name: `${NAME}.mp4`, playback: { kind: 'url', path: `/projects/${projectId}/media/${VIDEO_ID}` } },
+      media: state.mediaMissing ? { status: 'missing', name: `${NAME}.mp4` }
+        : { status: 'ok', name: `${NAME}.mp4`, playback: { kind: 'url', path: `/projects/${projectId}/media/${VIDEO_ID}` } },
     };
   };
   const saveVideoEdits = ({ edits, baseRevision, force }: { edits: typeof state.edits; baseRevision: number; force: boolean }) => {
@@ -453,6 +454,19 @@ for (const theme of THEMES) {
       expect(await copies(again.page)).toHaveLength(0);
       expect(calls(host, 'projects.saveVideoEdits')).toHaveLength(0);
       expect(calls(again.host, 'projects.saveVideoEdits')).toHaveLength(0);
+    });
+
+    test(`F-0004/AC-5 媒体丢失时仍恢复字幕，沿用重新选择文件的提示 (${theme})`, async ({ context }) => {
+      const fake = fakeProject();
+      await crashAfterEdit(context, theme, fake, '媒体丢了也要恢复');
+      fake.state.mediaMissing = true;
+      const { page } = await reopen(context, theme, fake);
+      await dialog(page).getByRole('button', { name: '恢复修改' }).click();
+      await expect(page.getByText('修改已恢复并保存')).toBeVisible();
+      await expect(firstBox(page)).toHaveValue('媒体丢了也要恢复');
+      await expect(page.getByText('找不到这个项目的视频文件')).toBeVisible();
+      await expect(page.getByRole('button', { name: '重新选择文件' })).toBeVisible();
+      await shot(page, F, `recovered-media-missing-${theme}`);
     });
 
     test(`F-0004/AC-3 稍后返回首页，副本保留，不启动自动保存 (${theme})`, async ({ context }) => {
