@@ -1,9 +1,9 @@
 ---
 id: F-0002
 stage: 05-implementation
-status: draft
-approved_by:
-approved_at:
+status: approved
+approved_by: auto
+approved_at: 2026-11-05
 ---
 
 # F-0002 项目数据保存到 Host：开发记录
