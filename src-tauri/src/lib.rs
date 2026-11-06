@@ -30,6 +30,28 @@ async fn pick_media_file() -> Option<String> {
     })
 }
 
+/// 多选媒体文件（F-0003：往项目里一次添加多个视频）。取消时返回空列表。
+#[tauri::command]
+async fn pick_media_files() -> Vec<String> {
+    let files = rfd::AsyncFileDialog::new()
+        .add_filter(
+            "Media files",
+            &[
+                "mp4", "webm", "mov", "avi", "mkv", "ogg", "mp3", "wav", "m4a", "flac", "aac",
+            ],
+        )
+        .pick_files()
+        .await
+        .unwrap_or_default();
+    files
+        .iter()
+        .map(|f| {
+            media_link::allow(f.path());
+            f.path().to_string_lossy().to_string()
+        })
+        .collect()
+}
+
 /// 弹出原生保存对话框，返回用户选定的输出文件路径。
 #[tauri::command]
 async fn pick_save_media_file(default_name: String) -> Option<String> {
@@ -60,6 +82,7 @@ pub fn run() {
             app_ready,
             host::ensure_host,
             pick_media_file,
+            pick_media_files,
             pick_save_media_file,
             commands::media::stage_media_file,
             commands::media::download_media_to_temp,

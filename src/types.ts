@@ -93,6 +93,10 @@ export interface FlyCutCaptionProps {
   headerSlot?: ReactNode
   /** Replaces the empty player (upload / sample buttons) while no media is loaded, e.g. a "media missing" banner */
   playerPlaceholder?: ReactNode
+  /** 项目模式：字幕样式面板上方（样式来源，F-0003 AC-31） */
+  styleHeaderSlot?: ReactNode
+  /** 项目模式：字幕样式面板下方（共享样式的一次性提示，F-0003 AC-31） */
+  styleFooterSlot?: ReactNode
   /**
    * Takes over every file the user chooses, drops or loads as a sample (project mode creates a project first).
    * `VideoFile.path` is set for desktop files picked in the native dialog.

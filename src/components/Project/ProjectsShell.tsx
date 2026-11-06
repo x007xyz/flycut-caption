@@ -1,5 +1,5 @@
 // 项目页面的外框：左侧导航 + 内容区。编辑器页面不用这个外框（编辑器自带顶栏）。
-import { FolderKanban, HelpCircle, Settings } from 'lucide-react';
+import { FolderKanban, HelpCircle, Settings, Trash2 } from 'lucide-react';
 import { BrandLogo } from '@/components/BrandLogo';
 import { cn } from '@/lib/utils';
 import { useProjectText } from './useProjectText';
@@ -10,10 +10,13 @@ export interface ProjectsShellProps {
   toolbar?: React.ReactNode;
   onOpenSettings: () => void;
   onOpenHelp?: () => void;
+  /** 当前页面：「项目」（首页和项目详情）或「回收站」（F-0003 AC-23） */
+  active?: 'projects' | 'trash';
+  onNavigate?: (page: 'projects' | 'trash') => void;
   children: React.ReactNode;
 }
 
-export function ProjectsShell({ version, toolbar, onOpenSettings, onOpenHelp, children }: ProjectsShellProps) {
+export function ProjectsShell({ version, toolbar, onOpenSettings, onOpenHelp, active = 'projects', onNavigate, children }: ProjectsShellProps) {
   const { t, tp } = useProjectText();
   const item = (active: boolean) => cn('flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors',
     active ? 'bg-aimu-active font-medium text-foreground' : 'text-muted-foreground hover:bg-aimu-hover hover:text-foreground');
@@ -25,7 +28,12 @@ export function ProjectsShell({ version, toolbar, onOpenSettings, onOpenHelp, ch
           <span className="rounded bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] text-primary">v{version}</span>
         </div>
         <nav className="flex-1 space-y-0.5 px-2 pt-2">
-          <button type="button" className={item(true)} aria-current="page"><FolderKanban className="h-4 w-4" />{tp('navProjects')}</button>
+          <button type="button" className={item(active === 'projects')} aria-current={active === 'projects' ? 'page' : undefined}
+            onClick={() => onNavigate?.('projects')}><FolderKanban className="h-4 w-4" />{tp('navProjects')}</button>
+          {onNavigate && (
+            <button type="button" className={item(active === 'trash')} aria-current={active === 'trash' ? 'page' : undefined}
+              onClick={() => onNavigate('trash')}><Trash2 className="h-4 w-4" />{tp('navTrash')}</button>
+          )}
         </nav>
         <div className="space-y-0.5 border-t border-border px-2 py-2">
           {onOpenHelp && <button type="button" className={item(false)} onClick={onOpenHelp}><HelpCircle className="h-4 w-4" />{tp('navHelp')}</button>}

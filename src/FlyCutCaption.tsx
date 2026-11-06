@@ -536,12 +536,14 @@ export function FlyCutCaptionContent(props: FlyCutCaptionProps) {
                   <div className="flex-1 overflow-y-auto p-4">
                     {activeTab === 'style' ? (
                       <div className="flex flex-col h-full">
+                        {props.styleHeaderSlot}
                         <SubtitleSettings
                           stylePair={subtitleStylePair}
                           onStylePairChange={setSubtitleStylePair}
                           displayMode={display}
                           onDisplayModeChange={setDisplay}
                         />
+                        {props.styleFooterSlot}
                       </div>
                     ) : activeTab === 'tools' ? (
                       <div className="space-y-2">

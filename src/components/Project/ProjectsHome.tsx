@@ -1,6 +1,6 @@
 // 项目首页（F-0002 AC-5；排序、列表视图、重命名、删除等属于 E-02/6 的部分由参数开关）
 import { useRef, useState } from 'react';
-import { AlertTriangle, FolderOpen, LayoutGrid, List, Loader2, Play, RefreshCw, Search, Upload } from 'lucide-react';
+import { AlertTriangle, FolderOpen, FolderPlus, LayoutGrid, List, Loader2, Play, RefreshCw, Search, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -32,6 +32,8 @@ export interface ProjectsHomeProps {
   onFilesDropped: (files: File[]) => void;
   onChooseFile: () => void;
   onUseSample: () => void;
+  /** 新建空项目（F-0003 AC-18）；不传则不显示 */
+  onCreateEmpty?: () => void;
   onRetry: () => void;
   onRename?: (id: string) => void;
   onDelete?: (id: string) => void;
@@ -40,7 +42,7 @@ export interface ProjectsHomeProps {
 }
 
 export function ProjectsHome(props: ProjectsHomeProps) {
-  const { status, projects, totalCount, query, onQueryChange, view, onViewChange, sort, onSortChange, openingId, creating, now, onOpen, onFilesDropped, onChooseFile, onUseSample, onRetry, onRename, onDelete, dragActive } = props;
+  const { status, projects, totalCount, query, onQueryChange, view, onViewChange, sort, onSortChange, openingId, creating, now, onOpen, onFilesDropped, onChooseFile, onUseSample, onCreateEmpty, onRetry, onRename, onDelete, dragActive } = props;
   const { t, tp } = useProjectText();
   const [dragging, setDragging] = useState(false);
   const depth = useRef(0);
@@ -64,7 +66,8 @@ export function ProjectsHome(props: ProjectsHomeProps) {
             <p className="mt-1 text-xs text-muted-foreground">{tp('dropHint')}</p>
           </div>
           <div className="flex flex-shrink-0 items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={onUseSample}><Play className="h-3.5 w-3.5" />{tp('useSample')}</Button>
+            <Button variant="ghost" size="sm" onClick={onUseSample} disabled={creating}><Play className="h-3.5 w-3.5" />{tp('useSample')}</Button>
+            {onCreateEmpty && <Button variant="outline" size="sm" onClick={onCreateEmpty} disabled={creating}><FolderPlus className="h-3.5 w-3.5" />{tp('newEmpty')}</Button>}
             <Button size="sm" onClick={onChooseFile} disabled={creating}><Upload className="h-3.5 w-3.5" />{tp('chooseFile')}</Button>
           </div>
         </section>
@@ -181,20 +184,20 @@ function ProjectsTable({ projects, now, openingId, onOpen, onRename, onDelete }:
           <tr key={p.id} onClick={() => onOpen(p.id)} className={cn('group cursor-pointer border-b border-border/60 hover:bg-aimu-hover', openingId === p.id && 'bg-aimu-active')}>
             <td className="py-2 pl-2">
               <div className="flex items-center gap-3">
-                <Thumbnail url={p.thumbnailUrl} durationSeconds={p.durationSeconds} className="w-20 flex-shrink-0 [&>span]:hidden" />
+                <Thumbnail url={p.thumbnailUrl} durationSeconds={p.videoCount === 0 ? null : p.durationSeconds} className="w-20 flex-shrink-0 [&>span]:hidden" />
                 <span className="line-clamp-1 font-medium text-foreground">{p.name}</span>
               </div>
             </td>
             <td className="text-muted-foreground">{p.videoCount}</td>
-            <td className="font-mono text-xs text-muted-foreground">{formatDuration(p.durationSeconds)}</td>
+            <td className="font-mono text-xs text-muted-foreground">{p.videoCount === 0 ? '—' : formatDuration(p.durationSeconds)}</td>
             <td className="text-muted-foreground">{formatRelativeTime(p.updatedAt, language, tp('justNow'), now)}</td>
             <td className="text-xs">
               {openingId === p.id ? <span className="inline-flex items-center gap-1 text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" />{tp('opening')}</span>
                 : p.mediaMissing ? <span className="inline-flex items-center gap-1 text-aimu-coral"><AlertTriangle className="h-3 w-3" />{tp('mediaMissing')}</span>
                 : p.transcribing ? <span className="text-primary">{tp('transcribing', { progress: p.transcribing.progress })}</span>
-                : <span className="text-muted-foreground">{tp('ready')}</span>}
+                : <span className="text-muted-foreground">{p.videoCount === 0 ? '—' : tp('ready')}</span>}
             </td>
-            <td><div className="opacity-0 group-hover:opacity-100"><ProjectActionsMenu onOpen={() => onOpen(p.id)} onRename={onRename && (() => onRename(p.id))} onDelete={onDelete && (() => onDelete(p.id))} /></div></td>
+            <td><div className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100"><ProjectActionsMenu onOpen={() => onOpen(p.id)} onRename={onRename && (() => onRename(p.id))} onDelete={onDelete && (() => onDelete(p.id))} /></div></td>
           </tr>
         ))}
       </tbody>

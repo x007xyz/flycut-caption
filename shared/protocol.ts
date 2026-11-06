@@ -3,7 +3,9 @@ import type { SubtitleTranscript, ASRProgress } from '../src/types/subtitle';
 import type { EditorPluginManifest } from '../src/types/plugin';
 import { asrRequestSchema, modelRefSchema, type ProviderModels, type ProviderSummary } from './providers';
 import type { ProjectFile, ProjectListItem, ProjectOpenResult, SaveResult, projectCreateSchema, projectOpenSchema, saveTranscriptSchema,
-  saveEditsSchema, duplicateSchema, relinkSchema, thumbnailSchema } from './projects';
+  saveEditsSchema, duplicateSchema, relinkSchema, thumbnailSchema,
+  createEmptySchema, projectRefSchema, renameSchema, emptyTrashSchema, addVideoSchema, removeVideoSchema, saveVideoEditsSchema, saveProjectStyleSchema, createFromSnapshotSchema,
+  ProjectDetailResult, TrashItem, SaveResultV2 } from './projects';
 
 export const PROTOCOL_VERSION = 2;
 export const rpcRequestSchema = z.object({ type: z.literal('client-request'), rpcId: z.string().min(1),
@@ -104,6 +106,20 @@ export interface RpcMethods {
   'projects.duplicate': { input: z.input<typeof duplicateSchema>; output: { projectId: string; videoId: string; revision: number } };
   'projects.relinkMedia': { input: z.input<typeof relinkSchema>; output: SaveResult };
   'projects.thumbnail': { input: z.input<typeof thumbnailSchema>; output: { dataUrl: string | null } };
+  /** Projects (F-0003): management, several videos per project, Trash. */
+  'projects.createEmpty': { input: z.input<typeof createEmptySchema>; output: { projectId: string; revision: number } };
+  'projects.detail': { input: z.input<typeof projectRefSchema>; output: ProjectDetailResult };
+  'projects.rename': { input: z.input<typeof renameSchema>; output: SaveResult };
+  'projects.trash': { input: z.input<typeof projectRefSchema>; output: { deletedAt: string; purgeAfter: string } };
+  'projects.restore': { input: z.input<typeof projectRefSchema>; output: { revision: number } };
+  'projects.trashList': { input: void; output: TrashItem[] };
+  'projects.purge': { input: z.input<typeof projectRefSchema>; output: { ok: true } };
+  'projects.emptyTrash': { input: z.input<typeof emptyTrashSchema>; output: { purged: string[]; failed: string[] } };
+  'projects.addVideo': { input: z.input<typeof addVideoSchema>; output: { videoId: string; revision: number } };
+  'projects.removeVideo': { input: z.input<typeof removeVideoSchema>; output: { revision: number } };
+  'projects.saveVideoEdits': { input: z.input<typeof saveVideoEditsSchema>; output: SaveResultV2 };
+  'projects.saveProjectStyle': { input: z.input<typeof saveProjectStyleSchema>; output: SaveResultV2 };
+  'projects.createFromSnapshot': { input: z.input<typeof createFromSnapshotSchema>; output: { projectId: string; videoId: string } };
 }
 export type RpcMethod = keyof RpcMethods;
 export type RpcInput<M extends RpcMethod> = RpcMethods[M]['input'];

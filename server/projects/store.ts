@@ -4,12 +4,14 @@
 //     project.json
 //     videos/<videoId>/{transcript.json, edits.json, thumbnail.jpg}
 //     media/<videoId>.<ext>
+//     project.v<n>.json      the last format-n project.json, kept when a write first upgrades it (ADR-0003)
+//   <home>/projects/.purge-<projectId>-<random>/   a permanent delete in progress; finished on the next start
 import { createHash, randomUUID } from 'node:crypto';
-import { open, mkdir, readdir, readFile, rename, rm, stat, writeFile, cp } from 'node:fs/promises';
+import { copyFile, cp, mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import {
   PROJECT_FORMAT_VERSION, projectEditsSchema, projectFileSchema, transcriptRecordSchema,
-  type ProjectEdits, type ProjectFile, type ProjectListItem, type ProjectMedia, type ProjectVideo,
+  type ProjectEdits, type ProjectFile, type ProjectListItem, type ProjectMedia, type ProjectStyle, type ProjectVideo, type TrashItem,
 } from '../../shared/projects';
 import { migrateProject, NewerFormatError } from './migrations';
 
@@ -59,6 +61,43 @@ export class ProjectStore {
 
   async init() { await mkdir(this.root, { recursive: true }); }
 
+  /** Finishes permanent deletes a crash or shutdown interrupted (F-0003 AC-5). */
+  async finishPurges() {
+    const names = await readdir(this.root).catch(() => [] as string[]);
+    await Promise.all(names.filter(name => name.startsWith('.purge-')).map(name => rm(join(this.root, name), { recursive: true, force: true })));
+  }
+
+  /**
+   * Deletes a project permanently. The folder is first renamed out of the listing, so an interrupted delete never shows
+   * a half-deleted project; `rm` removes symbolic links themselves and never what they point to, and linked media
+   * (ADR-0002) live outside the folder, so the user's original files are never touched.
+   */
+  async purge(id: string) {
+    const doomed = join(this.root, `.purge-${id}-${randomUUID()}`);
+    await rename(this.dir(id), doomed);
+    await rm(doomed, { recursive: true, force: true });
+  }
+
+  /** Deletes one video's folder and its stored media (F-0003 AC-11). Linked media are left alone. */
+  async removeVideoFiles(id: string, video: ProjectVideo) {
+    await rm(this.videoDir(id, video.id), { recursive: true, force: true });
+    if (video.media.kind === 'stored') await rm(this.mediaFile(id, video.media.file), { force: true });
+  }
+
+  /**
+   * The project style in effect. A project migrated from format 1 has none stored yet: its videos' format-1 edits
+   * still carry the style the user chose, so the first one found becomes the project style (F-0003 AC-12, AC-16).
+   */
+  async projectStyle(project: ProjectFile): Promise<ProjectStyle | undefined> {
+    if (project.style) return project.style;
+    for (const video of project.videos) {
+      const pair = (await this.readEdits(project.id, video.id).catch(() => undefined))?.stylePair;
+      if (pair && typeof pair.primary === 'object' && pair.primary && typeof pair.secondary === 'object' && pair.secondary)
+        return { primary: pair.primary as Record<string, unknown>, secondary: pair.secondary as Record<string, unknown> };
+    }
+    return undefined;
+  }
+
   /** Runs `task` after every earlier write to the same project has settled. */
   exclusive<T>(id: string, task: () => Promise<T>): Promise<T> {
     const previous = this.queues.get(id) ?? Promise.resolve();
@@ -74,10 +113,25 @@ export class ProjectStore {
   }
 
   async writeProject(project: ProjectFile) {
-    await writeJson(join(this.dir(project.id), 'project.json'), { ...project, formatVersion: PROJECT_FORMAT_VERSION });
+    const file = join(this.dir(project.id), 'project.json');
+    // The first write after a format upgrade keeps the old file: older FlyCut versions refuse the new one (ADR-0003).
+    const previous = await readJson(file).then(raw => Number((raw as { formatVersion?: unknown }).formatVersion), () => undefined);
+    if (previous !== undefined && Number.isInteger(previous) && previous < PROJECT_FORMAT_VERSION) {
+      const backup = join(this.dir(project.id), `project.v${previous}.json`);
+      if (!(await exists(backup))) await copyFile(file, backup);
+    }
+    await writeJson(file, { ...project, formatVersion: PROJECT_FORMAT_VERSION });
   }
 
-  async list(mediaStatus: (id: string, media: ProjectMedia) => Promise<'ok' | 'missing'>): Promise<ProjectListItem[]> {
+  /** Projects in Trash, oldest deletion last (F-0003 AC-23). */
+  async trash(): Promise<TrashItem[]> {
+    const items = await this.list(async () => 'ok', 'trash');
+    return items.filter((item): item is TrashItem => !!item.deletedAt).sort((a, b) => b.deletedAt.localeCompare(a.deletedAt));
+  }
+
+  /** Active projects (the home page), or with `which: 'trash'` the ones in Trash. */
+  async list(mediaStatus: (id: string, media: ProjectMedia) => Promise<'ok' | 'missing'>, which: 'active' | 'trash' = 'active'):
+    Promise<Array<ProjectListItem & Partial<Pick<TrashItem, 'deletedAt' | 'purgeAfter'>>>> {
     const names = await readdir(this.root).catch(() => [] as string[]);
     const items = await Promise.all(names.filter(name => ID.test(name)).map(async (id): Promise<ProjectListItem | undefined> => {
       let raw: unknown;
@@ -85,31 +139,43 @@ export class ProjectStore {
       let project: ProjectFile;
       try { project = projectFileSchema.parse(migrateProject(raw)); }
       catch (error) {
-        if (!(error instanceof NewerFormatError)) return undefined;
+        if (!(error instanceof NewerFormatError) || which === 'trash') return undefined;
         const value = raw as Partial<ProjectFile>;
         return { id, name: error.projectName, durationSeconds: 0, createdAt: String(value.createdAt ?? ''), updatedAt: String(value.updatedAt ?? ''),
           revision: 0, videoCount: Array.isArray(value.videos) ? value.videos.length : 0, hasThumbnail: false, mediaMissing: false, newerVersion: true };
       }
+      if (!!project.deletedAt !== (which === 'trash')) return undefined;
       const first = project.videos[0];
       const missing = (await Promise.all(project.videos.map(video => mediaStatus(id, video.media)))).includes('missing');
       return { id, name: project.name, durationSeconds: project.videos.reduce((sum, video) => sum + video.durationSeconds, 0),
         createdAt: project.createdAt, updatedAt: project.updatedAt, revision: project.revision, videoCount: project.videos.length,
-        videoId: first?.id, hasThumbnail: first ? await exists(join(this.videoDir(id, first.id), 'thumbnail.jpg')) : false, mediaMissing: missing };
+        videoId: first?.id, hasThumbnail: first ? await exists(join(this.videoDir(id, first.id), 'thumbnail.jpg')) : false, mediaMissing: missing,
+        ...(project.deletedAt ? { deletedAt: project.deletedAt, purgeAfter: project.purgeAfter ?? project.deletedAt } : {}) };
     }));
-    return items.filter((item): item is ProjectListItem => !!item).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    return items.filter(item => !!item).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
-  async create(input: { name: string; video: Omit<ProjectVideo, 'id' | 'createdAt' | 'media' | 'hasTranscript'>; media: (projectId: string, videoId: string) => Promise<ProjectMedia> }) {
+  async create(input: { name: string; video: Pick<ProjectVideo, 'name' | 'durationSeconds' | 'model'>; media: (projectId: string, videoId: string) => Promise<ProjectMedia> }) {
     await this.init();
     const id = randomUUID(); const videoId = randomUUID(); const now = new Date().toISOString();
     await mkdir(this.videoDir(id, videoId), { recursive: true });
     try {
       const media = await input.media(id, videoId);
       const project: ProjectFile = { formatVersion: PROJECT_FORMAT_VERSION, id, name: input.name, createdAt: now, updatedAt: now, revision: 1,
-        videos: [{ ...input.video, id: videoId, createdAt: now, media, hasTranscript: false }] };
+        styleRevision: 0, videos: [{ ...input.video, id: videoId, createdAt: now, updatedAt: now, media, hasTranscript: false, revision: 0, styleSource: 'project' }] };
       await this.writeProject(project);
       return project;
     } catch (error) { await rm(this.dir(id), { recursive: true, force: true }); throw error; }
+  }
+
+  /** A project without videos (F-0003 AC-1). */
+  async createEmpty(name: string) {
+    await this.init();
+    const id = randomUUID(); const now = new Date().toISOString();
+    await mkdir(this.dir(id), { recursive: true });
+    const project: ProjectFile = { formatVersion: PROJECT_FORMAT_VERSION, id, name, createdAt: now, updatedAt: now, revision: 1, styleRevision: 0, videos: [] };
+    try { await this.writeProject(project); } catch (error) { await rm(this.dir(id), { recursive: true, force: true }); throw error; }
+    return project;
   }
 
   async readTranscript(id: string, videoId: string) {
@@ -134,7 +200,7 @@ export class ProjectStore {
     const project = await this.read(id);
     const copyId = randomUUID(); const now = new Date().toISOString();
     await cp(this.dir(id), this.dir(copyId), { recursive: true, filter: source => !source.endsWith('.tmp') });
-    const copy: ProjectFile = { ...project, id: copyId, name, createdAt: now, updatedAt: now, revision: 1 };
+    const copy: ProjectFile = { ...project, id: copyId, name, createdAt: now, updatedAt: now, revision: 1, deletedAt: undefined, purgeAfter: undefined };
     await this.writeProject(copy);
     return copy;
   }

@@ -4,7 +4,21 @@ import { PROJECT_FORMAT_VERSION } from '../../shared/projects';
 
 type RawProject = Record<string, unknown> & { formatVersion: number };
 
-export const migrations: Record<number, (raw: RawProject) => RawProject> = {};
+export const migrations: Record<number, (raw: RawProject) => RawProject> = {
+  /**
+   * Format 2 (F-0003, ADR-0003): per-video revisions and style source, project style, Trash.
+   * Every video follows the project; the project style stays unset so the Host keeps reading the format-1 `stylePair`
+   * from the first video's edits.json until the style is saved again. Unknown fields stay as they are.
+   */
+  1: raw => ({
+    ...raw,
+    styleRevision: 0,
+    videos: Array.isArray(raw.videos)
+      ? raw.videos.map(video => video && typeof video === 'object'
+        ? { revision: 0, updatedAt: raw.updatedAt, styleSource: 'project', ...video as Record<string, unknown> } : video)
+      : raw.videos,
+  }),
+};
 
 export class NewerFormatError extends Error {
   readonly projectName: string;

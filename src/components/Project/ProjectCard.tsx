@@ -23,10 +23,10 @@ export function ProjectCard({ project, opening, disabled, now, onOpen, onRename,
     <div className={cn('group relative rounded-lg p-2 transition-colors hover:bg-aimu-hover', opening && 'bg-aimu-active', disabled && 'pointer-events-none opacity-50')}>
       <button type="button" onClick={onOpen} disabled={disabled || opening} aria-busy={opening}
         className="block w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md">
-        <Thumbnail url={project.thumbnailUrl} durationSeconds={project.durationSeconds}>
-          {project.videoCount > 1 && (
+        <Thumbnail url={project.thumbnailUrl} durationSeconds={project.videoCount === 0 ? null : project.durationSeconds}>
+          {project.videoCount !== 1 && (
             <span className="absolute top-1.5 left-1.5 inline-flex items-center gap-1 rounded bg-black/75 px-1.5 py-0.5 text-[11px] leading-none text-white">
-              <Layers className="h-3 w-3" />{project.videoCount}
+              <Layers className="h-3 w-3" />{tp('videoCount', { count: project.videoCount })}
             </span>
           )}
           {opening && (
@@ -45,7 +45,7 @@ export function ProjectCard({ project, opening, disabled, now, onOpen, onRename,
           {project.mediaMissing && <span className="inline-flex items-center gap-1 text-aimu-coral"><AlertTriangle className="h-3 w-3" />{tp('mediaMissing')}</span>}
         </p>
       </button>
-      <div className="absolute right-2 bottom-[30px] opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+      <div className="absolute right-2 bottom-[30px] opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100">
         <ProjectActionsMenu onOpen={onOpen} onRename={onRename} onDelete={onDelete} />
       </div>
     </div>

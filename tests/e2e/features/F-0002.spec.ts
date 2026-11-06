@@ -1,5 +1,6 @@
 // F-0002 项目数据保存到 Host：界面状态验收（PRD AC-11 到 AC-27）。
 // Host 用 tests/e2e/lib/mockHost.ts 模拟；Host 本身的读写、迁移、媒体由 tests/architecture/projects.test.ts 覆盖。
+// F-0003 起项目是格式 2：打开结果带 `videos`，自动保存用 `projects.saveVideoEdits`（按视频比较修订号），行为与 F-0002 相同。
 import { expect, test, type Page } from '@playwright/test';
 import { shot } from '../lib/evidence';
 import { mockHost, pending, prepare, projectItem, RpcError, UPLOADED_ASSET, uuid, VIDEO_ID, type MockHandlers } from '../lib/mockHost';
@@ -17,9 +18,11 @@ export function openResult(projectId: string, name: string, patch: Record<string
   const now = new Date().toISOString();
   return {
     status: 'ok',
-    project: { formatVersion: 1, id: projectId, name, createdAt: now, updatedAt: now, revision: 3, videos: [] },
-    video: { id: VIDEO_ID, name: `${name}.mp4`, durationSeconds: 6, createdAt: now, hasTranscript: true,
+    project: { formatVersion: 2, id: projectId, name, createdAt: now, updatedAt: now, revision: 3, styleRevision: 0, videos: [] },
+    video: { id: VIDEO_ID, name: `${name}.mp4`, durationSeconds: 6, createdAt: now, hasTranscript: true, revision: 3, styleSource: 'project',
       media: { kind: 'stored', file: `media/${VIDEO_ID}.mp4`, size: 1, mimeType: 'video/mp4' } },
+    videos: [{ id: VIDEO_ID, name: `${name}.mp4`, durationSeconds: 6, createdAt: now, updatedAt: now, hasTranscript: true, mediaMissing: false,
+      hasThumbnail: false, styleSource: 'project', revision: 3 }],
     transcript,
     media: { status: 'ok', name: `${name}.mp4`, playback: { kind: 'url', path: `/projects/${projectId}/media/${VIDEO_ID}` } },
     ...patch,
@@ -118,7 +121,8 @@ for (const theme of THEMES) {
       let finish!: () => void;
       const created = new Promise<void>(resolve => { finish = resolve; });
       const host = await openHome(page, theme, {
-        'projects.create': async () => { await created; return { projectId: uuid(9), videoId: VIDEO_ID, revision: 1 }; },
+        'projects.create': async () => { await created; const now = new Date().toISOString();
+          return { projectId: uuid(9), videoId: VIDEO_ID, revision: 1, project: { videos: [{ id: VIDEO_ID, name: '我的口播.mp4', durationSeconds: 0, createdAt: now }] } }; },
         'projects.open': () => openResult(uuid(9), '我的口播'),
       });
       await page.getByTestId('project-file-input').setInputFiles({ name: '我的口播.mp4', mimeType: 'video/mp4', buffer: Buffer.from('fake') });
@@ -177,7 +181,7 @@ test('F-0002/AC-12 RPC 报错与网络失败一样显示读取失败', async ({ 
 
 const P = uuid(1);
 const NAME = '口播：剪辑工作流分享';
-const SAVED = (revision: number) => ({ status: 'saved', revision, updatedAt: new Date().toISOString() });
+const SAVED = (revision: number) => ({ status: 'saved', revision, projectRevision: revision, updatedAt: new Date().toISOString() });
 const saveKey = process.platform === 'darwin' ? 'Meta+s' : 'Control+s';
 
 async function openEditor(page: Page, theme: 'light' | 'dark', handlers: MockHandlers = {}) {
@@ -197,14 +201,14 @@ async function editFirst(page: Page, text: string) {
 }
 
 const status = (page: Page) => page.getByRole('status').filter({ hasText: /保存|修改/ });
-const saveCalls = (host: { calls: { method: string }[] }) => host.calls.filter(call => call.method === 'projects.saveEdits');
+const saveCalls = (host: { calls: { method: string }[] }) => host.calls.filter(call => call.method === 'projects.saveVideoEdits');
 
 for (const theme of THEMES) {
   test.describe(`${theme} 编辑器`, () => {
     test(`F-0002/AC-3 AC-19 AC-20 AC-21 修改后显示未保存、保存中，3 秒内自动保存并显示已保存后淡出 (${theme})`, async ({ page }) => {
       let release!: () => void;
       const host = await openEditor(page, theme, {
-        'projects.saveEdits': async () => { await new Promise<void>(resolve => { release = resolve; }); return SAVED(4); },
+        'projects.saveVideoEdits': async () => { await new Promise<void>(resolve => { release = resolve; }); return SAVED(4); },
       });
       await expect(page.getByRole('button', { name: /我的项目/ })).toBeVisible();
       await editFirst(page, '大家好呀');
@@ -219,16 +223,17 @@ for (const theme of THEMES) {
       const calls = saveCalls(host);
       expect(calls).toHaveLength(1);
       expect(calls[0].payload).toMatchObject({ projectId: P, videoId: VIDEO_ID, baseRevision: 3, force: false });
-      const edits = calls[0].payload.edits as { chunks: { text: string }[]; stylePair: object };
+      const edits = calls[0].payload.edits as { chunks: { text: string }[]; aspectPreset: string };
       expect(edits.chunks[0].text).toBe('大家好呀');
-      expect(edits.stylePair).toHaveProperty('primary');
+      // 格式 2（F-0003）：跟随项目样式的视频只按视频保存画幅，样式存在项目级
+      expect(edits.aspectPreset).toBeTruthy();
       // 「已保存」约 3 秒后淡出
       // 淡出后读屏也不再读到它，用 CSS 选择器找
       await expect(page.locator('[role=status][aria-hidden=true]')).toHaveCSS('opacity', '0', { timeout: 5000 });
     });
 
     test(`F-0002/AC-3 快捷键立即保存，连续修改合并成一次写入 (${theme})`, async ({ page }) => {
-      const host = await openEditor(page, theme, { 'projects.saveEdits': () => SAVED(4) });
+      const host = await openEditor(page, theme, { 'projects.saveVideoEdits': () => SAVED(4) });
       await editFirst(page, '第一次');
       const second = page.getByPlaceholder('请输入主字幕').nth(1);
       await second.click(); await second.fill('第二次'); await second.blur();
@@ -241,7 +246,7 @@ for (const theme of THEMES) {
 
     test(`F-0002/AC-4 AC-22 保存失败显示重试中，保留修改，自动重试成功 (${theme})`, async ({ page }) => {
       let fail = true;
-      const host = await openEditor(page, theme, { 'projects.saveEdits': () => { if (fail) throw new Error('down'); return SAVED(4); } });
+      const host = await openEditor(page, theme, { 'projects.saveVideoEdits': () => { if (fail) throw new Error('down'); return SAVED(4); } });
       await editFirst(page, '断网时的修改');
       await expect(status(page)).toHaveText(/保存失败，重试中/, { timeout: 4000 });
       await shot(page, F, `editor-save-failed-${theme}`);
@@ -255,7 +260,7 @@ for (const theme of THEMES) {
     test(`F-0002/AC-4 AC-24 有未写入的修改时返回首页：重试中按钮不可点，取消留下，放弃后离开 (${theme})`, async ({ page }) => {
       // 只有点「重试保存」那一次请求挂起，方便看到「正在重试…」；其余请求都直接失败
       let hold = false; let release: (() => void) | undefined;
-      await openEditor(page, theme, { 'projects.saveEdits': async () => {
+      await openEditor(page, theme, { 'projects.saveVideoEdits': async () => {
         if (hold) { hold = false; await new Promise<void>(resolve => { release = resolve; }); }
         throw new Error('down');
       } });
@@ -285,7 +290,7 @@ for (const theme of THEMES) {
     test(`F-0002/AC-9 AC-23 AC-25 版本冲突暂停自动保存，可取消、覆盖 (${theme})`, async ({ page }) => {
       let conflict = true;
       const otherTime = new Date().toISOString();
-      const host = await openEditor(page, theme, { 'projects.saveEdits': ({ force }: { force: boolean }) =>
+      const host = await openEditor(page, theme, { 'projects.saveVideoEdits': ({ force }: { force: boolean }) =>
         conflict && !force ? { status: 'conflict', revision: 5, updatedAt: otherTime } : SAVED(6) });
       await editFirst(page, '我的版本');
       await expect(status(page)).toContainText('保存已暂停', { timeout: 4000 });
@@ -320,8 +325,9 @@ for (const theme of THEMES) {
     test(`F-0002/AC-25 另存为新项目后进入新项目，原项目不再写 (${theme})`, async ({ page }) => {
       const COPY = uuid(7);
       const host = await openEditor(page, theme, {
-        'projects.saveEdits': () => ({ status: 'conflict', revision: 5, updatedAt: new Date().toISOString() }),
+        'projects.saveVideoEdits': () => ({ status: 'conflict', revision: 5, updatedAt: new Date().toISOString() }),
         'projects.duplicate': () => ({ projectId: COPY, videoId: VIDEO_ID, revision: 1 }),
+        'projects.saveProjectStyle': () => SAVED(2),
         'projects.open': ({ projectId }: { projectId: string }) => openResult(projectId, projectId === COPY ? `${NAME}（副本）` : NAME),
       });
       await editFirst(page, '我的版本');
@@ -356,7 +362,7 @@ for (const theme of THEMES) {
           ? openResult(P, NAME, { media: { status: 'missing', name: '直播回放.mp4' } })
           : openResult(P, NAME),
         'projects.relinkMedia': () => { missing = false; return SAVED(4); },
-        'projects.saveEdits': () => SAVED(5),
+        'projects.saveVideoEdits': () => SAVED(5),
       });
       await expect(page.getByText('找不到这个项目的视频文件')).toBeVisible();
       await expect(page.getByText('原文件「直播回放.mp4」可能已被移动或删除。字幕仍可查看、编辑和导出字幕文件。')).toBeVisible();

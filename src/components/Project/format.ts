@@ -28,3 +28,11 @@ export function fill(template: string, values: Record<string, string | number>):
 /** 「立即保存」快捷键的显示文字（AC-20）：macOS 为 ⌘S，其他平台为 Ctrl+S。 */
 export const isMacPlatform = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 export const saveShortcutLabel = isMacPlatform ? '⌘S' : 'Ctrl+S';
+
+const DAY_MS = 86_400_000;
+
+/** 回收站里的项目还剩几天彻底删除（F-0003 AC-23）；不足 1 天为 0（显示「今天彻底删除」）。 */
+export function daysUntilPurge(purgeAfter: string, now = Date.now()) {
+  const left = new Date(purgeAfter).getTime() - now;
+  return left < DAY_MS ? 0 : Math.ceil(left / DAY_MS);
+}
