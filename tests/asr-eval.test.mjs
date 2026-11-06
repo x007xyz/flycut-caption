@@ -11,6 +11,8 @@ test('F-0001 字错率去掉标点和语气词，按词元计替换、删除、�
   assert.equal(result.cer, 2 / 6);
   // 读音相同的写法不算错
   assert.equal(characterErrorRate('她说了三次', '他说了3次').errors, 0);
+  // 繁简不算错（Whisper 常输出繁体）
+  assert.equal(characterErrorRate('这件事情其实已经变成议题', '這件事情其實已經變成議題').errors, 0);
 });
 
 test('F-0001 语气词召回按类比较，统计漏掉和多出的', () => {

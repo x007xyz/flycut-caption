@@ -2,7 +2,8 @@
 /**
  * 下载 ASR family 集成测试所需的代表模型到 app data 目录。
  * 优先从 https://huggingface.co/ 按文件下载。
- * 用法：node scripts/download-test-models.mjs [--force]
+ * 用法：node scripts/download-test-models.mjs [--force] [--models <id>,<id>]
+ *   --models：只下载 models.json 里指定的模型（例如 F-0001 评测要比较同一 family 的多个模型）
  */
 import { spawnSync } from 'node:child_process';
 import {
@@ -22,6 +23,8 @@ import { representativeModelsByFamily, loadManifest } from '../tests/lib/asrPath
 const APP_ID = 'com.flycut.caption';
 const HF_ORIGIN = 'https://huggingface.co';
 const force = process.argv.includes('--force');
+const modelsArg = process.argv.indexOf('--models');
+const onlyIds = modelsArg >= 0 ? process.argv[modelsArg + 1]?.split(',').map((s) => s.trim()).filter(Boolean) : null;
 
 function appModelsDir() {
   const home = homedir();
@@ -196,8 +199,15 @@ async function downloadModel(model) {
 }
 
 async function main() {
-  loadManifest();
-  const targets = representativeModelsByFamily().sort((a, b) => {
+  const manifest = loadManifest();
+  const chosen = onlyIds
+    ? onlyIds.map((id) => {
+      const model = manifest.models.find((m) => m.id === id);
+      if (!model) throw new Error(`models.json 里没有 ${id}`);
+      return { family: model.family, model };
+    })
+    : representativeModelsByFamily();
+  const targets = chosen.sort((a, b) => {
     const sa = a.model.artifact?.size_mb_estimate ?? 9999;
     const sb = b.model.artifact?.size_mb_estimate ?? 9999;
     return sa - sb;

@@ -1,6 +1,10 @@
 // 转写质量评测（F-0001）：读逐字参考文本，对比模型输出，算字错率和语气词召回。
 // 写法统一规则和参考文本初稿共用 tests/lib/referenceDraft.mjs，不另起一套。
+import * as OpenCC from 'opencc-js';
 import { diffChars, normalizeWithMap } from './referenceDraft.mjs';
+
+/** 繁体转简体（Whisper、FireRedASR 等可能输出繁体），按词转换，比逐字更准。参考文本和模型输出都先过一遍。 */
+const toSimplified = OpenCC.Converter({ from: 'tw', to: 'cn' });
 
 /** 单字语气词。算字错率时去掉；语气词召回时按类比较（嗯 / 呃 / 额 听起来接近，视为同一类）。 */
 export const FILLER_CLASS = new Map([
@@ -58,7 +62,7 @@ export function hypothesisText(transcript, reference) {
     .map((chunk) => chunk.text).join(' ');
 }
 
-const tokens = (text) => normalizeWithMap(text).chars;
+const tokens = (text) => normalizeWithMap(toSimplified(text)).chars;
 const isFiller = (token) => FILLER_CLASS.has(token);
 
 /**
