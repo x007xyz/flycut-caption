@@ -1,9 +1,9 @@
 ---
 id: F-0004
 stage: 03-implementation
-status: draft
-approved_by:
-approved_at:
+status: approved
+approved_by: auto
+approved_at: 2026-11-06
 ---
 
 # F-0004 崩溃恢复：开发记录
