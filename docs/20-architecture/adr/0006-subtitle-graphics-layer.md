@@ -49,3 +49,7 @@ F-0016 在当前环境（macOS 26.6.2，Apple Silicon）实测了 Epic E-03 的�
 - 安装包增加 `@napi-rs/canvas` 原生模块（macOS arm64 约 28 MB）和完整字体文件（Noto Sans SC 常规 + 粗体约 17 MB）。
 - **只在 macOS 上验证过**：Windows（WebView2、Windows 版 Skia 预编译包）和 Linux / Cloud（无界面 Host）的一致性与打包都还没测，落地需求要先补测这两端，再宣称三端一致。
 - 以后如果需要逐像素一致，可以评估前端也用 Skia 的 WASM 版（CanvasKit），与 Host 用同一个光栅化器（参考方案 E 的逐像素一致结果），代价是前端多下载一个 WASM（体积待核实）。
+
+## 后续变更（2026-11-09）
+
+维护者决定移除本地 WebAV / ffmpeg.wasm 回退，Host 成为唯一视频导出路径。上文第 8 条「前端回退导出也用图形层」以及后果中关于浏览器回退的描述不再适用；ASS 仍只用于字幕文件导出，硬烧只走 Skia 条带。
