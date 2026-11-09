@@ -10,7 +10,7 @@ approved_at:
 
 ## 结论
 
-功能主线已完成并通过本机能做的检查：共用图形层、完整字体、预览的 rVFC / seeked、Host 的 Skia 条带导出和 macOS 安装包资源加载。按维护者 2026-11-09 的决定，WebAV / ffmpeg.wasm 本地回退和 ASS 硬烧兼容路径已移除，Host 是唯一导出路径；ASS 字幕文件导出保留。**AC-2 的真实 Tauri 前台窗口性能和安装包内完整 Host 导出没有在本会话完成**，原因见每条 AC 和「未执行项」。
+功能主线已完成并通过本机能做的检查：共用图形层、完整字体、预览的 rVFC / seeked、Host 的 Skia 条带导出和 macOS 安装包内的完整 Host 离线导出。按维护者 2026-11-09 的决定，WebAV / ffmpeg.wasm 本地回退和 ASS 硬烧兼容路径已移除，Host 是唯一导出路径；ASS 字幕文件导出保留。**AC-2 的真实 Tauri 前台窗口性能没有在本会话完成**，原因见 AC-2 和「未执行项」。
 
 ## 验证环境
 
@@ -62,7 +62,7 @@ approved_at:
 - 本地回退：WebAVEngine、FFmpegEngine、SubtitleGraphicsClip、subtitleOverlayVideo 和 `@webav/*` 依赖已删除；`VideoEngineType` 只剩 `host`，前端只注册 Host。
 - ASS 硬烧：`assContent`、Host 的 ASS 硬烧分支和 `buildBurnAssContent` 已删除；新硬字幕只接受 `subtitleScene`。
 - ASS 文件导出：`serializeSubtitleExport('ass', …)` 仍走 `chunksToAss`，生成 `[Script Info] / [V4+ Styles] / [Events]`；新增 `subtitle-file-export.test.ts` 2 项通过，覆盖 Bilingual / Main / Second 和标点清理。SRT / VTT / JSON / ASS 文件导出及 mov_text / WebVTT 软轨不变。
-- macOS 包：`pnpm tauri:build` 成功；App 内存在 `skia.darwin-arm64.node` 和 OTF 字体；在 App 资源目录运行打包后的 canvas，注册字体后绘制出 3749 个 alpha 像素。**安装包内启动完整 Host 并离线导出 Not run**。
+- macOS 包：`pnpm tauri:build` 成功；App 内存在 `skia.darwin-arm64.node` 和 OTF 字体；用 App 内的 `flycut-node` 启动完整 Host，离线导出 2 秒 320×180 硬字幕视频，输出 4,880 字节、时长 2 秒、1 秒帧 1,429 个高亮字幕像素。
 
 ### AC-5 入口、空态、字体载入中
 
@@ -142,7 +142,6 @@ approved_at:
 ## 未执行项
 
 - 真实 Tauri 前台窗口 1080p30 多次掉帧 / 拖动 100 ms 测量（当前会话窗口不可见）。
-- 在 macOS 安装包内启动完整 Host 并断网导出（只验证了打包资源中的 canvas 与字体）。
 - Windows / WebView2 / Linux / Cloud。
 - 开发者签名与 notary（F-0057）。
 
