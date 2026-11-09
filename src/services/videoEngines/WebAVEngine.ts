@@ -1,8 +1,7 @@
-import { projectFromKept, exportSegments, validateEdl } from '../../../shared/editing/edl';
+import { exportSegments, validateEdl } from '../../../shared/editing/edl';
 // WebAV 视频处理引擎实现
 
-import { Combinator, MP4Clip, OffscreenSprite, EmbedSubtitlesClip } from '@webav/av-cliper';
-import { secondsToMicroseconds } from '@/utils/subtitleUtils';
+import { Combinator, MP4Clip, OffscreenSprite, Rect } from '@webav/av-cliper';
 import type { 
   IVideoProcessingEngine, 
   VideoEngineType, 
@@ -10,18 +9,10 @@ import type {
   VideoProcessingOptions 
 } from '@/types/videoEngine';
 import type { SubtitleChunk as TranscriptChunk } from '@/types/subtitle';
-import type { SubtitleStyle, SubtitleStylePair, SubtitleDisplayMode } from '@/subtitle';
-import {
-  defaultSubtitleStyle,
-  resolveExportSubtitleMetrics,
-  formatBilingualText,
-} from '@/subtitle';
-
-interface SubtitleStruct {
-  start: number; // 开始时间（微秒）
-  end: number;   // 结束时间（微秒）
-  text: string;  // 字幕文本
-}
+import { buildExportSubtitleScene } from '@/subtitle';
+import { ensureSubtitleFonts } from '@/subtitle';
+import type { SubtitleGraphicScene } from '../../../shared/subtitle-graphics';
+import { SubtitleGraphicsClip } from './SubtitleGraphicsClip';
 import type { VideoFile, VideoSegment, VideoProcessingProgress } from '@/types/video';
 import { loadMediaBlob } from '@/utils/mediaSource';
 
@@ -221,14 +212,20 @@ export class WebAVEngine implements IVideoProcessingEngine {
           throw new Error('Web 端不支持软字幕轨道嵌入，请使用桌面版（FFmpeg）或选择硬烧录');
         }
 
-        this.reportProgress('processing', 75, '烧录字幕到视频画面...');
-        await this.addBurnedSubtitles(
-          subtitleChunks,
+        if (!options.subtitleStylePair) throw new Error('字幕样式缺失，无法渲染硬字幕');
+        await ensureSubtitleFonts();
+        const scene = buildExportSubtitleScene({
+          chunks: subtitleChunks,
           keptSegments,
-          options.subtitleStylePair,
-          options.subtitleExportMode,
-          options.subtitleStyle,
-        );
+          stylePair: options.subtitleStylePair,
+          displayMode: options.subtitleExportMode ?? 'Bilingual',
+          videoWidth: this.videoClip?.meta.width ?? options.videoWidth ?? 1920,
+          videoHeight: this.videoClip?.meta.height ?? options.videoHeight ?? 1080,
+          fps: options.fps ?? 30,
+          duration: totalDuration / 1e6,
+        });
+        this.reportProgress('processing', 75, '烧录字幕到视频画面...');
+        await this.addBurnedSubtitles(scene);
         this.reportProgress('processing', 78, '字幕烧录完成');
       }
 
@@ -424,166 +421,15 @@ export class WebAVEngine implements IVideoProcessingEngine {
   }
 
 
-  /**
-   * 硬烧录字幕到视频画面（WebAV EmbedSubtitlesClip）
-   *
-   * 注意：EmbedSubtitlesClip 只支持单一样式，Bilingual 模式降级为
-   * primaryStyle + formatBilingualText 合并文本（副字幕样式与主字幕一致）。
-   * Main 模式用 primaryStyle；Second 模式用 secondaryStyle。
-   */
-  private async addBurnedSubtitles(
-    subtitleChunks: TranscriptChunk[],
-    keptSegments: VideoSegment[],
-    stylePair?: SubtitleStylePair,
-    exportMode?: SubtitleDisplayMode,
-    fallbackStyle?: SubtitleStyle,
-  ): Promise<void> {
-    if (!this.combinator || !this.videoClip) {
-      return;
-    }
-
-    try {
-      const fallback = fallbackStyle ?? defaultSubtitleStyle;
-      const pair: SubtitleStylePair = stylePair
-        ?? { primary: fallback, secondary: fallback };
-      const mode: SubtitleDisplayMode = exportMode ?? 'Bilingual';
-      // Bilingual/Main 用 primary；Second 用 secondary
-      const effectiveStyle = mode === 'Second' ? pair.secondary : pair.primary;
-
-      const subtitleStructs = this.generateSubtitleStructs(
-        subtitleChunks,
-        keptSegments,
-        pair,
-        mode,
-        this.videoClip.meta.width,
-        this.videoClip.meta.height,
-      );
-
-      if (subtitleStructs.length === 0) {
-        console.warn('没有字幕内容可以添加');
-        return;
-      }
-      const metrics = resolveExportSubtitleMetrics(
-        effectiveStyle,
-        this.videoClip.meta.width,
-        this.videoClip.meta.height,
-      );
-
-      // EmbedSubtitlesClip 内部对 textShadow 无空判断（直接读 textShadow.color）。
-      // 若传入 textShadow: undefined，Object.assign 会覆盖库默认值并在渲染时抛错：
-      // "Cannot read properties of undefined (reading 'color')"。
-      // 无阴影时必须传零值对象，而不能省略/传 undefined（省略会启用库默认 blur=4 阴影）。
-      const textShadow = effectiveStyle.shadowBlur > 0
-        ? {
-            offsetX: metrics.shadowOffsetX,
-            offsetY: metrics.shadowOffsetY,
-            blur: metrics.shadowBlur,
-            color: effectiveStyle.shadowColor || '#000000',
-          }
-        : {
-            offsetX: 0,
-            offsetY: 0,
-            blur: 0,
-            color: 'transparent',
-          };
-
-      const embedOptions: ConstructorParameters<typeof EmbedSubtitlesClip>[1] = {
-        videoWidth: metrics.videoWidth,
-        videoHeight: metrics.videoHeight,
-        fontSize: metrics.fontSize,
-        fontFamily: metrics.fontFamily,
-        fontWeight: metrics.fontWeight,
-        fontStyle: metrics.fontStyle,
-        color: `${effectiveStyle.color}${Math.round(effectiveStyle.colorOpacity * 255).toString(16).padStart(2, '0')}`,
-        lineWidth: metrics.borderWidth,
-        lineJoin: 'round',
-        lineCap: 'round',
-        letterSpacing: metrics.letterSpacing,
-        bottomOffset: metrics.bottomOffset,
-        textShadow,
-      };
-
-      if (effectiveStyle.backgroundOpacity > 0) {
-        embedOptions.textBgColor = `${effectiveStyle.backgroundColor}${Math.round(effectiveStyle.backgroundOpacity * 255).toString(16).padStart(2, '0')}`;
-      }
-      if (metrics.borderWidth > 0 && effectiveStyle.borderOpacity > 0) {
-        embedOptions.strokeStyle = `${effectiveStyle.borderColor}${Math.round(effectiveStyle.borderOpacity * 255).toString(16).padStart(2, '0')}`;
-      }
-
-      const subtitleSprite = new OffscreenSprite(
-        new EmbedSubtitlesClip(subtitleStructs, embedOptions)
-      );
-
-      // 设置字幕时间（覆盖整个视频时长）
-      const totalDuration = keptSegments.reduce((total, seg) => {
-        return total + (seg.end - seg.start);
-      }, 0) * 1e6; // 转换为微秒
-
-      subtitleSprite.time = {
-        offset: 0,
-        duration: totalDuration,
-      };
-
-      // 设置 z-index 确保字幕在视频上方
-      subtitleSprite.zIndex = 10;
-
-      // 添加到合成器
-      await this.combinator.addSprite(subtitleSprite);
-
-    } catch (error) {
-      console.error('字幕烧录失败:', error);
-    }
-  }
-
-  /**
-   * 生成 SubtitleStruct 数组，时间单位为微秒。
-   * 按 exportMode 过滤/合并文本：
-   * - 'Main'：text = chunk.text（跳过无 text）
-   * - 'Second'：text = chunk.secondText（跳过无 secondText）
-   * - 'Bilingual'：text = formatBilingualText（用 primaryStyle 合并，降级单样式）
-   */
-  private generateSubtitleStructs(
-    subtitleChunks: TranscriptChunk[],
-    keptSegments: VideoSegment[],
-    stylePair: SubtitleStylePair,
-    exportMode: SubtitleDisplayMode,
-    videoWidth: number,
-    videoHeight: number,
-  ): SubtitleStruct[] {
-    const projected = projectFromKept(subtitleChunks, keptSegments);
-
-    const subtitleStructs: SubtitleStruct[] = [];
-
-    for (const chunk of projected) {
-      const mappedTime = { start: chunk.timestamp[0], end: chunk.timestamp[1] };
-
-      let text: string;
-      if (exportMode === 'Main') {
-        text = chunk.text;
-        if (!text?.trim()) continue;
-      } else if (exportMode === 'Second') {
-        text = chunk.secondText ?? '';
-        if (!text.trim()) continue;
-      } else {
-        // Bilingual：降级为单样式合并文本
-        text = formatBilingualText(
-          chunk.text,
-          chunk.secondText,
-          stylePair.primary,
-          videoWidth,
-          videoHeight,
-        );
-        if (!text.trim()) continue;
-      }
-
-      subtitleStructs.push({
-        start: secondsToMicroseconds(mappedTime.start),
-        end: secondsToMicroseconds(mappedTime.end),
-        text,
-      });
-    }
-
-    return subtitleStructs;
+  /** 硬烧录字幕：用共用图形层画到条带，再由 WebAV 合成，不再使用 EmbedSubtitlesClip。 */
+  private async addBurnedSubtitles(scene: SubtitleGraphicScene): Promise<void> {
+    if (!this.combinator) throw new Error('视频合成器尚未初始化');
+    const clip = new SubtitleGraphicsClip(scene);
+    const sprite = new OffscreenSprite(clip);
+    sprite.rect = new Rect(0, clip.band.y, clip.band.width, clip.band.height);
+    sprite.time = { offset: 0, duration: Math.round(scene.duration * 1e6) };
+    sprite.zIndex = 10;
+    await this.combinator.addSprite(sprite);
   }
 
 }

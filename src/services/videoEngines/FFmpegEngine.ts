@@ -1,6 +1,8 @@
 // FFmpeg.wasm 视频处理引擎实现
 import { exportSegments, ffmpegVideoFilter, outputDuration } from '../../../shared/editing/edl';
-import { buildBurnAssContent, buildBurnTextSubtitleContent } from '@/subtitle/burnAss';
+import { buildBurnTextSubtitleContent } from '@/subtitle/burnAss';
+import { buildExportSubtitleScene, ensureSubtitleFonts } from '@/subtitle';
+import { createSubtitleOverlayVideo, type SubtitleOverlayVideo } from './subtitleOverlayVideo';
 
 import type { 
   IVideoProcessingEngine, 
@@ -45,7 +47,8 @@ export class FFmpegEngine implements IVideoProcessingEngine {
   private isLoaded = false;
   private inputFileName = 'input.mp4';
   private hasAudio = false;
-  private subtitleFile: 'subtitles.ass' | 'subtitles.vtt' | null = null;
+  private subtitleFile: 'subtitles.vtt' | null = null;
+  private subtitleOverlay: SubtitleOverlayVideo | null = null;
 
   async checkCapabilities(): Promise<EngineCapabilities> {
     try {
@@ -183,15 +186,30 @@ export class FFmpegEngine implements IVideoProcessingEngine {
       if (options.edl && JSON.stringify(keptSegments.map(s => [s.start, s.end])) !== JSON.stringify(exportSegments(options.edl).map(s => [s.start, s.end])))
         throw new Error('The supplied segments disagree with the EDL');
       this.subtitleFile = null;
+      this.subtitleOverlay = null;
       if (options.subtitleProcessing && options.subtitleProcessing !== 'none' && options.subtitleChunks?.length) {
         const mode = options.subtitleExportMode ?? 'Bilingual';
-        const content = options.subtitleProcessing === 'soft'
-          ? buildBurnTextSubtitleContent({ chunks: options.subtitleChunks, keptSegments, exportMode: mode })
-          : options.subtitleStylePair ? buildBurnAssContent({ chunks: options.subtitleChunks, keptSegments, exportMode: mode,
-            stylePair: options.subtitleStylePair, playResX: options.videoWidth ?? 1920, playResY: options.videoHeight ?? 1080 }) : undefined;
-        if (content === undefined) throw new Error('Subtitle style is required');
-        this.subtitleFile = options.subtitleProcessing === 'soft' ? 'subtitles.vtt' : 'subtitles.ass';
-        await this.ffmpeg.writeFile(this.subtitleFile, new TextEncoder().encode(content));
+        if (options.subtitleProcessing === 'soft') {
+          const content = buildBurnTextSubtitleContent({ chunks: options.subtitleChunks, keptSegments, exportMode: mode });
+          this.subtitleFile = 'subtitles.vtt';
+          await this.ffmpeg.writeFile(this.subtitleFile, new TextEncoder().encode(content));
+        } else {
+          if (!options.subtitleStylePair) throw new Error('字幕样式缺失，无法渲染硬字幕');
+          await ensureSubtitleFonts();
+          const duration = keptSegments.reduce((total, segment) => total + segment.end - segment.start, 0);
+          const scene = buildExportSubtitleScene({
+            chunks: options.subtitleChunks,
+            keptSegments,
+            stylePair: options.subtitleStylePair,
+            displayMode: mode,
+            videoWidth: options.videoWidth ?? 1920,
+            videoHeight: options.videoHeight ?? 1080,
+            fps: options.fps ?? 30,
+            duration,
+          });
+          this.reportProgress('encoding', 8, '渲染字幕层...');
+          this.subtitleOverlay = await createSubtitleOverlayVideo(this.ffmpeg, scene);
+        }
       }
       options = { ...options, preserveAudio: options.preserveAudio && this.hasAudio };
       const outputFormat = options.format || 'mp4';
@@ -258,6 +276,7 @@ export class FFmpegEngine implements IVideoProcessingEngine {
       
       this.isLoaded = false;
       this.onProgress = undefined;
+      this.subtitleOverlay = null;
       console.log('FFmpeg 引擎资源清理完成');
     } catch (error) {
       console.warn('FFmpeg 引擎清理时出现警告:', error);
@@ -289,47 +308,63 @@ export class FFmpegEngine implements IVideoProcessingEngine {
     options: VideoProcessingOptions
   ): string[] {
     const args = ['-i', inputFile];
-
+    if (this.subtitleOverlay) args.push('-i', this.subtitleOverlay.file);
+    let video = '0:v:0';
+    let audio = '0:a:0?';
+    const filters: string[] = [];
     if (options.edl) {
-      let filter = ffmpegVideoFilter(options.edl);
+      filters.push(ffmpegVideoFilter(options.edl));
+      video = '[vout]';
       if (options.preserveAudio) {
-        filter += ';' + segments.map((s, i) => `[0:a:0]atrim=start=${s.start}:end=${s.end},asetpts=PTS-STARTPTS[a${i}]`).join(';');
-        filter += ';' + segments.map((_, i) => `[a${i}]`).join('') + `concat=n=${segments.length}:v=0:a=1[aout]`;
+        filters.push(segments.map((s, i) => `[0:a:0]atrim=start=${s.start}:end=${s.end},asetpts=PTS-STARTPTS[a${i}]`).join(';'));
+        filters.push(segments.map((_, i) => `[a${i}]`).join('') + `concat=n=${segments.length}:v=0:a=1[aout]`);
+        audio = '[aout]';
       }
-      let video = '[vout]';
-      if (this.subtitleFile === 'subtitles.ass') { filter += ';[vout]subtitles=subtitles.ass[vsub]'; video = '[vsub]'; }
-      if (this.subtitleFile === 'subtitles.vtt') args.push('-i', this.subtitleFile);
-      args.push('-filter_complex', filter, '-map', video);
-      if (options.preserveAudio) args.push('-map', '[aout]');
-      if (this.subtitleFile === 'subtitles.vtt') args.push('-map', '1:0', '-c:s', options.format === 'webm' ? 'webvtt' : 'mov_text');
       args.push('-t', String(outputDuration(options.edl)), '-fps_mode', 'cfr');
     } else if (segments.length === 1) {
       // 单个片段，直接裁剪
       const segment = segments[0];
-      args.push('-ss', segment.start.toString());
-      args.push('-t', (segment.end - segment.start).toString());
+      if (this.subtitleOverlay) {
+        filters.push(`[0:v]trim=start=${segment.start}:end=${segment.end},setpts=PTS-STARTPTS,fps=${this.subtitleOverlay.fps}[vout]`);
+        video = '[vout]';
+        if (options.preserveAudio) {
+          filters.push(`[0:a]atrim=start=${segment.start}:end=${segment.end},asetpts=PTS-STARTPTS[aout]`);
+          audio = '[aout]';
+        }
+        args.push('-t', (segment.end - segment.start).toString());
+      } else {
+        args.push('-ss', segment.start.toString());
+        args.push('-t', (segment.end - segment.start).toString());
+      }
     } else {
       // 多个片段，需要使用 concat 滤镜
-      let filterComplex = '';
+      const parts: string[] = [];
       segments.forEach((segment, index) => {
-        filterComplex += `[0:v]trim=start=${segment.start}:end=${segment.end},setpts=PTS-STARTPTS[v${index}];`;
+        parts.push(`[0:v]trim=start=${segment.start}:end=${segment.end},setpts=PTS-STARTPTS[v${index}]`);
         if (options.preserveAudio) {
-          filterComplex += `[0:a]atrim=start=${segment.start}:end=${segment.end},asetpts=PTS-STARTPTS[a${index}];`;
+          parts.push(`[0:a]atrim=start=${segment.start}:end=${segment.end},asetpts=PTS-STARTPTS[a${index}]`);
         }
       });
-
-      // 连接视频流
-      filterComplex += segments.map((_, i) => `[v${i}]`).join('') + `concat=n=${segments.length}:v=1:a=0[outv];`;
-      
       if (options.preserveAudio) {
-        // 连接音频流
-        filterComplex += segments.map((_, i) => `[a${i}]`).join('') + `concat=n=${segments.length}:v=0:a=1[outa]`;
-        args.push('-map', '[outv]', '-map', '[outa]');
+        parts.push(segments.flatMap((_, i) => `[v${i}][a${i}]`).join('') + `concat=n=${segments.length}:v=1:a=1[outv][outa]`);
+        audio = '[outa]';
       } else {
-        args.push('-map', '[outv]');
+        parts.push(segments.map((_, i) => `[v${i}]`).join('') + `concat=n=${segments.length}:v=1:a=0[outv]`);
       }
+      filters.push(...parts);
+      video = '[outv]';
+    }
 
-      args.push('-filter_complex', filterComplex);
+    if (this.subtitleOverlay) {
+      filters.push('[1:v]format=rgba[sub]', `${video}[sub]overlay=x=0:y=${this.subtitleOverlay.y}:format=yuv420[vsub]`);
+      video = '[vsub]';
+    }
+    if (this.subtitleFile === 'subtitles.vtt') args.push('-i', this.subtitleFile);
+    if (filters.length > 0) args.push('-filter_complex', filters.join(';'));
+    args.push('-map', video);
+    if (options.preserveAudio) args.push('-map', audio);
+    if (this.subtitleFile === 'subtitles.vtt') {
+      args.push('-map', this.subtitleOverlay ? '1:0' : '1:0', '-c:s', options.format === 'webm' ? 'webvtt' : 'mov_text');
     }
 
     // 质量 + 速度档（与桌面 FFmpeg 引擎一致）
