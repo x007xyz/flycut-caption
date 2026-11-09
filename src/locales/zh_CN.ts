@@ -404,7 +404,6 @@ const zhCN: FlyCutCaptionLocale = {
       exportBilingual: '双字幕',
       exportMain: '仅主字幕',
       exportSecond: '仅副字幕',
-      webavBilingualHint: 'Web 端烧录时副字幕样式与主字幕一致',
       exportVideo: '导出视频',
       exportSubtitles: '导出字幕',
       emptyTimelineHint: '上传视频或加载示例后显示时间轴',

@@ -39,29 +39,3 @@ export function resolveLayoutMaxWidth(
   return Math.max(100, Math.round(videoWidth * ratio));
 }
 
-/** 将主/副字幕格式化为带换行的导出文本 */
-export function formatBilingualText(
-  primary: string,
-  secondText: string | undefined,
-  style: SubtitleStyle,
-  videoWidth: number,
-  videoHeight: number,
-): string {
-  const maxWidth = resolveLayoutMaxWidth(videoWidth, style);
-  const primaryLines = layoutSubtitleLines(primary, style, { maxWidth, videoHeight });
-  const parts = [primaryLines.join('\n')];
-
-  if (secondText?.trim()) {
-    const secondarySize = Math.round(resolveVideoFontSize(style, videoHeight) * 0.75);
-    const secondaryLines = layoutSubtitleLines(secondText, style, {
-      maxWidth,
-      videoHeight,
-      fontSizePx: secondarySize,
-    });
-    if (secondaryLines.length > 0) {
-      parts.push(secondaryLines.join('\n'));
-    }
-  }
-
-  return parts.filter(Boolean).join('\n');
-}

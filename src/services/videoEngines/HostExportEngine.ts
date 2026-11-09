@@ -1,7 +1,7 @@
 import type { IVideoProcessingEngine, VideoEngineType, EngineCapabilities, VideoProcessingOptions } from '@/types/videoEngine';
 import type { VideoFile, VideoSegment, VideoProcessingProgress } from '@/types/video';
 import type { SubtitleChunk } from '@/types/subtitle';
-import { buildBurnTextSubtitleContent } from '@/subtitle/burnAss';
+import { buildBurnTextSubtitleContent } from '@/subtitle/softSubtitles';
 import { buildExportSubtitleScene } from '@/subtitle/graphicsScene';
 import type { RemoteConnection } from '@/runtime/connection';
 import { isTauriRuntime } from '@/utils/runtime';
@@ -18,8 +18,10 @@ export class HostExportEngine implements IVideoProcessingEngine {
 
   async checkCapabilities(): Promise<EngineCapabilities> {
     try {
-      await this.connection.call('host.info');
-      return { supported: true, formats: ['mp4', 'webm'], features: { trimming: true, concatenation: true, audioProcessing: true, subtitleBurning: true, qualityControl: true } };
+      const info = await this.connection.call('host.info');
+      const supported = info.capabilities?.export === true;
+      return { supported, reason: supported ? undefined : 'Host 导出插件不可用', formats: supported ? ['mp4', 'webm'] : [],
+        features: { trimming: supported, concatenation: supported, audioProcessing: supported, subtitleBurning: supported, qualityControl: supported } };
     } catch (error) {
       return { supported: false, reason: error instanceof Error ? error.message : 'Host 不可用', formats: [], features: { trimming: false, concatenation: false, audioProcessing: false, subtitleBurning: false, qualityControl: false } };
     }

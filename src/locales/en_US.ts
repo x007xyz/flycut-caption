@@ -404,7 +404,6 @@ const enUS: FlyCutCaptionLocale = {
       exportBilingual: 'Bilingual',
       exportMain: 'Primary only',
       exportSecond: 'Secondary only',
-      webavBilingualHint: 'Web burn uses primary style for secondary',
       exportVideo: 'Export video',
       exportSubtitles: 'Export subtitles',
       emptyTimelineHint: 'Upload a video or load the sample to see the timeline',

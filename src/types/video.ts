@@ -39,7 +39,7 @@ export interface VideoProcessingProgress {
 }
 
 export interface VideoProcessorConfig {
-  engine: 'webav' | 'ffmpeg.wasm';
+  engine: 'host';
   outputFormat: 'mp4' | 'webm';
   quality: 'high' | 'medium' | 'low';
   preserveAudio: boolean;

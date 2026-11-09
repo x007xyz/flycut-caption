@@ -4,9 +4,6 @@ import { spawnSync } from 'node:child_process';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { FFmpegEngine } from '../../src/services/videoEngines/FFmpegEngine';
-import type { VideoProcessingOptions } from '../../src/types/videoEngine';
-import type { VideoSegment } from '../../src/types/video';
 import { createHost } from '../../server/app';
 import { createEdl, exportSegments, outputDuration, outputToSource, deriveKept } from '../../shared/editing/edl';
 
@@ -96,12 +93,6 @@ test('F-0005/AC-5 real Host: tail trims, silent video and multiple cut points us
           `${audio ? 'audio' : 'silent'} ${edl.deleted.length} cuts: ${actual}s != ${expected}s`);
         assert.equal(/Stream.*Audio:/.test(info), audio);
         verifyContent(source, output, edl, audio);
-        const local = new FFmpegEngine() as unknown as { buildFFmpegCommand(input: string, output: string, segments: VideoSegment[], options: VideoProcessingOptions): string[] };
-        const localOutput = join(home, `local-${audio}-${edl.deleted.length}.mp4`);
-        run(local.buildFFmpegCommand(source, localOutput, exportSegments(edl), { edl, format: 'mp4', quality: 'medium', preserveAudio: audio }));
-        const localDuration = duration(run(['-i', localOutput, '-t', '0', '-f', 'null', '-']));
-        assert.ok(Math.abs(localDuration - expected) <= 1 / 25 + (audio ? 1024 / 48000 : 0) + 0.005);
-        verifyContent(source, localOutput, edl, audio);
         console.log(`F-0005 real export: audio=${audio}, cuts=${edl.deleted.length}, target=${expected}, actual=${actual}`);
       }
     }

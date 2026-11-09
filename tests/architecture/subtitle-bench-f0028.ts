@@ -8,7 +8,6 @@ import { emptySubtitleGraphicStyle, type SubtitleGraphicScene } from '../../shar
 const ffmpeg = resolve('src-tauri/binaries/ffmpeg');
 const minutes = Number(process.env.MINUTES ?? 20);
 const assetIdOverride = process.env.ASSET_ID;
-const kindFilter = process.env.KIND as 'scene' | 'ass' | undefined;
 const root = join('/tmp', 'flycut-f0028-bench');
 await mkdir(root, { recursive: true });
 const source = join(root, `source-${minutes}.mp4`);
@@ -39,29 +38,6 @@ function scene(durationSeconds: number): SubtitleGraphicScene {
     fontId: 'noto-sans-sc', fontFamily: 'FlyCutNotoSansSC', displayMode: 'Main', maxWidthRatio: 0.9,
     primary, cues };
 }
-function ass(durationSeconds: number): string {
-  const time = (seconds: number) => {
-    const h = Math.floor(seconds / 3600); const m = Math.floor(seconds % 3600 / 60); const s = (seconds % 60).toFixed(2).padStart(5, '0');
-    return `${h}:${String(m).padStart(2, '0')}:${s}`;
-  };
-  const events = [];
-  for (let start = 0.5; start + 2.5 < durationSeconds; start += 3) {
-    events.push(`Dialogue: 0,${time(start)},${time(start + 2.5)},Default,,0,0,0,,今天我们来聊一聊字幕渲染和视频导出的性能表现`);
-  }
-  return `[Script Info]
-ScriptType: v4.00+
-PlayResX: 1920
-PlayResY: 1080
-
-[V4+ Styles]
-Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Noto Sans SC,54,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,2,0,2,20,20,60,1
-
-[Events]
-Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-${events.join('\n')}`;
-}
-
 const home = join(root, 'host');
 const ctx = await createHost({ home, token: 'bench', port: 0, resourceRoot: resolve('src-tauri') }, { profile: 'desktop', providers: [], patches: [] });
 const baseUrl = `http://127.0.0.1:${(ctx.httpServer.address() as { port: number }).port}`;
@@ -74,14 +50,12 @@ const asset = assetIdOverride ? { assetId: assetIdOverride }
   : await (await fetch(baseUrl + '/assets', { method: 'POST', headers: { Authorization: 'Bearer bench' }, body: await readFile(source) })).json();
 const durationSeconds = minutes * 60;
 
-async function exportOnce(kind: 'scene' | 'ass') {
+async function exportOnce() {
   let peak = 0;
   const timer = setInterval(() => { peak = Math.max(peak, process.memoryUsage().rss); }, 50);
   const started = performance.now();
   const job = await call('export.start', { assetId: asset.assetId, segments: [{ start: 0, end: durationSeconds, keep: true }],
-    options: kind === 'scene'
-      ? { format: 'mp4', quality: 'medium', preserveAudio: true, subtitleProcessing: 'hard', subtitleTransport: 'skia-band', subtitleScene: scene(durationSeconds) }
-      : { format: 'mp4', quality: 'medium', preserveAudio: true, subtitleProcessing: 'hard', assContent: ass(durationSeconds) } });
+    options: { format: 'mp4', quality: 'medium', preserveAudio: true, subtitleProcessing: 'hard', subtitleTransport: 'skia-band', subtitleScene: scene(durationSeconds) } });
   let state = job;
   while (state.status === 'running' || state.status === 'queued') { await new Promise(r => setTimeout(r, 200)); state = await call('jobs.get', { id: job.id }); }
   clearInterval(timer);
@@ -89,16 +63,13 @@ async function exportOnce(kind: 'scene' | 'ass') {
   const wall = (performance.now() - started) / 1000;
   const output = ctx.assets.path(state.result.assetId);
   const size = (await stat(output)).size;
-  console.log(JSON.stringify({ kind, minutes, wallSec: +wall.toFixed(1), speedX: +(minutes * 60 / wall).toFixed(1),
+  console.log(JSON.stringify({ minutes, wallSec: +wall.toFixed(1), speedX: +(minutes * 60 / wall).toFixed(1),
     nodePeakMB: +(peak / 1048576).toFixed(0), outputMB: +(size / 1048576).toFixed(1), cues: scene(durationSeconds).cues.length }));
-  return { kind, wall };
+  return { wall };
 }
 
 try {
-  const sceneResult = kindFilter === 'ass' ? undefined : await exportOnce('scene');
-  const assResult = kindFilter === 'scene' ? undefined : await exportOnce('ass');
-  if (sceneResult && assResult) console.log(JSON.stringify({ minutes, sceneSec: +sceneResult.wall.toFixed(1), assSec: +assResult.wall.toFixed(1),
-    ratio: +(sceneResult.wall / assResult.wall).toFixed(2) }));
+  await exportOnce();
 } finally {
   await ctx.fiber.dispose();
 }

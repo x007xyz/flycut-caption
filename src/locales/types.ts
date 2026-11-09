@@ -407,7 +407,6 @@ export interface FlyCutCaptionLocale {
       exportBilingual: string;
       exportMain: string;
       exportSecond: string;
-      webavBilingualHint: string;
       exportVideo: string;
       exportSubtitles: string;
       emptyTimelineHint: string;

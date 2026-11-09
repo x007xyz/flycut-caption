@@ -10,9 +10,6 @@ import { ASRService } from '../services/asrService';
 import { AIService } from '../services/aiService';
 import { HostExportEngine } from '../services/videoEngines/HostExportEngine';
 import { VideoEngineRegistry } from '../services/videoEngines/VideoEngineFactory';
-import { WebAVEngine } from '../services/videoEngines/WebAVEngine';
-import { FFmpegEngine } from '../services/videoEngines/FFmpegEngine';
-import { isTauriRuntime } from '../utils/runtime';
 import { createAppStore } from '../stores/appStore';
 import { createHistoryStore } from '../stores/historyStore';
 import { createProjectStore } from '../stores/projectStore';
@@ -96,18 +93,11 @@ export const hostExportEnginePlugin = { name: 'flycut-host-export-engine', injec
   const connection = ctx.connection;
   ctx.effect(() => ctx.videoEngines.register('host', () => new HostExportEngine(connection), 0));
 } };
-/** Browser engines are explicit local fallbacks on the Web; the desktop shell only exports through the Host. */
-export const browserVideoEnginesPlugin = { name: 'flycut-browser-video-engines', inject: ['videoEngines'], apply(ctx: Context) {
-  if (isTauriRuntime()) return;
-  ctx.effect(() => ctx.videoEngines.register('webav', () => new WebAVEngine(), 10));
-  ctx.effect(() => ctx.videoEngines.register('ffmpeg', () => new FFmpegEngine(), 20));
-} };
-
 export async function createClientRuntime(options: HostConnectionOptions, shell: UISlots['shell'], plugins: object[] = []) {
   const ctx = new Context();
   try {
     for (const plugin of [uiRegistryPlugin, storesPlugin, connectionPlugin(options), asrClientPlugin, aiClientPlugin,
-      videoEngineRegistryPlugin, hostExportEnginePlugin, browserVideoEnginesPlugin,
+      videoEngineRegistryPlugin, hostExportEnginePlugin,
       uiPlugin('flycut-editor-shell', 'shell', shell),
       uiPlugin('flycut-player-ui', 'player', EnhancedVideoPlayer),
       uiPlugin('flycut-subtitle-editor-ui', 'subtitle-editor', SubtitleEditorPanel),

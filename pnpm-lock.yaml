@@ -59,12 +59,6 @@ importers:
       '@tauri-apps/api':
         specifier: ^2.11.1
         version: 2.11.1
-      '@webav/av-cliper':
-        specifier: ^1.2.1
-        version: 1.2.1
-      '@webav/av-recorder':
-        specifier: ^1.2.1
-        version: 1.2.1
       ahooks:
         specifier: ^3.9.5
         version: 3.9.5(react-dom@19.1.1(react@19.1.1))(react@19.1.1)
@@ -1723,18 +1717,6 @@ packages:
   '@vue/shared@3.5.21':
     resolution: {integrity: sha512-+2k1EQpnYuVuu3N7atWyG3/xoFWIVJZq4Mz8XNOdScFI0etES75fbny/oU4lKWk/577P1zmg0ioYvpGEDZ3DLw==}
 
-  '@webav/av-cliper@1.2.1':
-    resolution: {integrity: sha512-I+bCSyteJbvYQQ4N4xHpcaoauEWR6F5fbVZF3hZTDddVO5lFMb5OZdigUoDm8SK2dmgTOstna4QEi+0D170jfA==}
-
-  '@webav/av-recorder@1.2.1':
-    resolution: {integrity: sha512-nfFMyZkyH9CNzdewwLxsxL8wFpmVxwHxUaoP851xukaklzwfbYZBZxmBzL6dEgh1YAinBziwu505Zc60fz78NA==}
-
-  '@webav/internal-utils@1.2.1':
-    resolution: {integrity: sha512-L0/keoxVHlBrUWfAygOo3XZ6DmtDk9WnOqL1ZgRiJQ//kpRlN1eSInQq1uuxAgjfkWSZHDqbbhq+KcMnTiYPxg==}
-
-  '@webav/mp4box.js@0.5.7':
-    resolution: {integrity: sha512-KgScEtDpiLnWvj1Rj8Ri9fDWxTjfdNr7cmY/PT88EmttHh6cLxMAeyD/W8Vydes4z7qV/c5VDAaP4cTlaO0E9g==}
-
   acorn-jsx@5.3.2:
     resolution: {integrity: sha512-rq9s+JNhf0IChjtDXxllJ7g41oZk5SlXtp0LHwyA5cejwn7vKmKp4pPri6YEePv2PU65sAsegbXtIinmDFDXgQ==}
     peerDependencies:
@@ -2412,9 +2394,6 @@ packages:
   opencc-js@1.0.5:
     resolution: {integrity: sha512-LD+1SoNnZdlRwtYTjnQdFrSVCAaYpuDqL5CkmOaHOkKoKh7mFxUicLTRVNLU5C+Jmi1vXQ3QL4jWdgSaa4sKjg==}
 
-  opfs-tools@0.7.2:
-    resolution: {integrity: sha512-ITMh4BnRCh/wFDFFaTsZOFLGUCoXbtn4KH1qh4S2LLF31+afqhXxz0NK74wqyRB5tbgnDD2SDcn7J4HeEVuvgg==}
-
   optionator@0.9.4:
     resolution: {integrity: sha512-6IpQ7mKUxRcZNLIObR0hz7lxsapSSIYNZJwXPGeF0mTVqGKFIXj1DQcMoT22S3ROcLyY/rz0PWaWZ9ayWmad9g==}
     engines: {node: '>= 0.8.0'}
@@ -2825,10 +2804,6 @@ packages:
 
   vscode-uri@3.1.0:
     resolution: {integrity: sha512-/BpdSx+yCQGnCvecbyXdxHDkuk55/G3xwnC0GqY4gmQ3j+A+g8kzzgB4Nk/SINjqn6+waqw3EgbVF2QKExkRxQ==}
-
-  wave-resampler@1.0.0:
-    resolution: {integrity: sha512-bE3rbpZXuKAV52Cd8/BeJvy82ZqEHK8pPWHrZ9JioaVVTBlmWbDC+u4p9blhFcf0Skepb4hlOAHc25XfqLC48g==}
-    engines: {node: '>=8'}
 
   which@2.0.2:
     resolution: {integrity: sha512-BLI3Tl1TW3Pvl70l3yq3Y64i+awpwXqsGBYWkkqMtnbXgrMD+yj7rhW0kuEDxzJaYXGjEW5ogapKNMEKNMjibA==}
@@ -4263,24 +4238,6 @@ snapshots:
 
   '@vue/shared@3.5.21': {}
 
-  '@webav/av-cliper@1.2.1':
-    dependencies:
-      '@webav/internal-utils': 1.2.1
-      '@webav/mp4box.js': 0.5.7
-      opfs-tools: 0.7.2
-      wave-resampler: 1.0.0
-
-  '@webav/av-recorder@1.2.1':
-    dependencies:
-      '@webav/av-cliper': 1.2.1
-      '@webav/internal-utils': 1.2.1
-
-  '@webav/internal-utils@1.2.1':
-    dependencies:
-      '@webav/mp4box.js': 0.5.7
-
-  '@webav/mp4box.js@0.5.7': {}
-
   acorn-jsx@5.3.2(acorn@8.15.0):
     dependencies:
       acorn: 8.15.0
@@ -4898,8 +4855,6 @@ snapshots:
 
   opencc-js@1.0.5: {}
 
-  opfs-tools@0.7.2: {}
-
   optionator@0.9.4:
     dependencies:
       deep-is: 0.1.4
@@ -5250,8 +5205,6 @@ snapshots:
   void-elements@3.1.0: {}
 
   vscode-uri@3.1.0: {}
-
-  wave-resampler@1.0.0: {}
 
   which@2.0.2:
     dependencies:

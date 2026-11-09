@@ -33,8 +33,7 @@ export const exportInputSchema = z.object({ edl: edlSchema.optional(), assetId: 
     subtitleProcessing: z.enum(['none', 'soft', 'hard']).default('none'), subtitleExportMode: z.enum(['Bilingual', 'Main', 'Second']).optional(),
     /** New hard-subtitle path: the client sends a versioned scene, the Host renders it with Skia. */
     subtitleTransport: z.literal('skia-band').optional(), subtitleScene: subtitleGraphicSceneSchema.optional(),
-    /** Deprecated compatibility fields for clients that still send ASS; new clients never send assContent for hard subtitles. */
-    assContent: z.string().optional(), subtitleTextContent: z.string().optional() }) });
+    subtitleTextContent: z.string().optional() }) });
 export type ExportInput = z.infer<typeof exportInputSchema>;
 export interface ExportResult { assetId: string; filename: string; mimeType: string }
 

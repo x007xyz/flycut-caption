@@ -20,7 +20,6 @@ export {
   resolveBottomOffset,
   scaleVideoMetric,
   buildCanvasFont,
-  resolveExportSubtitleMetrics,
 } from './subtitleMetrics';
 
 export {
@@ -36,7 +35,6 @@ export type { SubtitleFontState, SubtitleFontStatus } from './subtitleFonts';
 export {
   layoutSubtitleLines,
   resolveLayoutMaxWidth,
-  formatBilingualText,
 } from './subtitleLayout';
 
 export { renderSubtitleFrame } from './subtitleRenderer';
@@ -70,7 +68,7 @@ export type { SubtitleExportFormat, AssExportOptions } from './exportFormats';
 
 export { stripSubtitleDisplayPunctuation } from './cjkPunctuation';
 
-export { buildBurnAssContent } from './burnAss';
+export { buildBurnTextSubtitleContent } from './softSubtitles';
 export { mapSubtitleTimingsToCutVideo, applyMappedTimings } from './subtitleTimeMapping';
 
 export { SUBTITLE_FONTS, REFERENCE_VIDEO_HEIGHT, DEFAULT_SUBTITLE_FONT_ID } from '@/config/subtitleFonts';

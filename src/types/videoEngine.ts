@@ -5,7 +5,7 @@ import type { SubtitleChunk } from '@/types/subtitle';
 import type { SubtitleStyle, SubtitleStylePair, SubtitleDisplayMode } from '@/subtitle';
 
 // 支持的视频处理引擎类型
-export type VideoEngineType = 'host' | 'webav' | 'ffmpeg' | 'webcodecs';
+export type VideoEngineType = 'host';
 
 // 字幕处理类型
 export type SubtitleProcessingType = 'none' | 'soft' | 'hard';

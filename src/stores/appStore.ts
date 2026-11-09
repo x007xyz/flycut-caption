@@ -140,7 +140,7 @@ const initialState: AppState = {
   },
   videoProcessingProgress: null,
   videoProcessorConfig: {
-    engine: 'webav',
+    engine: 'host',
     outputFormat: 'mp4',
     quality: 'medium',
     preserveAudio: true,

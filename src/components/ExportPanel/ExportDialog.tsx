@@ -43,15 +43,9 @@ interface ExportDialogProps {
 
 interface ExportEnvironment {
   isTauri: boolean;
-  ffmpegAvailable: boolean;
-  ffmpegError?: string;
-  ffmpegSource?: 'bundled' | 'system';
-  ffmpegVersion?: string;
-  videoEncoderLabel?: string;
-  hardwareEncoding?: boolean;
-  webHardBurn: boolean;
-  tauriSoftBurn: boolean;
-  tauriHardBurn: boolean;
+  hostExportAvailable: boolean;
+  hostError?: string;
+  checking: boolean;
 }
 
 export function ExportDialog({
@@ -77,10 +71,8 @@ export function ExportDialog({
 
   const [env, setEnv] = useState<ExportEnvironment>({
     isTauri: isTauriRuntime(),
-    ffmpegAvailable: !isTauriRuntime(),
-    webHardBurn: !isTauriRuntime(),
-    tauriSoftBurn: false,
-    tauriHardBurn: false,
+    hostExportAvailable: false,
+    checking: true,
   });
 
   useEffect(() => {
@@ -95,21 +87,17 @@ export function ExportDialog({
         if (cancelled) return;
         setEnv({
           isTauri,
-          ffmpegAvailable: available,
-          ffmpegError: available ? undefined : 'Host 导出插件不可用',
-          webHardBurn: available,
-          tauriSoftBurn: available,
-          tauriHardBurn: available,
+          hostExportAvailable: available,
+          hostError: available ? undefined : 'Host 导出插件不可用',
+          checking: false,
         });
       } catch (error) {
         if (cancelled) return;
         setEnv({
-          isTauri: true,
-          ffmpegAvailable: false,
-          ffmpegError: error instanceof Error ? error.message : 'Host 导出插件检查失败',
-          webHardBurn: false,
-          tauriSoftBurn: false,
-          tauriHardBurn: false,
+          isTauri,
+          hostExportAvailable: false,
+          hostError: error instanceof Error ? error.message : 'Host 导出插件检查失败',
+          checking: false,
         });
       }
     })();
@@ -119,9 +107,7 @@ export function ExportDialog({
     };
   }, [open, exportType, connection]);
 
-  const softBurnAvailable = env.tauriSoftBurn || env.webHardBurn;
-  const hardBurnAvailable = env.isTauri ? env.tauriHardBurn : env.webHardBurn;
-  const canExportVideo = env.isTauri ? env.ffmpegAvailable : true;
+  const canExportVideo = env.hostExportAvailable;
 
   const handleSubtitleExport = async (format: 'srt' | 'json' | 'vtt' | 'ass') => {
     if (isExportingSubtitles) return;
@@ -318,33 +304,34 @@ export function ExportDialog({
             </div>
           ) : (
             <div className="space-y-4">
-              {env.isTauri && !env.ffmpegAvailable && (
+              {env.checking && (
+                <div className="flex items-center space-x-2 p-3 bg-muted rounded-lg text-sm text-muted-foreground">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>正在检查 Host 导出…</span>
+                </div>
+              )}
+
+              {!env.checking && !env.hostExportAvailable && (
                 <div className="flex items-start space-x-2 p-3 bg-destructive/10 rounded-lg text-sm">
                   <AlertCircle className="w-4 h-4 text-destructive mt-0.5 flex-shrink-0" />
                   <div>
-                    <div className="font-medium text-destructive">未检测到 FFmpeg</div>
+                    <div className="font-medium text-destructive">Host 导出不可用</div>
                     <div className="text-muted-foreground mt-1">
-                      {env.ffmpegError ?? '请运行 pnpm fetch:ffmpeg 下载内置 FFmpeg，或安装系统 ffmpeg。'}
+                      {env.hostError ?? '请连接 Host 后再导出。'}
                     </div>
                   </div>
                 </div>
               )}
 
-              {env.isTauri && env.ffmpegAvailable && (
+              {!env.checking && env.hostExportAvailable && (
                 <div className="flex items-start space-x-2 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg text-sm">
                   <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" />
                   <div>
                     <div className="font-medium text-green-900 dark:text-green-100">
-                      FFmpeg {env.ffmpegSource === 'bundled' ? '（内置）' : '（系统）'} 就绪
+                      Host 导出就绪
                     </div>
-                    <div className="text-green-700 dark:text-green-300 mt-1 text-xs space-y-0.5">
-                      {env.ffmpegVersion && <div>{env.ffmpegVersion}</div>}
-                      {env.videoEncoderLabel && (
-                        <div>
-                          视频编码：{env.videoEncoderLabel}
-                          {env.hardwareEncoding ? '（硬件加速）' : '（软件）'}
-                        </div>
-                      )}
+                    <div className="text-green-700 dark:text-green-300 mt-1 text-xs">
+                      字幕场景和编码都由 Host 处理。
                     </div>
                   </div>
                 </div>
@@ -408,17 +395,15 @@ export function ExportDialog({
                     'soft',
                     '软烧录',
                     '字幕作为单独轨道嵌入，播放器可开关',
-                    softBurnAvailable,
-                    '仅桌面版（FFmpeg）支持软字幕轨道',
+                    env.hostExportAvailable,
+                    '需要 Host 导出能力',
                   )}
                   {renderSubtitleOption(
                     'hard',
                     '硬烧录',
-                    env.isTauri
-                      ? 'FFmpeg + ASS 高质量烧录到画面'
-                      : 'WebAV 画面烧录（样式与预览一致）',
-                    hardBurnAvailable,
-                    env.isTauri ? '需要安装 FFmpeg' : undefined,
+                    'Host + Skia 字幕条带烧录到画面',
+                    env.hostExportAvailable,
+                    '需要 Host 导出能力',
                   )}
                 </div>
               </div>
@@ -426,16 +411,6 @@ export function ExportDialog({
               {videoOptions.subtitleProcessing !== 'none' && (
                 <>
                   {renderExportContentSelector()}
-                  {!env.isTauri
-                    && videoOptions.subtitleProcessing === 'hard'
-                    && subtitleExportMode === 'Bilingual' && (
-                    <div className="flex items-start space-x-2 p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg text-sm">
-                      <AlertCircle className="w-4 h-4 text-orange-600 dark:text-orange-400 mt-0.5 flex-shrink-0" />
-                      <div className="text-orange-700 dark:text-orange-300">
-                        {t('components.workstation.webavBilingualHint')}
-                      </div>
-                    </div>
-                  )}
                 </>
               )}
 
@@ -446,7 +421,7 @@ export function ExportDialog({
                   <div className="text-blue-700 dark:text-blue-300 mt-1">
                     {env.isTauri
                       ? '点击「开始导出」后会弹出系统保存对话框，视频将直接写入您选择的路径。处理进度会显示在时间轴区域。'
-                      : '点击「开始导出」后会弹出保存对话框（不支持时自动下载）。处理进度会显示在时间轴区域。'}
+                      : '点击「开始导出」后由 Host 导出，完成后在浏览器中保存结果。'}
                   </div>
                 </div>
               </div>
@@ -454,11 +429,9 @@ export function ExportDialog({
               <div className="flex items-start space-x-2 p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg text-sm">
                 <AlertCircle className="w-4 h-4 text-orange-600 dark:text-orange-400 mt-0.5 flex-shrink-0" />
                 <div>
-                  <div className="font-medium text-orange-900 dark:text-orange-100">引擎说明</div>
+                  <div className="font-medium text-orange-900 dark:text-orange-100">导出说明</div>
                   <div className="text-orange-700 dark:text-orange-300 mt-1">
-                    {env.isTauri
-                      ? '桌面端优先使用安装包内置 FFmpeg；MP4 软字幕使用 QuickTime 文本轨，WebM 使用 WebVTT。'
-                      : 'Web 端使用 WebAV 裁剪与画面烧录；软字幕轨道请使用桌面版。'}
+                    所有视频导出都由 Host 执行；桌面端使用随包 FFmpeg，Web 端连接远程 Host。MP4 软字幕使用 QuickTime 文本轨，WebM 使用 WebVTT。
                   </div>
                 </div>
               </div>

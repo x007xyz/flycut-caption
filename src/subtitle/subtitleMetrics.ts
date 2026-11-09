@@ -28,31 +28,3 @@ export function buildCanvasFont(style: SubtitleStyle, fontSizePx: number): strin
   return `${style.fontStyle} ${style.fontWeight} ${fontSizePx}px ${getStyleFontFamily(style)}`;
 }
 
-/** WebAV EmbedSubtitlesClip 使用的样式字段 */
-export function resolveExportSubtitleMetrics(
-  style: SubtitleStyle,
-  videoWidth: number,
-  videoHeight: number,
-) {
-  const fontSize = resolveVideoFontSize(style, videoHeight);
-  const bottomOffset = resolveBottomOffset(style, videoHeight);
-  const borderWidth = Math.max(0, Math.round(style.borderWidth * (videoHeight / 1080)));
-  const letterSpacing = Math.round(style.letterSpacing * (videoHeight / 1080));
-
-  const scale = videoHeight / 1080;
-
-  return {
-    fontSize,
-    bottomOffset,
-    fontFamily: getStyleFontFamily(style),
-    fontWeight: style.fontWeight,
-    fontStyle: style.fontStyle,
-    borderWidth,
-    letterSpacing: letterSpacing.toString(),
-    shadowOffsetX: Math.round(style.shadowOffsetX * scale),
-    shadowOffsetY: Math.round(style.shadowOffsetY * scale),
-    shadowBlur: Math.round(style.shadowBlur * scale),
-    videoWidth,
-    videoHeight,
-  };
-}

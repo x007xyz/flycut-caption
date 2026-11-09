@@ -145,12 +145,10 @@ export interface AssExportOptions {
   stylePair: SubtitleStylePair;
   exportMode?: SubtitleDisplayMode;
   title?: string;
-  /** 软烧录（mov_text）：Bilingual 降级为单样式合并文本，避免重叠 Dialogue 导致时长被截断 */
-  softSubtitle?: boolean;
 }
 
 export function chunksToAss(chunks: SubtitleChunk[], options: AssExportOptions): string {
-  const { playResX, playResY, stylePair, exportMode = 'Bilingual', title = 'FlyCut Caption', softSubtitle = false } = options;
+  const { playResX, playResY, stylePair, exportMode = 'Bilingual', title = 'FlyCut Caption' } = options;
   const primary = stylePair.primary;
   const secondary = stylePair.secondary;
   const primaryMarginV = Math.round(playResY * primary.bottomOffsetRatio);
@@ -178,22 +176,8 @@ export function chunksToAss(chunks: SubtitleChunk[], options: AssExportOptions):
       const text = chunk.text.replace(/\n/g, '\\N');
       events.push(`Dialogue: 0,${start},${end},Default,,0,0,0,,${text}`);
     }
-  } else if (softSubtitle) {
-    // 软烧录（mov_text）不支持重叠事件/双 layer：Bilingual 降级为单样式合并文本，
-    // 否则同时间的 Primary/Secondary 两条 Dialogue 会让 mov_text 把 Primary 截成 0 时长。
-    styleLines.push(buildAssStyleLine('Default', primary, playResY, primaryMarginV));
-    for (const chunk of dialogueChunks) {
-      if (!chunk.text?.trim()) continue;
-      const start = formatAssTime(chunk.timestamp[0]);
-      const end = formatAssTime(chunk.timestamp[1]);
-      const parts = [chunk.text.replace(/\n/g, '\\N')];
-      if (chunk.secondText?.trim()) {
-        parts.push(chunk.secondText.replace(/\n/g, '\\N'));
-      }
-      events.push(`Dialogue: 0,${start},${end},Default,,0,0,0,,${parts.join('\\N')}`);
-    }
   } else {
-    // Bilingual 硬烧录：与预览一致（主字幕在上、副字幕在下），底边距由 primary 决定
+    // Bilingual 文件导出：主字幕在上、副字幕在下，底边距由 primary 决定
     const secondaryFontSize = Math.round(playResY * secondary.fontSizeRatio);
     const primaryFontSize = Math.round(playResY * primary.fontSizeRatio);
     const gap = Math.max(2, Math.round(primaryFontSize * 0.15));

@@ -10,10 +10,6 @@ import type { SubtitleGraphicScene } from '../../shared/subtitle-graphics';
 
 const qualityCrf = { high: '18', medium: '23', low: '28' } as const;
 
-function escapeFilterPath(path: string) {
-  return path.replaceAll('\\', '/').replaceAll(':', '\\:').replaceAll("'", "\\'");
-}
-
 function probeVideo(info: string): { width?: number; height?: number; fps?: number } {
   const size = /Video:.*?,\s*(\d{2,5})x(\d{2,5})[\s,]/.exec(info);
   const fps = /(\d+(?:\.\d+)?)\s*fps/.exec(info);
@@ -109,7 +105,7 @@ export const exportPlugin = { name: 'flycut-export', inject: ['hostConfig', 'job
       renderer = await createSubtitleBandRenderer(subtitleScene, ctx.hostConfig.resourceRoot);
       args.push('-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${renderer.band.width}x${renderer.band.height}`,
         '-r', String(subtitleScene.fps), '-i', 'pipe:0');
-    } else if (input.options.subtitleProcessing === 'hard' && !input.options.assContent) {
+    } else if (input.options.subtitleProcessing === 'hard') {
       throw new Error('字幕渲染不可用：导出请求没有字幕场景');
     }
 
@@ -150,15 +146,6 @@ export const exportPlugin = { name: 'flycut-export', inject: ['hostConfig', 'job
       const band = renderer.band;
       filterParts.push('[1:v]format=rgba[sub]', `${videoLabel}[sub]overlay=x=0:y=${band.y}:format=yuv420:eof_action=pass[vsub]`);
       videoLabel = '[vsub]';
-    } else if (input.options.subtitleProcessing === 'hard' && input.options.assContent) {
-      // Compatibility for clients that predate the scene contract. New clients never take this branch.
-      const assPath = join(exportRoot, `${id}.ass`); await writeFile(assPath, input.options.assContent); tempFiles.push(assPath);
-      if (filterParts.length > 0) {
-        filterParts.push(`${videoLabel}subtitles='${escapeFilterPath(assPath)}'[vsub]`);
-        videoLabel = '[vsub]';
-      } else {
-        args.push('-vf', `subtitles='${escapeFilterPath(assPath)}'`);
-      }
     }
 
     if (filterParts.length > 0) args.push('-filter_complex', filterParts.join(';'));
