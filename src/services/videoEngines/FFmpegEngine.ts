@@ -364,7 +364,7 @@ export class FFmpegEngine implements IVideoProcessingEngine {
     args.push('-map', video);
     if (options.preserveAudio) args.push('-map', audio);
     if (this.subtitleFile === 'subtitles.vtt') {
-      args.push('-map', this.subtitleOverlay ? '1:0' : '1:0', '-c:s', options.format === 'webm' ? 'webvtt' : 'mov_text');
+      args.push('-map', '1:0', '-c:s', options.format === 'webm' ? 'webvtt' : 'mov_text');
     }
 
     // 质量 + 速度档（与桌面 FFmpeg 引擎一致）

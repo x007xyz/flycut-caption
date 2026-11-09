@@ -34,15 +34,18 @@ export async function ensureSubtitleFonts(force = false): Promise<void> {
   if (!force && loadPromise) return loadPromise;
   setState({ status: 'loading' });
   loadPromise = (async () => {
+    const loaded: FontFace[] = [];
     for (const asset of Object.values(SUBTITLE_FONT_ASSETS)) {
       if (!asset.bundled) continue;
-      for (const [weight, file] of [['400', asset.regular], ['700', asset.bold]] as const) {
-        if (!file) continue;
-        const face = new FontFace(asset.family, `url(/fonts/subtitle/${file})`, { weight, style: 'normal' });
-        await face.load();
-        document.fonts.add(face);
-      }
+      loaded.push(...await Promise.all([['400', asset.regular], ['700', asset.bold]]
+        .filter((entry): entry is [string, string] => Boolean(entry[1]))
+        .map(async ([weight, file]) => {
+          const face = new FontFace(asset.family, `url(/fonts/subtitle/${file})`, { weight, style: 'normal' });
+          await face.load();
+          return face;
+        })));
     }
+    for (const face of loaded) document.fonts.add(face);
     await document.fonts.ready;
     setState({ status: 'ready' });
   })().catch((error: unknown) => {

@@ -128,8 +128,15 @@ export function SubtitleOverlay({
   useEffect(() => {
     lastKeyRef.current = '';
     const video = videoRef?.current;
-    drawAt(video?.currentTime ?? currentTime, true);
-  }, [drawAt, currentTime, videoRef]);
+    drawAt(video?.currentTime ?? 0, true);
+  }, [drawAt, videoRef]);
+
+  // 没有 requestVideoFrameCallback 的浏览器用 timeupdate 兜底；有 rVFC 时不重复画。
+  useEffect(() => {
+    const video = videoRef?.current;
+    if (video && typeof video.requestVideoFrameCallback === 'function') return;
+    drawAt(currentTime);
+  }, [currentTime, drawAt, videoRef]);
 
   useEffect(() => {
     const video = videoRef?.current;
