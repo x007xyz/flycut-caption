@@ -118,7 +118,7 @@ approved_at:
 - `pnpm test:architecture` ✅（66 通过，含 F-0028 图形层 / Host 导出 / ASS 文件导出）
 - `pnpm build` ✅
 - `pnpm package:host` ✅（31 个 Host 依赖，含 `@napi-rs/canvas-darwin-arm64`）
-- `pnpm tauri:build` ✅（App 349 MB，DMG 128 MB）
+- `pnpm tauri:build` ✅（App 342 MB，DMG 128 MB）
 - `pnpm e2e:evidence F-0028` ✅（7 通过，截图 7，录屏 7）
 - `cargo check --manifest-path src-tauri/Cargo.toml` ✅（构建过程中通过）
 

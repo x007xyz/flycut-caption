@@ -56,7 +56,7 @@ approved_at: 2026-11-09
 
 ### 打包
 
-- `pnpm tauri:build` 产出 `FlyCut Caption.app`（349 MB）和 `FlyCut Caption_2.0.2_aarch64.dmg`（128 MB）。
+- `pnpm tauri:build` 产出 `FlyCut Caption.app`（342 MB）和 `FlyCut Caption_2.0.2_aarch64.dmg`（128 MB）。
 - App 的 `Contents/Resources/host/node_modules/@napi-rs/canvas-darwin-arm64/skia.darwin-arm64.node` 存在；`Contents/Resources/shared_assets/subtitle-fonts/` 含 OTF / TTF。
 - 在打包资源目录中直接运行打包后的 `@napi-rs/canvas`，注册 Noto OTF 并绘制「离线字幕测试」，alpha 像素 3749，证明资源路径和原生模块可加载。
 
