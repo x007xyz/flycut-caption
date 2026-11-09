@@ -1,9 +1,9 @@
 ---
 id: F-0028
 stage: 04-test-report
-status: review
-approved_by:
-approved_at:
+status: approved
+approved_by: zhangxiang.chen
+approved_at: 2026-11-09
 ---
 
 # F-0028 共用字幕图形层落地：测试与验收
@@ -144,4 +144,10 @@ approved_at:
 - 真实 Tauri 前台窗口 1080p30 多次掉帧 / 拖动 100 ms 测量（当前会话窗口不可见）。
 - Windows / WebView2 / Linux / Cloud。
 - 开发者签名与 notary（F-0057）。
+
+## 维护者确认记录（2026-11-09）
+
+- 确认人：zhangxiang.chen。
+- 维护者原话：「确认验证 F-0028」。
+- 本次确认接受本报告和当前证据；AC-2 的真实 Tauri 前台窗口性能仍按 Not run 保留，不把 WKWebView 的非验收数据当作达标。
 
