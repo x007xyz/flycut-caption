@@ -21,9 +21,10 @@ approved_at: 2026-11-09
 | 2026-11-09 | 2. 字体资源与前端加载 | 2638cba | 完整 Noto Sans SC OTF / Inter TTF 写入 `public/fonts/subtitle` 与 `src-tauri/shared_assets/subtitle-fonts`，`cmp` 一致；`FontFace` 加载 / 失败 / 重试 E2E 通过 |
 | 2026-11-09 | 3. 预览接入 | 2638cba | Playwright F-0028 预览 7 项通过：rVFC、seeked 补画、间隙透明、空字幕、加载、失败重试、中英文、明暗主题；构建通过 |
 | 2026-11-09 | 4. Host 导出 | fcff937 | `subtitle-export-f0028.test.ts` 2 项通过：真实 Host 640×360 导出有字幕像素、间隙透明、无 ASS 临时文件；缺字体报错；`pnpm package:host` 带上 `@napi-rs/canvas-darwin-arm64` |
-| 2026-11-09 | 5. WebAV 回退 | b8571c0 | Playwright 通过：`SubtitleGraphicsClip.tick` 产出条带；真实 WebAV 导出 2 秒成片并在 1 秒帧检出字幕像素 |
-| 2026-11-09 | 6. ffmpeg.wasm 回退 | b8571c0 | Playwright 通过：cue PNG、concat 清单、VP9 alpha 参数、临时文件清理；真实 wasm 编码受环境限制，见「遗留问题」 |
+| 2026-11-09 | 5. 移除 WebAV 回退 | 32e7523 | 删除 WebAVEngine / SubtitleGraphicsClip / `@webav/*`，前端只注册 Host；F-0028 Playwright 剩余 7 项通过 |
+| 2026-11-09 | 6. 移除 ffmpeg.wasm 回退 | 32e7523 | 删除 FFmpegEngine / subtitleOverlayVideo / 注册；`pnpm tsc -b --noEmit`、`pnpm check:host` 通过 |
 | 2026-11-09 | 7. 打包与真实验收 | 本记录提交 | `pnpm tauri:build` 成功；安装包内 `.node` 与 OTF 字体存在；打包后的 `@napi-rs/canvas` 注册字体并画出 3749 个 alpha 像素 |
+| 2026-11-09 | 8. 移除 ASS 硬烧兼容 | 32e7523 | 删除 `assContent` / Host 分支 / `buildBurnAssContent`；新增 `subtitle-file-export.test.ts`，ASS 文件导出 2 项通过 |
 
 ## 性能与真实使用记录
 
@@ -31,12 +32,12 @@ approved_at: 2026-11-09
 
 同一份 1920×1080、30 fps、口播式字幕（每 3 秒一条，静态主字幕），编码 libx264 veryfast crf 23 + aac，`overlay format=yuv420`，只渲染字幕条带：
 
-| 场景 | 时长 | 字幕条数 | Skia 总耗时 | 实时倍数 | ASS 基线 | 比值 | Node 峰值 RSS |
+| 场景 | 时长 | 字幕条数 | Skia 总耗时 | 实时倍数 | ASS 基线（历史） | 比值 | Node 峰值 RSS |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | 20 分钟 | 1200 s | 399 | 52.7 s | 22.8× | 47.5 s | 1.11× | 493 MB（含基准进程上传缓冲） |
 | 60 分钟 | 3600 s | 1199 | 163.2 s | 22.1× | 139.1 s | 1.17× | 543 MB（复用已有资产，独立进程） |
 
-- 静态样式门槛为不慢于 ASS 的 1.2 倍，20 / 60 分钟均通过。
+- 静态样式门槛为不慢于 ASS 的 1.2 倍，20 / 60 分钟均通过。ASS 基线是在移除旧 Host 兼容分支前测得的；现在产品不再有 ASS 硬烧路径，这个数字只作历史对照。
 - 60 分钟第一次基准在同一进程里先跑了 20 分钟并上传 56 MB 素材，Node RSS 达到 754 MB；上表 543 MB 是复用已上传资产的干净进程结果。峰值高于 F-0016 的 329 MB，主要来自 60 分钟场景排版缓存和每次 cue 变化的 Skia `getImageData` 临时缓冲；耗时已达标，内存优化留作后续。
 - 取消和失败路径：Host 导出取消会终止 FFmpeg 并删除输出；缺字体用例返回「字幕渲染不可用」且不留半成品。
 
@@ -65,19 +66,20 @@ approved_at: 2026-11-09
 - 预览画布按 DPR（上限 2）绘制；同一 cue 只重画一次。真实 Tauri 窗口的掉帧数据不足，暂不引入 Worker。
 - 完整字体替换原来的 `@fontsource` 分片 woff2；同时删除未再引用的 `@fontsource/noto-sans-sc`、`@fontsource/inter` 依赖和旧 woff2 / Noto TTF，避免同一字体有两套来源。
 - Arial / Georgia 保留为系统字体选项；Host 用 `GlobalFonts.has` 检查，缺失时明确报错，不静默替代。
-- ffmpeg.wasm 的透明字幕层用「每条字幕一张条带 PNG + concat + VP9 alpha」，不为每条字幕增加一个 overlay 输入；长素材的 wasm 编码速度不作为本需求门槛。
-- 旧客户端的 `assContent` 继续可读，但新场景路径失败时不自动回退 ASS。
+- 按维护者 2026-11-09 的决定，WebAV / ffmpeg.wasm 本地回退整体移除，Host 是唯一导出路径；没有 Host 时导出入口显示 Host 不可用。
+- ASS 只用于字幕文件导出；`assContent`、Host 的 ASS 硬烧分支和 `buildBurnAssContent` 已删除。
 
 ## 与设计的偏差
 
 - Host 单片段 + 硬字幕回退路径改用 `trim/atrim` + `fps` 滤镜，而不是 `-ss` 输出选项。原因是叠加字幕层需要输出时间轴从 0 开始，`-ss` 与 `overlay` 组合会让字幕相位错位。
 - `server/subtitle-render.ts` 在 Host 进程里为 Pretext 安装了一个基于 `@napi-rs/canvas` 的 `OffscreenCanvas` 测量垫片；Pretext 只接受 OffscreenCanvas 或 DOM canvas，Node 里没有前者。该垫片只在 Host 进程生效。
 - 场景通过 RPC 发送的是投影后的 cue 数据，不含原始 transcript；60 分钟场景约 1199 条，消息大小和导出耗时已记录。
+- 本地回退删除后，`VideoEngineType` 只剩 `host`；导出对话框直接显示 Host 检查结果，不再按 Tauri / Web 分支显示 WebAV 或 FFmpeg 文案。
 
 ## 遗留问题
 
 - **真实 Tauri 窗口性能未验收**：当前会话没有活动桌面，WKWebView 窗口不可见；掉帧率在 0.33%–2.68% 间波动，拖动 p95 89–102 ms。需要在维护者前台 Tauri 窗口重测 1080p30 多次，并把结果补进 04。
-- **真实 ffmpeg.wasm 编码未验收**：开发服务没有设置 COOP/COEP，`SharedArrayBuffer` 不可用，FFmpegEngine 本身会判定不可用。已用浏览器测试覆盖 PNG / concat / VP9 alpha 参数和清理；需要在启用跨域隔离的部署里真实导出一段短片并与预览对比。
+- **本地回退已移除**：ffmpeg.wasm 的真实编码不再需要验收；WebAV 也不再是交付路径。
 - **Windows / Linux / Cloud**：按 F-0029 处理，未在本需求宣称三端一致。
 - **签名 / 公证**：安装包可构建，但未做开发者签名和 notary；属于 F-0057。
 

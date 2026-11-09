@@ -10,7 +10,7 @@
 - **事件跨进程需显式暴露**：Host 插件用 `ctx.emit` 发 Cordis 事件，需要推到前端的在 `RemoteEvents` 中声明并 `ctx.rpc.expose(name)`；前端用 `connection.on(name, ...)` 订阅。
 - **扩展走注册表**：模型 Provider（`ctx.providers.register`，规范见 [providers.md](providers.md)）、编辑分析（`ctx.editorPlugins.register`，自动成为 Workflow 步骤）、Agent 工具（`ctx.agentTools.register`）、工具策略（`agent/before-tool` 事件）。Provider ID 是开放字符串，调用方只传 `{ providerId, modelId }`。
 - 前端插件组合在 `src/runtime/client.ts`，React 通过 PluginSlot 渲染注册组件（`tools`、`options` 可多贡献）。ASR/AI 服务是 `ctx.asr` / `ctx.ai`，组件通过 `useClientRuntime()` 获取，不要再写模块级单例或全局连接。共享协议在 `shared/protocol.ts`，前后端共用的纯逻辑放 `shared/`。
-- 视频导出通过后端 `server/plugins/export.ts` 的 Cordis 插件执行；前端只负责导出参数、任务进度和保存结果，Host 返回结果资产。Web 端 WebAV/FFmpeg 保留为明确的本地回退引擎；桌面只用 Host 导出，并通过 `save_host_asset` 复制到用户选定路径。
+- 视频导出通过后端 `server/plugins/export.ts` 的 Cordis 插件执行；前端只负责导出参数、任务进度和保存结果，Host 返回结果资产。本地 WebAV / ffmpeg.wasm 回退已移除，桌面和 Web 都只通过 Host 导出；桌面通过 `save_host_asset` 复制到用户选定路径。
 - Host 插件组合按 Profile 分层解析（`server/profile.ts`）：新内置插件要在 `BUILTINS` 登记 `provides`，否则依赖检查会把注入它的插件判为不满足。外部插件通过 `profile.patch.yml`（或 `.json`）的 `plugins` 加载。`js-yaml` 是 Host 包（`server/package.json`）的依赖，根包只放在 devDependencies。
 - **Host 可能部署在远程**：`server` Profile 下 Gateway 不注册 `host.shutdown`，`endpoints` 不接受回环和内网服务地址。新插件如果会读取客户端指定的 Host 本地路径或执行文件，要提供同样的配置开关，在 `server/profile.ts` 的 `PROFILE_CONFIG.server` 中关闭，并用 `ctx.rpc.capability` 告知前端。部署参数见 [architecture-current.md](../architecture-current.md) 的「部署形态」。
 - **项目数据**（F-0002、F-0003）：`server/plugins/projects.ts` 是 `<home>/projects` 唯一的读写入口，契约在 `shared/projects.ts`，格式与迁移见 ADR-0001、ADR-0003。格式 2 的自动保存用 `projects.saveVideoEdits`（按视频比较修订号）和 `projects.saveProjectStyle`（按项目样式比较）；旧的 `projects.saveEdits` 只为兼容保留。回收站里的项目对所有读写都不可见，写入接口返回 `trashed` / `deleted` 而不是写进去；彻底删除只删项目目录，不跟随链接、不碰 linked 媒体的原文件。回收站保留期限和到期检查间隔是插件配置 `trashRetentionHours`、`purgeIntervalMs`（验收时用 Profile 补丁调小）。
@@ -40,4 +40,4 @@ pnpm tsc -b --noEmit
 
 ## F-0028 实施
 
-硬字幕的新契约是 `options.subtitleScene`（`version: 1`）+ `subtitleTransport: 'skia-band'`：客户端发投影后的场景、样式和字体 id，Host 不再解析字幕编辑状态。Host 用 `server/subtitle-render.ts` 动态加载 `@napi-rs/canvas`，注册 `shared_assets/subtitle-fonts` 的完整字体，按场景算字幕条带；`server/plugins/export.ts` 以 `-f rawvideo -pix_fmt rgba -s <band> -r <fps> -i pipe:0` 写帧，遵守背压，filter 必须 `overlay=...:format=yuv420`。场景尺寸与探测到的视频不一致、字体缺失或原生模块加载失败都直接报错；`assContent` 只保留给旧客户端，新路径不自动回退。
+硬字幕的唯一契约是 `options.subtitleScene`（`version: 1`）+ `subtitleTransport: 'skia-band'`：客户端发投影后的场景、样式和字体 id，Host 不再解析字幕编辑状态。Host 用 `server/subtitle-render.ts` 动态加载 `@napi-rs/canvas`，注册 `shared_assets/subtitle-fonts` 的完整字体，按场景算字幕条带；`server/plugins/export.ts` 以 `-f rawvideo -pix_fmt rgba -s <band> -r <fps> -i pipe:0` 写帧，遵守背压，filter 必须 `overlay=...:format=yuv420`。场景尺寸与探测到的视频不一致、字体缺失或原生模块加载失败都直接报错；ASS 硬烧兼容字段已移除。

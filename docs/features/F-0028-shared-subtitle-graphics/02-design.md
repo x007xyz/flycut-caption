@@ -88,7 +88,7 @@ ffmpeg.wasm：每个字幕条渲染一张透明条带 PNG（间隙用透明图�
 | src/subtitle/subtitleFonts.ts | `ensureSubtitleFonts()`、字体状态与订阅、重试；失败带原因，不降级到替代字体 |
 | export.start | `options.subtitleScene?: SubtitleGraphicScene`、`subtitleTransport?: 'skia-band'`；旧 `assContent` / `subtitleTextContent` 语义保留；场景 schema 校验尺寸、fps、cue 时间和样式范围 |
 | Host 渲染插件 | `createSubtitleBandRenderer(scene, resourceRoot)` 负责加载原生模块、注册字体、排版和条带；`renderFrame(t)` 返回 RGBA 缓冲区；导出插件只负责管道和进程生命周期 |
-| WebAV / ffmpeg.wasm | 两者都从同一个 `buildExportSubtitleScene` 取场景，不各自再读 `SubtitleStylePair` 推算字幕 |
+| 导出引擎 | 只注册 Host；本地 WebAV / ffmpeg.wasm 回退已按维护者 2026-11-09 决定移除 |
 
 场景 v1 结构（节选）：
 
@@ -111,7 +111,7 @@ interface SubtitleGraphicScene {
 | Host 用 Skia 条带 + rawvideo 管道 | 继续 ASS 硬烧 | ADR-0006 已拍板；ASS 的字号、底边距和缩放语义与 Canvas 不同，新增特效无法两端一致 |
 | 预览按字幕条缓存，只在 cue 变化时重画 | 每帧重画整层 | 静态样式下每帧重画是 WKWebView 掉帧的主要原因；缓存后预览成本接近基线 |
 | 场景数据由客户端构建、Host 只渲染 | Host 重新解析字幕和样式 | 两端使用同一投影和标点规则，Host 不需要理解编辑器状态；场景 schema 可校验 |
-| ffmpeg.wasm 用 cue PNG concat + VP9 alpha | 每个 cue 一个 overlay 输入 | 输入数量随字幕条增长，长素材不可用；concat 只增加编码时间 |
+| 移除本地 WebAV / ffmpeg.wasm 回退 | 保留浏览器本地合成 | 维护者 2026-11-09 决定 Web 端不做本地回退，统一连接 Host；少一套引擎和一套字幕合成路径 |
 | 原生模块失败显式报错 | 自动改用 ASS | AC-8 要求不静默降级；两套渲染会重新引入不一致 |
 
 ## 架构决策
@@ -140,9 +140,10 @@ interface SubtitleGraphicScene {
 - [x] 2. **字体资源与前端加载**：完整字体下载到页面和 Host 资源目录，`FontFace` 加载、状态、失败原因和重试，`fetch:subtitle-fonts` 与打包资源对齐（AC-2、AC-5、AC-8）。
 - [x] 3. **预览接入**：`SubtitleOverlay` 用 `requestVideoFrameCallback` + `seeked`、`frameKey` 缓存、DPR、旧任务隔离，空字幕 / 加载 / 失败 / 重试状态和明暗主题 E2E（AC-2、AC-5、AC-6、AC-8、AC-9）。
 - [x] 4. **Host 导出**：协议场景字段、Skia 条带渲染、rawvideo 背压、`overlay format=yuv420`、尺寸 / 帧率校验、取消和错误；20 / 60 分钟导出与 ASS 基线比较（AC-3、AC-7、AC-8）。
-- [x] 5. **WebAV 回退**：`SubtitleGraphicsClip` 接入 `OffscreenSprite`，主副字幕和画幅使用同一场景，真实 WebAV 导出对比帧（AC-4）。
-- [x] 6. **ffmpeg.wasm 回退**：cue PNG + concat + VP9 alpha 字幕层，真实 wasm 导出对比帧；不支持时给出错误而不是 libass（AC-4、AC-8）。
+- [x] 5. **移除 WebAV 回退**：删除 WebAVEngine、SubtitleGraphicsClip 和 `@webav/*` 依赖；Host 是唯一导出引擎（AC-4）。
+- [x] 6. **移除 ffmpeg.wasm 回退**：删除 FFmpegEngine、subtitleOverlayVideo 和注册；不再维护 wasm 字幕合成（AC-4、AC-8）。
 - [x] 7. **打包与真实验收**：macOS 安装包中的原生模块和字体加载、离线完整导出、真实 Tauri 窗口 1080p30 掉帧 / 拖动 100ms 测量，截图与录屏进入测试报告；更新子系统和运维文档（AC-2、AC-3、AC-4、AC-9）。
+- [x] 8. **移除 ASS 硬烧兼容**：删除 `assContent`、Host 的 ASS 硬烧分支和 `buildBurnAssContent`；保留 `chunksToAss` 仅用于 ASS 字幕文件导出（AC-4、AC-8）。
 
 ## 验证计划
 
@@ -162,10 +163,19 @@ interface SubtitleGraphicScene {
 | AC-1 | shared 图形层、样式适配、三画幅 / 主副字幕、1080p 一致性测试，清单 1 |
 | AC-2 | 完整字体、预览 rVFC + seeked、frameKey 缓存、真实 Tauri 测量，清单 1–3、7 |
 | AC-3 | Host Skia 条带、rawvideo 管道、`format=yuv420`、性能对照，清单 4 |
-| AC-4 | WebAV 与 ffmpeg.wasm 共用场景、真实导出对比、macOS 离线包，清单 5–7 |
+| AC-4 | Host 唯一导出、ASS 文件导出保留、macOS 离线包，清单 5–7 |
 | AC-5 | 入口不变、空字幕不绘制、字体载入中提示，清单 2–3 |
 | AC-6 | 字体就绪后首帧、导出进度 / 取消、旧任务隔离，清单 3–4 |
 | AC-7 | 样式字段兼容、场景版本与字体 id、导出校验，清单 1、4 |
 | AC-8 | 字体 / 原生模块失败错误与重试、不回退 ASS、无半成品，清单 2–4、6 |
-| AC-9 | 中英文 / 明暗主题 E2E、真实 Mac 安装包与浏览器回退，清单 3、5–7 |
+| AC-9 | 中英文 / 明暗主题 E2E、真实 Mac 安装包，清单 3、7 |
+
+## 2026-11-09 维护者调整：移除本地回退
+
+维护者本轮明确「先不用考虑本地回退的问题，WebAV 也删除掉」。本设计前面关于 WebAV / ffmpeg.wasm 的接口、备选方案和自行决定事项由本节覆盖：
+
+- 删除 WebAVEngine、FFmpegEngine、SubtitleGraphicsClip、subtitleOverlayVideo、`@webav/av-cliper` / `@webav/av-recorder`，前端只注册 Host 引擎。
+- Web 端没有 Host 时导出入口显示「Host 导出不可用」，不再在浏览器内合成视频。
+- 删除 `assContent`、Host 的 ASS 硬烧分支和 `buildBurnAssContent`；ASS 只用于字幕文件导出，`chunksToAss` 与导出对话框的 ASS 入口保留。
+- AC-4 的验收改为「Host 导出 + ASS 文件导出 + macOS 包」，不再要求 WebAV / ffmpeg.wasm 成片对比；01-spec 的原始 AC 作为历史保留。
 

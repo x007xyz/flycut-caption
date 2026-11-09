@@ -8,7 +8,7 @@
 
 - **Tauri 只做桌面外壳。** 业务（ASR、模型管理、导出）都在 Host 插件中，不新增执行业务的 Tauri command。来源：`docs/architecture-current.md`、`docs/subsystems/funasr-tauri.md`。
 - **使用 vendored 的真实 Cordis 源码。** 不用自行实现的兼容类替换 `core/cordis`、`core/cosmokit`。来源：`core/UPSTREAM.md`。
-- **桌面导出只走 Host。** Web 端的 WebAV/FFmpeg 只是明确的本地回退引擎，桌面端不回退到它们。来源：`docs/subsystems/cordis-host.md`。
+- **桌面和 Web 导出都只走 Host。** 本地 WebAV / ffmpeg.wasm 回退已移除；桌面端连本机 Host，Web 端连远程 Host。没有 Host 时不提供本地导出。来源：维护者 2026-11-09 决定移除本地回退。
 - **RPC 不接收任意本地路径。** 桌面媒体通过 `/assets` 上传给 Host。来源：`docs/subsystems/funasr-tauri.md`。
 - **FFmpeg 随安装包内置。** 优先使用 `src-tauri/binaries` 中的副本，不依赖用户系统里装的 FFmpeg。来源：`scripts/fetch-ffmpeg.sh`。
 

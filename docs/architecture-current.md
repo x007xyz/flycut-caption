@@ -193,11 +193,11 @@ cargo check --manifest-path src-tauri/Cargo.toml
 
 ## 当前保留的编辑能力
 
-字幕交互、撤销重做、播放与导出参数选择仍使用前端编辑器实现。前端界面已纳入 Cordis，ASR、模型管理、文本模型请求、编排和 FFmpeg 导出已转交独立 Host。浏览器端的 WebAV/FFmpeg 引擎只在 Web 端作为显式回退；桌面只使用 Host 导出。
+字幕交互、撤销重做、播放与导出参数选择仍使用前端编辑器实现。前端界面已纳入 Cordis，ASR、模型管理、文本模型请求、编排和 FFmpeg 导出已转交独立 Host。本地 WebAV / ffmpeg.wasm 回退已移除；桌面和 Web 都只通过 Host 导出。
 
 业务状态：`app`、`history` 两个 store 由前端 `stores` 插件按 Context 创建（`ctx.stores`），组件仍用 `useAppStore(selector)` 等 hook 读取，回调中用 `useRuntimeStoreApi(key).getState()`。同一页面的多个 FlyCut 实例互不共享时间轴和历史。主题与消息中心属于外层界面，仍是全局 store。
 
-视频导出引擎由 `ctx.videoEngines` 注册表提供：Host 引擎优先级最高；Web 端另注册 WebAV/FFmpeg 回退，桌面端只注册 Host。
+视频导出引擎由 `ctx.videoEngines` 注册表提供，目前只注册 Host 引擎；Web 端连接远程 Host，桌面端连接本机 Host。
 
 主组件拆分：`FlyCutCaption.tsx` 只负责布局与组合；时间轴 `components/Timeline/TimelineWaveform.tsx`、顶部栏 `components/Workstation/WorkstationHeader.tsx`、媒体加载 `hooks/useMediaLoader.ts`、视频导出 `hooks/useVideoExport.ts`、波形提取 `utils/waveform.ts`。
 
