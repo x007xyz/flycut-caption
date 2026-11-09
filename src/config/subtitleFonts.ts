@@ -3,7 +3,7 @@
 export interface SubtitleFontDefinition {
   id: string;
   label: string;
-  /** CSS font-family，用于 Canvas / WebAV */
+  /** CSS font-family，用于 Canvas */
   family: string;
   recommended?: boolean;
   languages: string[];
