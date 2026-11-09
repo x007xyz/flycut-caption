@@ -24,6 +24,8 @@ export interface VideoProcessingOptions {
   engine?: VideoEngineType; // 指定使用的引擎
   videoWidth?: number;
   videoHeight?: number;
+  /** 源视频帧率；Host 会以探测值为准，这里只作缺省 */
+  fps?: number;
   /** Tauri：用户指定的输出绝对路径，FFmpeg 直接写入 */
   outputPath?: string;
   /** 字幕烧录/嵌入用的时间轴（无裁剪时可与 segments 分离） */

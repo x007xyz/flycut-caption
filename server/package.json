@@ -12,6 +12,7 @@
     "@langchain/core": "^1.0.0",
     "@langchain/langgraph": "^1.0.0",
     "@langchain/openai": "^1.0.0",
+    "@napi-rs/canvas": "^1.1.0",
     "js-yaml": "^4.1.0",
     "ws": "^8.18.0",
     "zod": "^4.0.0"

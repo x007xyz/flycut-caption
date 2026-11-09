@@ -1,7 +1,8 @@
 import type { IVideoProcessingEngine, VideoEngineType, EngineCapabilities, VideoProcessingOptions } from '@/types/videoEngine';
 import type { VideoFile, VideoSegment, VideoProcessingProgress } from '@/types/video';
 import type { SubtitleChunk } from '@/types/subtitle';
-import { buildBurnAssContent, buildBurnTextSubtitleContent } from '@/subtitle/burnAss';
+import { buildBurnTextSubtitleContent } from '@/subtitle/burnAss';
+import { buildExportSubtitleScene } from '@/subtitle/graphicsScene';
 import type { RemoteConnection } from '@/runtime/connection';
 import { isTauriRuntime } from '@/utils/runtime';
 import { loadMediaBlob } from '@/utils/mediaSource';
@@ -37,19 +38,24 @@ export class HostExportEngine implements IVideoProcessingEngine {
       id: segment.id ?? `${segment.start}-${segment.end}`, text: segment.text ?? '', secondText: segment.secondText,
       timestamp: [segment.start, segment.end] as [number, number], deleted: false,
     }));
-    let assContent: string | undefined;
     let subtitleTextContent: string | undefined;
-    if (options.subtitleProcessing !== 'none' && options.subtitleStylePair && chunks.length) {
-      assContent = buildBurnAssContent({ chunks, keptSegments: segments, stylePair: options.subtitleStylePair,
-        exportMode: options.subtitleExportMode ?? 'Bilingual', playResX: options.videoWidth ?? 1920, playResY: options.videoHeight ?? 1080,
-        softSubtitle: options.subtitleProcessing === 'soft' });
-      if (options.subtitleProcessing === 'soft') subtitleTextContent = buildBurnTextSubtitleContent({ chunks, keptSegments: segments, exportMode: options.subtitleExportMode ?? 'Bilingual' });
+    let subtitleScene: ReturnType<typeof buildExportSubtitleScene> | undefined;
+    if (options.subtitleProcessing === 'hard' && chunks.length) {
+      if (!options.subtitleStylePair) throw new Error('字幕样式缺失，无法渲染硬字幕');
+      const duration = segments.filter(segment => segment.keep).reduce((total, segment) => total + segment.end - segment.start, 0);
+      subtitleScene = buildExportSubtitleScene({ chunks, keptSegments: segments, stylePair: options.subtitleStylePair,
+        displayMode: options.subtitleExportMode ?? 'Bilingual', videoWidth: options.videoWidth ?? 1920,
+        videoHeight: options.videoHeight ?? 1080, fps: options.fps ?? 30, duration });
+    }
+    if (options.subtitleProcessing === 'soft' && chunks.length) {
+      subtitleTextContent = buildBurnTextSubtitleContent({ chunks, keptSegments: segments, exportMode: options.subtitleExportMode ?? 'Bilingual' });
     }
     const format = options.format ?? options.outputFormat ?? 'mp4';
     if (format !== 'mp4' && format !== 'webm') throw new Error(`Host 导出不支持 ${format} 格式，请选择 MP4 或 WebM`);
     const job = await this.connection.call('export.start', { assetId: this.assetId, edl: options.edl, segments, options: {
       format, quality: options.quality, preserveAudio: options.preserveAudio,
-      subtitleProcessing: options.subtitleProcessing ?? 'none', subtitleExportMode: options.subtitleExportMode, assContent, subtitleTextContent,
+      subtitleProcessing: options.subtitleProcessing ?? 'none', subtitleExportMode: options.subtitleExportMode,
+      subtitleTransport: subtitleScene ? 'skia-band' : undefined, subtitleScene, subtitleTextContent,
     } });
     const result = await this.connection.waitJob<{ assetId: string; mimeType: string }>(job.id, current => this.report('encoding', current.progress?.progress ?? 10, current.progress?.data ?? 'Host 正在导出'));
     if (options.outputPath && isTauriRuntime()) {

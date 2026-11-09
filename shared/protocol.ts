@@ -3,6 +3,7 @@ import { edlSchema } from './editing/edl';
 import type { SubtitleTranscript, ASRProgress } from '../src/types/subtitle';
 import type { EditorPluginManifest } from '../src/types/plugin';
 import { asrRequestSchema, modelRefSchema, type ProviderModels, type ProviderSummary } from './providers';
+import { subtitleGraphicSceneSchema } from './subtitle-graphics/scene';
 import type { ProjectFile, ProjectListItem, ProjectOpenResult, SaveResult, projectCreateSchema, projectOpenSchema, saveTranscriptSchema,
   saveEditsSchema, duplicateSchema, relinkSchema, thumbnailSchema,
   createEmptySchema, projectRefSchema, renameSchema, emptyTrashSchema, addVideoSchema, removeVideoSchema, saveVideoEditsSchema, saveProjectStyleSchema, createFromSnapshotSchema,
@@ -30,6 +31,9 @@ export const exportSegmentSchema = z.object({ start: z.number().finite().min(0),
 export const exportInputSchema = z.object({ edl: edlSchema.optional(), assetId: z.string().uuid(), segments: z.array(exportSegmentSchema).min(1),
   options: z.object({ format: z.enum(['mp4', 'webm']), quality: z.enum(['high', 'medium', 'low']), preserveAudio: z.boolean(),
     subtitleProcessing: z.enum(['none', 'soft', 'hard']).default('none'), subtitleExportMode: z.enum(['Bilingual', 'Main', 'Second']).optional(),
+    /** New hard-subtitle path: the client sends a versioned scene, the Host renders it with Skia. */
+    subtitleTransport: z.literal('skia-band').optional(), subtitleScene: subtitleGraphicSceneSchema.optional(),
+    /** Deprecated compatibility fields for clients that still send ASS; new clients never send assContent for hard subtitles. */
     assContent: z.string().optional(), subtitleTextContent: z.string().optional() }) });
 export type ExportInput = z.infer<typeof exportInputSchema>;
 export interface ExportResult { assetId: string; filename: string; mimeType: string }

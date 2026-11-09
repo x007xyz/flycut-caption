@@ -145,6 +145,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.33.0",
+    "@napi-rs/canvas": "^1.1.0",
     "@playwright/test": "^1.64.1",
     "@tailwindcss/vite": "^4.1.13",
     "@tauri-apps/cli": "^2.11.3",
