@@ -1,3 +1,4 @@
+import { CutHistoryPanel } from './CutHistoryPanel';
 // 字幕编辑器面板 - 在同一位置切换显示「编辑模式」与「原语言模式」
 // 编辑模式：现有的双语/主/副字幕编辑（SubtitleList）
 // 原语言模式：字词级标注/删除，与播放器/时间轴无交互，确认后才生效（OriginalEditor）
@@ -10,7 +11,7 @@ import { useState, type RefObject } from 'react';
 import type { EnhancedVideoPlayerRef } from '@/components/VideoPlayer/EnhancedVideoPlayer';
 import type { ASRProgress } from '@/types/subtitle';
 import { Scissors, Languages, AlertCircle } from 'lucide-react';
-import { useWordChunks, useHasWordTimestamps } from '@/stores/historyStore';
+import { useWordChunks, useHasWordTimestamps, useHistoryStore } from '@/stores/historyStore';
 import { canDeleteByWordAtRuntime } from '@/utils/wordLevelEdit';
 
 export type SubtitleEditorView = 'processed' | 'original';
@@ -31,6 +32,7 @@ export function SubtitleEditorPanel({
   const { t } = useTranslation();
   const [view, setView] = useState<SubtitleEditorView>('processed');
   const wordChunks = useWordChunks();
+  const updating = useHistoryStore(s => s.updatingCuts);
   const hasWordTimestamps = useHasWordTimestamps();
   const originalModeAvailable = canDeleteByWordAtRuntime({ hasWordTimestamps, wordChunks });
 
@@ -70,7 +72,8 @@ export function SubtitleEditorPanel({
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden">
+      <CutHistoryPanel />
+      <div className="flex-1 overflow-hidden" inert={updating}>
         {view === 'processed' ? (
           <SubtitleList
             videoPlayerRef={videoPlayerRef}

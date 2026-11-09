@@ -12,6 +12,7 @@ export type SubtitleProcessingType = 'none' | 'soft' | 'hard';
 
 // 视频处理选项
 export interface VideoProcessingOptions {
+  edl?: import('../../shared/editing/edl').Edl;
   format?: 'mp4' | 'webm' | 'avi';
   outputFormat?: 'mp4' | 'webm' | 'avi';
   quality: 'high' | 'medium' | 'low';

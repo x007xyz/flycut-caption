@@ -1,4 +1,6 @@
 // FFmpeg.wasm 视频处理引擎实现
+import { exportSegments, ffmpegVideoFilter, outputDuration } from '../../../shared/editing/edl';
+import { buildBurnAssContent, buildBurnTextSubtitleContent } from '@/subtitle/burnAss';
 
 import type { 
   IVideoProcessingEngine, 
@@ -41,6 +43,9 @@ export class FFmpegEngine implements IVideoProcessingEngine {
   private ffmpeg: FFmpegWasmInstance | null = null;
   private onProgress?: (progress: VideoProcessingProgress) => void;
   private isLoaded = false;
+  private inputFileName = 'input.mp4';
+  private hasAudio = false;
+  private subtitleFile: 'subtitles.ass' | 'subtitles.vtt' | null = null;
 
   async checkCapabilities(): Promise<EngineCapabilities> {
     try {
@@ -130,6 +135,7 @@ export class FFmpegEngine implements IVideoProcessingEngine {
       });
 
       this.ffmpeg.on('log', ({ message }: { message: string }) => {
+        if (/Stream.*Audio:/.test(message)) this.hasAudio = true;
         console.log('FFmpeg:', message);
       });
 
@@ -142,8 +148,10 @@ export class FFmpegEngine implements IVideoProcessingEngine {
       // 将视频文件写入 FFmpeg 文件系统
       const videoData = await fetch(videoFile.url).then(r => r.arrayBuffer());
       const videoFileName = `input.${this.getFileExtension(videoFile.name)}`;
+      this.inputFileName = videoFileName; this.hasAudio = false;
       await this.ffmpeg.writeFile(videoFileName, new Uint8Array(videoData));
 
+      await this.ffmpeg.exec(['-i', videoFileName, '-t', '0', '-f', 'null', '-']);
       this.isLoaded = true;
       this.reportProgress('analyzing', 100, 'FFmpeg 引擎初始化完成');
 
@@ -171,7 +179,21 @@ export class FFmpegEngine implements IVideoProcessingEngine {
         throw new Error('没有要保留的视频片段');
       }
 
-      const inputFileName = 'input.mp4'; // 假设输入是 MP4
+      const inputFileName = this.inputFileName;
+      if (options.edl && JSON.stringify(keptSegments.map(s => [s.start, s.end])) !== JSON.stringify(exportSegments(options.edl).map(s => [s.start, s.end])))
+        throw new Error('The supplied segments disagree with the EDL');
+      this.subtitleFile = null;
+      if (options.subtitleProcessing && options.subtitleProcessing !== 'none' && options.subtitleChunks?.length) {
+        const mode = options.subtitleExportMode ?? 'Bilingual';
+        const content = options.subtitleProcessing === 'soft'
+          ? buildBurnTextSubtitleContent({ chunks: options.subtitleChunks, keptSegments, exportMode: mode })
+          : options.subtitleStylePair ? buildBurnAssContent({ chunks: options.subtitleChunks, keptSegments, exportMode: mode,
+            stylePair: options.subtitleStylePair, playResX: options.videoWidth ?? 1920, playResY: options.videoHeight ?? 1080 }) : undefined;
+        if (content === undefined) throw new Error('Subtitle style is required');
+        this.subtitleFile = options.subtitleProcessing === 'soft' ? 'subtitles.vtt' : 'subtitles.ass';
+        await this.ffmpeg.writeFile(this.subtitleFile, new TextEncoder().encode(content));
+      }
+      options = { ...options, preserveAudio: options.preserveAudio && this.hasAudio };
       const outputFormat = options.format || 'mp4';
       const outputFileName = `output.${outputFormat}`;
 
@@ -268,7 +290,20 @@ export class FFmpegEngine implements IVideoProcessingEngine {
   ): string[] {
     const args = ['-i', inputFile];
 
-    if (segments.length === 1) {
+    if (options.edl) {
+      let filter = ffmpegVideoFilter(options.edl);
+      if (options.preserveAudio) {
+        filter += ';' + segments.map((s, i) => `[0:a:0]atrim=start=${s.start}:end=${s.end},asetpts=PTS-STARTPTS[a${i}]`).join(';');
+        filter += ';' + segments.map((_, i) => `[a${i}]`).join('') + `concat=n=${segments.length}:v=0:a=1[aout]`;
+      }
+      let video = '[vout]';
+      if (this.subtitleFile === 'subtitles.ass') { filter += ';[vout]subtitles=subtitles.ass[vsub]'; video = '[vsub]'; }
+      if (this.subtitleFile === 'subtitles.vtt') args.push('-i', this.subtitleFile);
+      args.push('-filter_complex', filter, '-map', video);
+      if (options.preserveAudio) args.push('-map', '[aout]');
+      if (this.subtitleFile === 'subtitles.vtt') args.push('-map', '1:0', '-c:s', options.format === 'webm' ? 'webvtt' : 'mov_text');
+      args.push('-t', String(outputDuration(options.edl)), '-fps_mode', 'cfr');
+    } else if (segments.length === 1) {
       // 单个片段，直接裁剪
       const segment = segments[0];
       args.push('-ss', segment.start.toString());

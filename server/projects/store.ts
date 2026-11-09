@@ -1,3 +1,4 @@
+import { migrateLegacy, type Cue } from '../../shared/editing/edl';
 // File layout of one Host's projects (ADR-0001). The `projects` plugin is the only caller.
 //
 //   <home>/projects/<projectId>/
@@ -188,9 +189,27 @@ export class ProjectStore {
   }
   async readEdits(id: string, videoId: string): Promise<ProjectEdits | undefined> {
     const file = join(this.videoDir(id, videoId), 'edits.json');
-    return (await exists(file)) ? projectEditsSchema.parse(await readJson(file)) : undefined;
+    if (!(await exists(file))) return undefined;
+    const edits = projectEditsSchema.parse(await readJson(file));
+    if (edits.editing) return edits;
+    const transcript = await this.readTranscript(id, videoId);
+    if (!transcript?.duration) return edits;
+    const deleted = new Set(edits.deletedWordIds);
+    const words = (transcript.wordChunks ?? []).map(w => ({ ...w, deleted: deleted.has(w.id) }));
+    return { ...edits, editing: { edl: migrateLegacy(transcript.duration, edits.chunks as unknown as Cue[], words as unknown as Cue[],
+      transcript.hasWordTimestamps === true), history: [] } };
   }
   async writeEdits(id: string, videoId: string, edits: ProjectEdits) {
+    edits = projectEditsSchema.parse(edits);
+    if (edits.editing) {
+      const transcript = await this.readTranscript(id, videoId);
+      const project = await this.read(id);
+      const duration = transcript?.duration ?? project.videos.find(v => v.id === videoId)?.durationSeconds;
+      if (!duration || Math.round(duration * 1e6) !== edits.editing.edl.sourceDurationUs)
+        throw new Error('EDL media duration does not match');
+      if (edits.chunks.some(c => c.timestamp[0] < 0 || c.timestamp[1] <= c.timestamp[0] || c.timestamp[1] > duration))
+        throw new Error('Invalid subtitle source timestamp');
+    }
     await mkdir(this.videoDir(id, videoId), { recursive: true });
     await writeJson(join(this.videoDir(id, videoId), 'edits.json'), edits);
   }

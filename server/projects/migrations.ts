@@ -5,6 +5,8 @@ import { PROJECT_FORMAT_VERSION } from '../../shared/projects';
 type RawProject = Record<string, unknown> & { formatVersion: number };
 
 export const migrations: Record<number, (raw: RawProject) => RawProject> = {
+  // Format 3: versioned EDL and cut history in each video edits snapshot; old edits migrate lazily.
+  2: raw => ({ ...raw }),
   /**
    * Format 2 (F-0003, ADR-0003): per-video revisions and style source, project style, Trash.
    * Every video follows the project; the project style stays unset so the Host keeps reading the format-1 `stylePair`

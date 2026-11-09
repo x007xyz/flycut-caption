@@ -3,7 +3,7 @@ import type { VideoSegment } from '@/types/video';
 import type { SubtitleStylePair } from './subtitleStyle';
 import type { SubtitleDisplayMode } from './subtitleRenderer';
 import { chunksToAss, chunksToVtt } from './exportFormats';
-import { mapSubtitleTimingsToCutVideo, applyMappedTimings } from './subtitleTimeMapping';
+import { projectFromKept } from '../../shared/editing/edl';
 import { stripSubtitleDisplayPunctuation } from './cjkPunctuation';
 
 export interface BuildBurnAssOptions {
@@ -38,8 +38,7 @@ function remapBurnSubtitleChunks(
         : c.secondText,
     }))
     .filter((c) => c.text.trim() || c.secondText?.trim());
-  const mapping = mapSubtitleTimingsToCutVideo(keptSegments, activeChunks);
-  return applyMappedTimings(activeChunks, mapping);
+  return projectFromKept(activeChunks, keptSegments);
 }
 
 /** 为 FFmpeg 硬/软烧录生成时间轴已重映射的 ASS 内容 */

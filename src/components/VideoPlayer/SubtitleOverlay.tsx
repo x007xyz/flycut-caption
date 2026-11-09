@@ -50,7 +50,7 @@ export function SubtitleOverlay({
     return chunks.find(chunk =>
       !chunk.deleted &&
       currentTime >= chunk.timestamp[0] &&
-      currentTime <= chunk.timestamp[1] &&
+      currentTime < chunk.timestamp[1] &&
       chunk[matchField] && chunk[matchField]!.trim() !== ''
     ) || null;
   }, [chunks, currentTime, displayMode]);

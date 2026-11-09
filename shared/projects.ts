@@ -3,10 +3,11 @@
 // Desktop media: docs/20-architecture/adr/0002-desktop-project-media.md
 // Format 2 (F-0003): several videos, project style, per-video revisions, Trash: docs/20-architecture/adr/0003-multi-video-projects.md
 import { z } from 'zod';
+import { editingSchema } from './editing/edl';
 import { modelRefSchema } from './providers';
 
 /** Bump together with a migration in `server/projects/migrations.ts` and a note in ADR-0001. */
-export const PROJECT_FORMAT_VERSION = 2;
+export const PROJECT_FORMAT_VERSION = 3;
 
 export const projectIdSchema = z.uuid();
 
@@ -21,6 +22,7 @@ const chunkSchema = z.looseObject({
 export type ProjectChunk = z.infer<typeof chunkSchema>;
 
 export const transcriptRecordSchema = z.object({
+  editing: editingSchema.optional(),
   text: z.string(),
   chunks: z.array(chunkSchema),
   wordChunks: z.array(chunkSchema).optional(),
@@ -31,6 +33,7 @@ export const transcriptRecordSchema = z.object({
 
 /** What autosave writes: the user's edits on top of the transcript. Small (about 200 KB for an hour). */
 export const projectEditsSchema = z.object({
+  editing: editingSchema.optional(),
   chunks: z.array(chunkSchema),
   /** Word chunks the user deleted; the word list itself lives in transcript.json. */
   deletedWordIds: z.array(z.string()).default([]),

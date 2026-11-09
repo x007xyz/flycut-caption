@@ -7,28 +7,24 @@ import { stripSubtitleDisplayPunctuation } from './cjkPunctuation';
 
 export type SubtitleExportFormat = 'srt' | 'json' | 'vtt' | 'ass';
 
+function clockParts(seconds: number, scale: number) {
+  const units = Math.floor(seconds * scale + 1e-7);
+  const whole = Math.floor(units / scale);
+  return { hours: Math.floor(whole / 3600), minutes: Math.floor(whole % 3600 / 60), seconds: whole % 60, fraction: units % scale };
+}
 function formatSrtTime(seconds: number): string {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = Math.floor(seconds % 60);
-  const ms = Math.floor((seconds % 1) * 1000);
-  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')},${ms.toString().padStart(3, '0')}`;
+  const p = clockParts(seconds, 1000);
+  return `${String(p.hours).padStart(2, '0')}:${String(p.minutes).padStart(2, '0')}:${String(p.seconds).padStart(2, '0')},${String(p.fraction).padStart(3, '0')}`;
 }
-
-function formatVttTime(seconds: number): string {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = Math.floor(seconds % 60);
-  const ms = Math.floor((seconds % 1) * 1000);
-  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
-}
-
+function formatVttTime(seconds: number): string { return formatSrtTime(seconds).replace(',', '.'); }
 function formatAssTime(seconds: number): string {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = Math.floor(seconds % 60);
-  const centis = Math.floor((seconds % 1) * 100);
-  return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${centis.toString().padStart(2, '0')}`;
+  const p = clockParts(seconds, 100);
+  return `${p.hours}:${String(p.minutes).padStart(2, '0')}:${String(p.seconds).padStart(2, '0')}.${String(p.fraction).padStart(2, '0')}`;
+}
+function representable(chunk: SubtitleChunk, scale: number): boolean {
+  const [a, b] = chunk.timestamp;
+  return Number.isFinite(a) && Number.isFinite(b) && a >= 0 && b > a
+    && Math.floor(b * scale + 1e-7) > Math.floor(a * scale + 1e-7);
 }
 
 /**
@@ -89,7 +85,7 @@ function buildAssStyleLine(
 export function chunksToSrt(chunks: SubtitleChunk[], exportMode: SubtitleDisplayMode = 'Bilingual'): string {
   let index = 0;
   return chunks
-    .filter((c) => !c.deleted)
+    .filter((c) => !c.deleted && representable(c, 1000))
     .map((chunk) => {
       const body = chunkBody(chunk, exportMode);
       if (!body.trim()) return null;
@@ -106,7 +102,7 @@ export function chunksToVtt(chunks: SubtitleChunk[], exportMode: SubtitleDisplay
   const lines = ['WEBVTT', ''];
   let index = 0;
   chunks
-    .filter((c) => !c.deleted)
+    .filter((c) => !c.deleted && representable(c, 1000))
     .forEach((chunk) => {
       const body = chunkBody(chunk, exportMode);
       if (!body.trim()) return;
@@ -158,7 +154,7 @@ export function chunksToAss(chunks: SubtitleChunk[], options: AssExportOptions):
   const primary = stylePair.primary;
   const secondary = stylePair.secondary;
   const primaryMarginV = Math.round(playResY * primary.bottomOffsetRatio);
-  const dialogueChunks = chunks.filter((c) => !c.deleted);
+  const dialogueChunks = chunks.filter((c) => !c.deleted && representable(c, 100));
 
   const styleLines: string[] = [];
   const events: string[] = [];

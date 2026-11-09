@@ -1,3 +1,5 @@
+import { useHistoryStore } from '@/stores/historyStore';
+import { edlCopy } from '@/locales/edl';
 // 时间轴：刻度、缩放、字幕片段与音频波形
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AudioWaveform, Eye, EyeOff, Loader2, Maximize2, Scissors, ZoomIn, ZoomOut } from 'lucide-react';
@@ -52,7 +54,9 @@ export function TimelineWaveform({
   videoProgress?: VideoProcessingProgress | null;
   mediaWaveformPeaks?: number[] | null;
 }) {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
+  const pending = useHistoryStore(s => s.pendingCuts);
+  const copy = edlCopy(language);
   const resolvedTheme = useThemeStore(state => state.resolvedTheme);
   const viewportRef = useRef<HTMLDivElement>(null);
   const waveformCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -441,6 +445,9 @@ export function TimelineWaveform({
               className="pointer-events-none sticky left-0 top-0 z-0 block h-full"
               aria-hidden="true"
             />
+            {pending?.ranges.map((range, index) => <div key={index} data-testid="pending-cut" className="pointer-events-none absolute top-8 bottom-1 z-20 overflow-hidden bg-red-500/60 border border-red-700 text-[10px] text-foreground"
+              style={{ left: range.start * pixelsPerSecond, width: (range.end - range.start) * pixelsPerSecond }} title={copy.pending}>
+              <span>{copy.pending}</span></div>)}
             {duration <= 0 && (
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-aimu-text-muted">
                 {t('components.workstation.emptyTimelineHint')}

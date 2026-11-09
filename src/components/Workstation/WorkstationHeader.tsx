@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { ChevronDown, Download, FileText, Github, Keyboard, Link2, Loader2, Play, Redo2, Settings, Undo2, Upload, Video, Wand2 } from 'lucide-react';
 import { useTranslation, useLocale } from '@/contexts/LocaleProvider';
 import { useAppStore } from '@/stores/appStore';
-import { useChunks } from '@/stores/historyStore';
+import { useChunks, useHistoryStore } from '@/stores/historyStore';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { MessageCenterButton } from '@/components/MessageCenter';
 import { LanguageSelector } from '@/components/LanguageSelector';
@@ -35,6 +35,7 @@ export function WorkstationHeader({ media, mergedConfig, onLanguageChange, onOpe
   const { language, setLanguage } = useLocale();
   const videoFile = useAppStore(state => state.videoFile);
   const chunks = useChunks();
+  const cutsBlocked = useHistoryStore(s => !!s.cutError || s.updatingCuts || (!!s.edl && s.duration === 0));
   const { uploadInputRef, urlInput, setUrlInput, isUrlLoading, urlLoadProgress, isFileLoading, fileLoadProgress, isSampleLoading, sampleLoadProgress, isMediaLoading, handleLoadSampleVideo, handleNativeFileSelect, handleUploadClick, handleUrlLoad } = media;
 
   return (
@@ -170,7 +171,7 @@ export function WorkstationHeader({ media, mergedConfig, onLanguageChange, onOpe
           <DropdownMenuContent align="end">
             <DropdownMenuItem
               onClick={onOpenVideoExport}
-              disabled={!videoFile}
+              disabled={!videoFile || cutsBlocked}
               className="flex items-center gap-2"
             >
               <Video className="w-4 h-4" />
@@ -178,7 +179,7 @@ export function WorkstationHeader({ media, mergedConfig, onLanguageChange, onOpe
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={onOpenSubtitleExport}
-              disabled={chunks.length === 0}
+              disabled={chunks.length === 0 || cutsBlocked}
               className="flex items-center gap-2"
             >
               <FileText className="w-4 h-4" />
@@ -189,7 +190,7 @@ export function WorkstationHeader({ media, mergedConfig, onLanguageChange, onOpe
 
         <button
           onClick={onSmartCutBlank}
-          disabled={chunks.length === 0}
+          disabled={chunks.length === 0 || cutsBlocked}
           className="flex items-center space-x-1.5 text-sm font-medium hover:text-primary transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
           title={t('components.workstation.smartCutBlankTitle')}
         >

@@ -1,3 +1,4 @@
+import { createEdl, exportSegments, type Edl } from '../../shared/editing/edl';
 import type { SubtitleChunk } from '@/types/subtitle';
 import type { VideoSegment } from '@/types/video';
 import { getCuttingChunks } from '@/utils/asrTranscriptUtils';
@@ -50,36 +51,11 @@ export function mergeAdjacentExportSegments(segments: VideoSegment[]): VideoSegm
   return merged;
 }
 
-/** 导出用片段：无删除时整段视频直通，避免按字词 trim+concat 重编码 */
+/** F-0005: only explicitly deleted ranges are removed; untouched silence is retained. */
 export function buildVideoExportSegments(params: {
-  chunks: SubtitleChunk[];
-  wordChunks?: SubtitleChunk[];
-  hasWordTimestamps: boolean;
-  duration: number;
+  chunks: SubtitleChunk[]; wordChunks?: SubtitleChunk[]; hasWordTimestamps: boolean; duration: number; edl?: Edl | null;
 }): VideoSegment[] {
-  const { chunks, wordChunks, hasWordTimestamps, duration } = params;
-
-  if (!hasDeletedCuttingChunks(chunks, wordChunks, hasWordTimestamps)) {
-    const end = Math.max(
-      duration,
-      ...chunks.filter((chunk) => !chunk.deleted).map((chunk) => chunk.timestamp[1]),
-    );
-    return [{
-      start: 0,
-      end: end > 0 ? end : duration,
-      keep: true,
-    }];
-  }
-
-  const cuttingChunks = getCuttingChunks(chunks, wordChunks, hasWordTimestamps);
-  return mergeAdjacentExportSegments(
-    cuttingChunks.map((chunk) => ({
-      start: chunk.timestamp[0],
-      end: chunk.timestamp[1],
-      keep: !chunk.deleted,
-      text: chunk.text,
-      secondText: chunk.secondText,
-      id: chunk.id,
-    })),
-  );
+  const edl = params.edl ?? createEdl(params.duration, getCuttingChunks(params.chunks, params.wordChunks, params.hasWordTimestamps)
+    .filter(c => c.deleted).map(c => ({ start: c.timestamp[0], end: c.timestamp[1] })));
+  return exportSegments(edl);
 }

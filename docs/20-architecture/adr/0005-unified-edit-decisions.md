@@ -32,3 +32,12 @@ F-0005 PRD 已确认：新操作只删除明确选择的区间，其余媒体保
 ## 后果
 
 需迁移所有消费者、历史状态、项目持久化与旧格式，并实测帧级输出而非只比较计划。旧 Host 的单段尾裁剪 fast path 在新路径需验证修正；迁移仍以旧实际输出为准。精度、边界、非法数据、恢复入口和全部 AC 的设计见 F-0005/02-design.md。F-0002 验收前不开发；本 ADR 保持 proposed，技术选择由维护者在验收时审阅。
+
+## 实施说明（待验收，2026-11-09）
+
+- 项目格式 3 的每视频 edits 增加可选 `editing: { edl, history }`；EDL 内版本为 1，时间字段显式 `Us`。
+- 无 editing 的旧 edits 在打开时只读派生，下次保存一并写入。首次跨版本写保留旧 project 文件；原 transcript/media 不改。
+- F-0004 恢复副本可选携带 editing，旧副本没有该字段时沿用旧比较方式；临时建议、历史预览均不进入副本。
+- `export.start` 可选 edl，新增客户端始终发送；Host 检查 segments 与 EDL 一致并探测媒体时长。旧客户端的 segments 请求语义保留。
+- Host 与 FFmpeg 适配器共用 `ffmpegVideoFilter`，对完整输出时钟做 fps 量化，字幕仍取同一保留区间交集。
+- 仅剪辑持久历史不等同于把原有会话 undo/redo 序列持久化。本 ADR 保持 proposed，未自动接受。

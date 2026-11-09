@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { edlSchema } from './editing/edl';
 import type { SubtitleTranscript, ASRProgress } from '../src/types/subtitle';
 import type { EditorPluginManifest } from '../src/types/plugin';
 import { asrRequestSchema, modelRefSchema, type ProviderModels, type ProviderSummary } from './providers';
@@ -26,7 +27,7 @@ export interface PipelineResult { transcript: SubtitleTranscript; cuts: Array<{ 
 
 export const exportSegmentSchema = z.object({ start: z.number().finite().min(0), end: z.number().finite().gt(0), keep: z.boolean(),
   text: z.string().optional(), secondText: z.string().optional(), id: z.string().optional() });
-export const exportInputSchema = z.object({ assetId: z.string().uuid(), segments: z.array(exportSegmentSchema).min(1),
+export const exportInputSchema = z.object({ edl: edlSchema.optional(), assetId: z.string().uuid(), segments: z.array(exportSegmentSchema).min(1),
   options: z.object({ format: z.enum(['mp4', 'webm']), quality: z.enum(['high', 'medium', 'low']), preserveAudio: z.boolean(),
     subtitleProcessing: z.enum(['none', 'soft', 'hard']).default('none'), subtitleExportMode: z.enum(['Bilingual', 'Main', 'Second']).optional(),
     assContent: z.string().optional(), subtitleTextContent: z.string().optional() }) });

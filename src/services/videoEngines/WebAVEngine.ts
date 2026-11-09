@@ -1,3 +1,4 @@
+import { projectFromKept } from '../../../shared/editing/edl';
 // WebAV 视频处理引擎实现
 
 import { Combinator, MP4Clip, OffscreenSprite, EmbedSubtitlesClip } from '@webav/av-cliper';
@@ -14,7 +15,6 @@ import {
   defaultSubtitleStyle,
   resolveExportSubtitleMetrics,
   formatBilingualText,
-  mapSubtitleTimingsToCutVideo,
 } from '@/subtitle';
 
 interface SubtitleStruct {
@@ -546,13 +546,12 @@ export class WebAVEngine implements IVideoProcessingEngine {
     videoWidth: number,
     videoHeight: number,
   ): SubtitleStruct[] {
-    const timeMapping = mapSubtitleTimingsToCutVideo(keptSegments, subtitleChunks);
+    const projected = projectFromKept(subtitleChunks, keptSegments);
 
     const subtitleStructs: SubtitleStruct[] = [];
 
-    for (const chunk of subtitleChunks) {
-      const mappedTime = timeMapping.get(chunk);
-      if (!mappedTime || mappedTime.end <= mappedTime.start) continue;
+    for (const chunk of projected) {
+      const mappedTime = { start: chunk.timestamp[0], end: chunk.timestamp[1] };
 
       let text: string;
       if (exportMode === 'Main') {

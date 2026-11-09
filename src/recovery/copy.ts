@@ -2,11 +2,13 @@
 // Host 仍是正式项目数据的来源；副本只是临时的，保存成功或用户放弃后删除。
 // 这个文件只放数据格式和比较，不依赖界面和存储，供 projectService 和测试共用。
 import { z } from 'zod';
+import { editingSchema, type Editing } from '../../shared/editing/edl';
 
 export const RECOVERY_SCHEMA_VERSION = 1;
 
 /** 一份完整的编辑快照：字幕（含译文、删除标记）、删除的字词、样式来源、样式和画幅。不含媒体、转写原文、密钥或撤销栈。 */
 export const recoveryContentSchema = z.object({
+  editing: editingSchema.optional(),
   chunks: z.array(z.looseObject({ id: z.string(), text: z.string(), timestamp: z.tuple([z.number(), z.number()]) })),
   deletedWordIds: z.array(z.string()),
   styleSource: z.enum(['project', 'custom']),
@@ -57,6 +59,7 @@ const styleKey = (pair: StylePair) => canonical({ primary: { ...pair.primary, as
 
 /** Host 上这个视频当前的内容（已经按打开项目的规则算好生效样式） */
 export interface HostContent {
+  editing?: Editing;
   chunks: unknown[];
   deletedWordIds: string[];
   styleSource: 'project' | 'custom';
@@ -72,7 +75,7 @@ export interface HostContent {
  */
 export function diffWithHost(content: RecoveryContent, host: HostContent) {
   const sameWords = canonical([...content.deletedWordIds].sort()) === canonical([...host.deletedWordIds].sort());
-  const video = canonical(content.chunks) !== canonical(host.chunks) || !sameWords || content.styleSource !== host.styleSource
+  const video = (content.editing !== undefined && canonical(content.editing) !== canonical(host.editing)) || canonical(content.chunks) !== canonical(host.chunks) || !sameWords || content.styleSource !== host.styleSource
     || aspectOf(content.stylePair) !== aspectOf(host.effectiveStyle)
     || (content.styleSource === 'custom' && styleKey(content.stylePair) !== styleKey(host.effectiveStyle));
   const style = content.styleSource === 'project' && styleKey(content.stylePair) !== styleKey(host.projectStyle);

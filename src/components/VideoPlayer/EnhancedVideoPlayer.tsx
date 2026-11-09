@@ -4,7 +4,10 @@ import { useRef, useEffect, useCallback, useState, useMemo, useImperativeHandle,
 import { useSize } from 'ahooks';
 import { cn } from '@/lib/utils';
 import { formatTime } from '@/utils/timeUtils';
-import { useChunks } from '@/stores/historyStore';
+import { useHistoryStore } from '@/stores/historyStore';
+import { deriveKept, changeCuts, outputToSource, sourceToOutput } from '../../../shared/editing/edl';
+import { useTranslation } from '@/contexts/LocaleProvider';
+import { edlCopy } from '@/locales/edl';
 import { SubtitleOverlay } from './SubtitleOverlay';
 import type { SubtitleStyle, SubtitleDisplayMode } from '@/components/SubtitleSettings';
 import {
@@ -51,7 +54,14 @@ export const EnhancedVideoPlayer = forwardRef<EnhancedVideoPlayerRef, EnhancedVi
   const videoRef = useRef<HTMLVideoElement>(null);
   const progressBarRef = useRef<HTMLDivElement>(null);
   const videoContainerRef = useRef<HTMLDivElement>(null);
-  const chunks = useChunks();
+  const formalEdl = useHistoryStore(s => s.edl);
+  const pending = useHistoryStore(s => s.pendingCuts);
+  const historyPreview = useHistoryStore(s => s.historyPreview);
+  const updating = useHistoryStore(s => s.updatingCuts);
+  const cutError = useHistoryStore(s => s.cutError);
+  const { language } = useTranslation(); const copy = edlCopy(language);
+  const activeEdl = useMemo(() => historyPreview ?? (formalEdl && pending?.preview
+    ? changeCuts(formalEdl, pending.ranges) : formalEdl), [formalEdl, pending, historyPreview]);
 
   // 获取视频容器尺寸
   const containerSize = useSize(videoContainerRef);
@@ -59,6 +69,7 @@ export const EnhancedVideoPlayer = forwardRef<EnhancedVideoPlayerRef, EnhancedVi
   const [isPlaying, setIsPlaying] = useState(false);
   const [localCurrentTime, setLocalCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const sourceDuration = activeEdl ? activeEdl.sourceDurationUs / 1e6 : duration;
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
   const [previewMode, setPreviewMode] = useState(true); // 预览模式：跳过删除片段
@@ -94,50 +105,20 @@ export const EnhancedVideoPlayer = forwardRef<EnhancedVideoPlayerRef, EnhancedVi
     }
   }, [containerSize, videoDimensions]);
 
-  // 字幕样式由外部传入（primaryStyle/secondaryStyle/displayMode）
-  // 基于 chunks 数据计算保留的片段
-  const keptSegments = useMemo(() => {
-    return chunks
-      .filter(chunk => !chunk.deleted)
-      .map(chunk => ({
-        id: chunk.id,
-        start: chunk.timestamp[0],
-        end: chunk.timestamp[1],
-        duration: chunk.timestamp[1] - chunk.timestamp[0],
-        text: chunk.text
-      }))
-      .sort((a, b) => a.start - b.start);
-  }, [chunks]);
-
-  // 被删除的片段（用于原始时间轴上以红色标记）
-  const deletedSegments = useMemo(() => {
-    return chunks
-      .filter(chunk => chunk.deleted)
-      .map(chunk => ({
-        id: chunk.id,
-        start: chunk.timestamp[0],
-        end: chunk.timestamp[1],
-      }))
-      .sort((a, b) => a.start - b.start);
-  }, [chunks]);
-
-  // 新时间轴总时长
-  const newTimelineDuration = useMemo(() => {
-    if (!previewMode) return duration;
-    return keptSegments.reduce((total, segment) => total + segment.duration, 0);
-  }, [previewMode, duration, keptSegments]);
-
-  // 检查当前时间是否在保留片段中
-  const isTimeInKeptSegments = useCallback((time: number) => {
-    return keptSegments.some(segment => 
-      time >= segment.start && time <= segment.end
-    );
-  }, [keptSegments]);
-
-  // 找到下一个保留片段
-  const findNextKeptSegment = useCallback((currentTime: number) => {
-    return keptSegments.find(segment => segment.start > currentTime);
-  }, [keptSegments]);
+  const keptSegments = useMemo(() => activeEdl ? deriveKept(activeEdl).map(r => ({
+    id: `${r.startUs}`, start: r.startUs / 1e6, end: r.endUs / 1e6,
+    duration: (r.endUs - r.startUs) / 1e6,
+  })) : (duration > 0 ? [{ id: 'source', start: 0, end: duration, duration }] : []), [activeEdl, duration]);
+  const deletedSegments = useMemo(() => (activeEdl?.deleted ?? []).map(r => ({
+    id: `${r.startUs}`, start: r.startUs / 1e6, end: r.endUs / 1e6,
+  })), [activeEdl]);
+  const newTimelineDuration = useMemo(() => previewMode ? keptSegments.reduce((n, r) => n + r.duration, 0) : duration,
+    [previewMode, keptSegments, duration]);
+  const isTimeInKeptSegments = useCallback((time: number) => keptSegments.some(s => time >= s.start && time < s.end), [keptSegments]);
+  const findNextKeptSegment = useCallback((time: number) => keptSegments.find(s => s.start > time), [keptSegments]);
+  const visibleTime = previewMode && activeEdl ? sourceToOutput(activeEdl, isDragging ? dragTime : localCurrentTime) ?? 0
+    : isDragging ? dragTime : localCurrentTime;
+  const progressPercent = newTimelineDuration > 0 ? Math.min(100, visibleTime / newTimelineDuration * 100) : 0;
 
   // 处理视频时间更新
   const handleTimeUpdate = useCallback(() => {
@@ -174,6 +155,7 @@ export const EnhancedVideoPlayer = forwardRef<EnhancedVideoPlayerRef, EnhancedVi
   const togglePlayPause = useCallback(() => {
     if (!videoRef.current) return;
 
+    if (previewMode && (updating || cutError || newTimelineDuration === 0)) return;
     if (isPlaying) {
       videoRef.current.pause();
       setIsPlaying(false);
@@ -183,28 +165,31 @@ export const EnhancedVideoPlayer = forwardRef<EnhancedVideoPlayerRef, EnhancedVi
       setIsPlaying(true);
       onPlay?.();
     }
-  }, [isPlaying, onPlay, onPause]);
+  }, [isPlaying, onPlay, onPause, previewMode, updating, cutError, newTimelineDuration]);
 
   // 跳转到指定时间（外部调用传入的是原始视频时间）
   const seekTo = useCallback((time: number) => {
     if (!videoRef.current) return;
 
-    videoRef.current.currentTime = time;
-    setLocalCurrentTime(time);
-  }, []);
+    const target = previewMode && activeEdl ? outputToSource(activeEdl, sourceToOutput(activeEdl, time) ?? 0) : time;
+    if (target === null) return;
+    videoRef.current.currentTime = target;
+    setLocalCurrentTime(target);
+  }, [previewMode, activeEdl]);
 
   // 快进/快退
   const skip = useCallback((seconds: number) => {
     if (!videoRef.current) return;
-    
-    const newTime = Math.max(0, Math.min(duration, localCurrentTime + seconds));
-    seekTo(newTime);
-  }, [localCurrentTime, duration, seekTo]);
+
+    const target = Math.max(0, Math.min(newTimelineDuration, visibleTime + seconds));
+    const source = previewMode && activeEdl ? outputToSource(activeEdl, target) : target;
+    if (source !== null) seekTo(source);
+  }, [newTimelineDuration, visibleTime, previewMode, activeEdl, seekTo]);
 
   // 音量控制
   const toggleMute = useCallback(() => {
     if (!videoRef.current) return;
-    
+
     const newMuted = !isMuted;
     videoRef.current.muted = newMuted;
     setIsMuted(newMuted);
@@ -212,11 +197,11 @@ export const EnhancedVideoPlayer = forwardRef<EnhancedVideoPlayerRef, EnhancedVi
 
   const changeVolume = useCallback((newVolume: number) => {
     if (!videoRef.current) return;
-    
+
     const clampedVolume = Math.max(0, Math.min(1, newVolume));
     videoRef.current.volume = clampedVolume;
     setVolume(clampedVolume);
-    
+
     if (clampedVolume === 0) {
       setIsMuted(true);
       videoRef.current.muted = true;
@@ -239,98 +224,60 @@ export const EnhancedVideoPlayer = forwardRef<EnhancedVideoPlayerRef, EnhancedVi
   // 拖拽事件处理
   const handleProgressMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (!progressBarRef.current || !videoRef.current) return;
-    
+
     const rect = progressBarRef.current.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
     const percentage = Math.max(0, Math.min(1, clickX / rect.width));
     const targetDuration = previewMode ? newTimelineDuration : duration;
     const newTime = percentage * targetDuration;
-    
+
     // 记录拖拽前的播放状态
     setWasPlayingBeforeDrag(isPlaying);
     setIsDragging(true);
     setDragTime(newTime);
     setDragPercentage(percentage);
-    
+
     // 暂停视频以便实时预览
     if (isPlaying) {
       videoRef.current.pause();
       setIsPlaying(false);
     }
-    
+
     // 立即设置视频时间
-    let videoTime = newTime;
-    if (previewMode && keptSegments.length > 0) {
-      // 将新时间轴时间映射回原始时间
-      let remainingTime = Math.max(0, newTime);
-      videoTime = keptSegments[0]?.start || 0; // 默认到第一个片段开始
-      
-      for (const segment of keptSegments) {
-        if (remainingTime <= segment.duration) {
-          videoTime = segment.start + remainingTime;
-          break;
-        } else {
-          remainingTime -= segment.duration;
-        }
-      }
-      
-      // 确保videoTime不超出视频总长度
-      if (videoTime > duration) {
-        videoTime = duration;
-      }
-    }
-    
+    const videoTime = previewMode && activeEdl ? outputToSource(activeEdl, newTime) ?? 0 : newTime;
+
     videoRef.current.currentTime = videoTime;
     setLocalCurrentTime(videoTime);
     // dragTime 始终保存原始时间轴坐标，便于进度条直接定位
     setDragTime(videoTime);
-  }, [previewMode, newTimelineDuration, duration, isPlaying, keptSegments]);
+  }, [previewMode, newTimelineDuration, duration, isPlaying, activeEdl]);
 
   const handleProgressMouseMove = useCallback((e: MouseEvent) => {
     if (!isDragging || !progressBarRef.current || !videoRef.current) return;
-    
+
     const rect = progressBarRef.current.getBoundingClientRect();
     const moveX = e.clientX - rect.left;
     const percentage = Math.max(0, Math.min(1, moveX / rect.width));
     const targetDuration = previewMode ? newTimelineDuration : duration;
     const newTime = percentage * targetDuration;
-    
+
     setDragTime(newTime);
     setDragPercentage(percentage);
-    
+
     // 拖拽时直接设置视频时间，跳过 seekTo 中的时间转换逻辑
-    let videoTime = newTime;
-    if (previewMode && keptSegments.length > 0) {
-      // 将新时间轴时间映射回原始时间
-      let remainingTime = Math.max(0, newTime);
-      videoTime = keptSegments[0]?.start || 0; // 默认到第一个片段开始
-      
-      for (const segment of keptSegments) {
-        if (remainingTime <= segment.duration) {
-          videoTime = segment.start + remainingTime;
-          break;
-        } else {
-          remainingTime -= segment.duration;
-        }
-      }
-      
-      // 确保videoTime不超出视频总长度
-      if (videoTime > duration) {
-        videoTime = duration;
-      }
-    }
-    
+    const videoTime = previewMode && activeEdl ? outputToSource(activeEdl, newTime) ?? 0 : newTime;
+
     videoRef.current.currentTime = videoTime;
     setLocalCurrentTime(videoTime);
     // dragTime 始终保存原始时间轴坐标
     setDragTime(videoTime);
-  }, [isDragging, previewMode, newTimelineDuration, duration, keptSegments]);
+  }, [isDragging, previewMode, newTimelineDuration, duration, activeEdl]);
 
   const handleProgressMouseUp = useCallback(() => {
     if (!isDragging) return;
-    
+
     setIsDragging(false);
-    
+
     // 确保最终时间状态正确
     if (videoRef.current) {
       const finalTime = videoRef.current.currentTime;
@@ -339,7 +286,7 @@ export const EnhancedVideoPlayer = forwardRef<EnhancedVideoPlayerRef, EnhancedVi
       // 通知外部组件时间更新（始终使用原始时间轴）
       onTimeUpdate?.(finalTime);
     }
-    
+
     // 如果拖拽前在播放，恢复播放状态
     if (wasPlayingBeforeDrag && videoRef.current) {
       videoRef.current.play();
@@ -353,7 +300,7 @@ export const EnhancedVideoPlayer = forwardRef<EnhancedVideoPlayerRef, EnhancedVi
     if (isDragging) {
       document.addEventListener('mousemove', handleProgressMouseMove);
       document.addEventListener('mouseup', handleProgressMouseUp);
-      
+
       return () => {
         document.removeEventListener('mousemove', handleProgressMouseMove);
         document.removeEventListener('mouseup', handleProgressMouseUp);
@@ -364,7 +311,7 @@ export const EnhancedVideoPlayer = forwardRef<EnhancedVideoPlayerRef, EnhancedVi
   // 全屏
   const toggleFullscreen = useCallback(() => {
     if (!videoRef.current) return;
-    
+
     if (document.fullscreenElement) {
       document.exitFullscreen();
     } else {
@@ -477,14 +424,13 @@ export const EnhancedVideoPlayer = forwardRef<EnhancedVideoPlayerRef, EnhancedVi
           className="max-h-full max-w-full object-contain"
           onClick={togglePlayPause}
         />
-        
+
         {/* 字幕覆盖层：始终用原始时间轴匹配 chunk.timestamp */}
         {primaryStyle && actualVideoDisplaySize.width > 0 && actualVideoDisplaySize.height > 0 && (
           <SubtitleOverlay
             currentTime={localCurrentTime}
             visible={
               !previewMode
-              || keptSegments.length === 0
               || isTimeInKeptSegments(localCurrentTime)
             }
             primaryStyle={primaryStyle}
@@ -499,10 +445,13 @@ export const EnhancedVideoPlayer = forwardRef<EnhancedVideoPlayerRef, EnhancedVi
           />
         )}
 
+        {previewMode && activeEdl && !newTimelineDuration && <div role="status" data-testid="cuts-empty" className="absolute inset-0 flex flex-col items-center justify-center bg-background/90 text-sm p-4">
+          <p>{copy.empty}</p><p>{copy.emptyHint}</p>
+        </div>}
         {/* 预览模式指示器 */}
         {previewMode && keptSegments.length > 0 && (
           <div className="absolute top-4 right-4 bg-orange-500 text-white text-xs px-2 py-1 rounded-full">
-            预览模式
+            {pending?.preview || historyPreview ? copy.preview : copy.current}
           </div>
         )}
       </div>
@@ -513,6 +462,7 @@ export const EnhancedVideoPlayer = forwardRef<EnhancedVideoPlayerRef, EnhancedVi
         <div className="space-y-2">
           <div className="relative">
             <div 
+              data-testid="cut-preview-progress"
               ref={progressBarRef}
               className={cn(
                 "group w-full h-3 bg-muted rounded-full overflow-hidden cursor-pointer select-none",
@@ -522,18 +472,18 @@ export const EnhancedVideoPlayer = forwardRef<EnhancedVideoPlayerRef, EnhancedVi
             >
               {/* 进度条始终基于原始时间轴：被删段以红色标记 */}
               {/* 已播放填充（原始时间轴） */}
-              <div 
+              <div
                 className={cn(
                   "h-full bg-primary/30 transition-all",
                   isDragging && "transition-none"
                 )}
-                style={{ 
-                  width: `${Math.min(100, ((isDragging ? dragTime : localCurrentTime) / duration) * 100)}%` 
+                style={{
+                  width: `${progressPercent}%`
                 }}
               />
 
               {/* 被删除片段：红色标记（原始时间轴） */}
-              {deletedSegments.map((segment) => (
+              {!previewMode && deletedSegments.map((segment) => (
                 <div
                   key={segment.id}
                   className="absolute top-0 h-full bg-aimu-coral/70 pointer-events-none"
@@ -545,7 +495,7 @@ export const EnhancedVideoPlayer = forwardRef<EnhancedVideoPlayerRef, EnhancedVi
               ))}
 
               {/* 保留片段：预览模式下以绿色叠加，直观显示“保留区间” */}
-              {previewMode && keptSegments.length > 0 && (
+              {!previewMode && keptSegments.length > 0 && (
                 keptSegments.map((segment) => (
                   <div
                     key={segment.id}
@@ -557,18 +507,18 @@ export const EnhancedVideoPlayer = forwardRef<EnhancedVideoPlayerRef, EnhancedVi
                   />
                 ))
               )}
-              
+
               {/* 当前进度 */}
-              <div 
+              <div
                 className={cn(
                   "h-full bg-primary transition-all",
                   isDragging && "transition-none"
                 )}
-                style={{ 
-                  width: `${Math.min(100, ((isDragging ? dragTime : localCurrentTime) / duration) * 100)}%`
+                style={{
+                  width: `${progressPercent}%`
                 }}
               />
-              
+
               {/* 拖拽手柄 */}
               <div
                 className={cn(
@@ -576,12 +526,12 @@ export const EnhancedVideoPlayer = forwardRef<EnhancedVideoPlayerRef, EnhancedVi
                   isDragging ? "scale-125 transition-none" : "hover:scale-110 opacity-0 group-hover:opacity-100"
                 )}
                 style={{
-                  left: `${Math.min(100, ((isDragging ? dragTime : localCurrentTime) / duration) * 100)}%`,
+                  left: `${progressPercent}%`,
                   opacity: isDragging ? 1 : undefined
                 }}
               />
             </div>
-            
+
             {/* 悬停时显示时间提示 */}
             {isDragging && (
               <div
@@ -591,18 +541,18 @@ export const EnhancedVideoPlayer = forwardRef<EnhancedVideoPlayerRef, EnhancedVi
                   transform: 'translateX(-50%)'
                 }}
               >
-                {formatTime(dragTime)}
+                {formatTime(visibleTime)}
               </div>
             )}
           </div>
-          
+
           {/* 时间显示 */}
           <div className="flex justify-between text-sm text-muted-foreground">
             <span>
-              {formatTime(isDragging ? dragTime : localCurrentTime)}
+              {formatTime(visibleTime)}
               {isDragging && <span className="ml-1 text-primary">●</span>}
             </span>
-            <span>{formatTime(duration)}</span>
+            <span>{formatTime(newTimelineDuration)}</span>
           </div>
         </div>
 
@@ -616,7 +566,7 @@ export const EnhancedVideoPlayer = forwardRef<EnhancedVideoPlayerRef, EnhancedVi
             >
               <SkipBack className="w-4 h-4" />
             </button>
-            
+
             <button
               onClick={togglePlayPause}
               className="p-2 hover:bg-muted rounded-md transition-colors"
@@ -624,7 +574,7 @@ export const EnhancedVideoPlayer = forwardRef<EnhancedVideoPlayerRef, EnhancedVi
             >
               {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
             </button>
-            
+
             <button
               onClick={() => skip(10)}
               className="p-2 hover:bg-muted rounded-md transition-colors"
@@ -656,7 +606,7 @@ export const EnhancedVideoPlayer = forwardRef<EnhancedVideoPlayerRef, EnhancedVi
               >
                 {isMuted || volume === 0 ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
               </button>
-              
+
               <input
                 type="range"
                 min={0}
@@ -686,7 +636,7 @@ export const EnhancedVideoPlayer = forwardRef<EnhancedVideoPlayerRef, EnhancedVi
               <span>预览模式：自动跳过红色标记片段</span>
               <span>
                 剪辑后时长: {formatTime(newTimelineDuration)} 
-                ({((newTimelineDuration / duration) * 100).toFixed(1)}% 保留)
+                ({(sourceDuration > 0 ? newTimelineDuration / sourceDuration * 100 : 0).toFixed(1)}% 保留)
               </span>
             </div>
           </div>

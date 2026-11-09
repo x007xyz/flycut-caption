@@ -302,7 +302,10 @@ test('F-0003/AC-16 AC-12: a format-1 project opens with nothing lost; its style 
     const opened = await host.call('projects.open', { projectId });
     assert.equal(opened.status, 'ok');
     assert.equal(opened.media.status, 'ok');
-    assert.deepEqual(opened.edits, v1Edits, 'subtitles, deletions, translations, style and aspect');
+    const { editing, ...unchangedEdits } = opened.edits;
+    assert.deepEqual(unchangedEdits, v1Edits, 'subtitles, deletions, translations, style and aspect');
+    assert.equal(editing.edl.origin, 'legacy-export');
+    assert.deepEqual(editing.history, [], 'migration does not invent user history');
     assert.deepEqual(opened.transcript.chunks, transcript.chunks);
     assert.deepEqual(opened.projectStyle, { primary: v1Edits.stylePair.primary, secondary: v1Edits.stylePair.secondary });
     assert.deepEqual([opened.video.styleSource, opened.video.revision], ['project', 0]);
@@ -312,7 +315,7 @@ test('F-0003/AC-16 AC-12: a format-1 project opens with nothing lost; its style 
     // A second video added to the old project follows the style that came from format 1.
     const { videoId: two } = await host.call('projects.addVideo', { projectId, videoName: 'new.mp4', media: { assetId: await host.upload('n'), mimeType: 'video/mp4' } });
     const upgraded = JSON.parse(await readFile(join(dir, 'project.json'), 'utf8'));
-    assert.equal(upgraded.formatVersion, 2);
+    assert.equal(upgraded.formatVersion, 3);
     assert.deepEqual(JSON.parse(await readFile(join(dir, 'project.v1.json'), 'utf8')), project, 'the format-1 file is kept');
     assert.deepEqual((await host.call('projects.open', { projectId, videoId: two })).projectStyle, opened.projectStyle);
     // Removing the video the style came from keeps the style.
@@ -334,5 +337,28 @@ test('F-0003/AC-32: save as new after a permanent delete keeps subtitles, edits 
     assert.deepEqual([opened.edits.chunks[0].text, opened.edits.aspectPreset, opened.edits.stylePair], ['保住的修改', 'portrait', undefined]);
     assert.deepEqual(opened.projectStyle, style('#f00'));
     assert.equal(JSON.stringify(opened).includes('path'), false, 'no local path anywhere');
+  } finally { await host.close(); }
+});
+
+test('F-0005/AC-7 AC-10 format migration is repeatable, keeps raw files and rejects unknown or mismatched EDL', async () => {
+  const host = await setup();
+  try {
+    const { projectId, videoId, dir, v1Edits } = await writeFormat1(host.home);
+    const rawTranscript = await readFile(join(dir, 'videos', videoId, 'transcript.json'), 'utf8');
+    const beforeEdits = await readFile(join(dir, 'videos', videoId, 'edits.json'), 'utf8');
+    const first = await host.call('projects.open', { projectId, videoId });
+    for (let i = 0; i < 3; i++) assert.deepEqual((await host.call('projects.open', { projectId, videoId })).edits.editing, first.edits.editing);
+    assert.equal(await readFile(join(dir, 'videos', videoId, 'edits.json'), 'utf8'), beforeEdits, 'opening is read-only');
+    const saved = await host.call('projects.saveVideoEdits', { projectId, videoId, baseRevision: 0, styleSource: 'project', edits: { ...v1Edits, editing: first.edits.editing } });
+    assert.equal(saved.status, 'saved');
+    assert.equal(await exists(join(dir, 'project.v1.json')), true);
+    for (let i = 0; i < 3; i++) assert.deepEqual((await host.call('projects.open', { projectId, videoId })).edits.editing, first.edits.editing);
+    const stable = await readFile(join(dir, 'videos', videoId, 'edits.json'), 'utf8');
+    for (const patch of [{ version: 99 }, { sourceDurationUs: 5e6 }, { deleted: [{ startUs: 0, endUs: 5e6 }] }]) {
+      await assert.rejects(host.call('projects.saveVideoEdits', { projectId, videoId, baseRevision: saved.revision, styleSource: 'project',
+        edits: { ...v1Edits, editing: { ...first.edits.editing, edl: { ...first.edits.editing.edl, ...patch } } } }));
+      assert.equal(await readFile(join(dir, 'videos', videoId, 'edits.json'), 'utf8'), stable);
+    }
+    assert.equal(await readFile(join(dir, 'videos', videoId, 'transcript.json'), 'utf8'), rawTranscript);
   } finally { await host.close(); }
 });

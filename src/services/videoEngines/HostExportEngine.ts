@@ -47,7 +47,7 @@ export class HostExportEngine implements IVideoProcessingEngine {
     }
     const format = options.format ?? options.outputFormat ?? 'mp4';
     if (format !== 'mp4' && format !== 'webm') throw new Error(`Host 导出不支持 ${format} 格式，请选择 MP4 或 WebM`);
-    const job = await this.connection.call('export.start', { assetId: this.assetId, segments, options: {
+    const job = await this.connection.call('export.start', { assetId: this.assetId, edl: options.edl, segments, options: {
       format, quality: options.quality, preserveAudio: options.preserveAudio,
       subtitleProcessing: options.subtitleProcessing ?? 'none', subtitleExportMode: options.subtitleExportMode, assContent, subtitleTextContent,
     } });

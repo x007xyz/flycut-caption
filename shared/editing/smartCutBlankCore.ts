@@ -1,4 +1,4 @@
-import { calculateBlankSegments } from '../../src/utils/timeUtils';
+import { calculateBlankSegments } from './blankSegments';
 
 export interface SmartCutBlankResult {
   segments: Array<{ start: number; end: number }>;

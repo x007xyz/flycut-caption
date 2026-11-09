@@ -1,190 +1,43 @@
-// 视频时间区间管理工具函数
-
 import type { SubtitleTranscript } from '../types/subtitle';
 import type { TimeSegment } from '../types/history';
-import { mergeTimeRanges } from './timeUtils';
-
-// Re-export formatTime for convenience
+import { createEdl, deriveKept, outputToSource, sourceToOutput, fromUs, type Edl } from '../../shared/editing/edl';
 export { formatTime } from './timeUtils';
-
-/**
- * 根据选中的字幕块计算保留的时间区间
- */
-export function calculateKeptSegments(
-  transcript: SubtitleTranscript,
-  selectedChunkIds: Set<string>
-): TimeSegment[] {
-  if (!transcript?.chunks.length) return [];
-
-  // 获取所有保留的字幕块（未选中删除的）
-  const keptChunks = transcript.chunks
-    .filter(chunk => !selectedChunkIds.has(chunk.id))
-    .sort((a, b) => a.timestamp[0] - b.timestamp[0]);
-
-  if (keptChunks.length === 0) return [];
-
-  // 将字幕块转换为时间范围
-  const timeRanges: [number, number][] = keptChunks.map(chunk => chunk.timestamp);
-  
-  // 合并连续或重叠的时间范围
-  const mergedRanges = mergeTimeRanges(timeRanges);
-
-  // 转换为时间段，计算新的连续时间轴
-  let currentTime = 0;
-  const segments: TimeSegment[] = mergedRanges.map((range, index) => {
-    const [originalStart, originalEnd] = range;
-    const duration = originalEnd - originalStart;
-    
-    const segment: TimeSegment = {
-      id: `segment-${index}`,
-      start: currentTime,
-      end: currentTime + duration,
-      originalStart,
-      originalEnd,
-      duration,
-    };
-
-    currentTime += duration;
-    return segment;
-  });
-
-  return segments;
+function decision(transcript: SubtitleTranscript, selected: Set<string>): Edl {
+  return transcript.editing?.edl ?? createEdl(transcript.duration,
+    transcript.chunks.filter(c => selected.has(c.id)).map(c => ({ start: c.timestamp[0], end: c.timestamp[1] })));
 }
-
-/**
- * 计算被删除的时间区间
- */
-export function calculateDeletedSegments(
-  transcript: SubtitleTranscript,
-  selectedChunkIds: Set<string>
-): TimeSegment[] {
-  if (!transcript?.chunks.length) return [];
-
-  // 获取所有被删除的字幕块
-  const deletedChunks = transcript.chunks
-    .filter(chunk => selectedChunkIds.has(chunk.id))
-    .sort((a, b) => a.timestamp[0] - b.timestamp[0]);
-
-  if (deletedChunks.length === 0) return [];
-
-  // 将删除的字幕块转换为时间范围
-  const timeRanges: [number, number][] = deletedChunks.map(chunk => chunk.timestamp);
-  
-  // 合并连续或重叠的时间范围
-  const mergedRanges = mergeTimeRanges(timeRanges);
-
-  // 转换为时间段
-  const segments: TimeSegment[] = mergedRanges.map((range, index) => {
-    const [originalStart, originalEnd] = range;
-    const duration = originalEnd - originalStart;
-    
-    return {
-      id: `deleted-${index}`,
-      start: originalStart,
-      end: originalEnd,
-      originalStart,
-      originalEnd,
-      duration,
-    };
-  });
-
-  return segments;
+export function calculateKeptSegments(transcript: SubtitleTranscript, selected: Set<string>): TimeSegment[] {
+  return deriveKept(decision(transcript, selected)).map((r, i) => ({ id: `segment-${i}`,
+    start: fromUs(r.outputStartUs), end: fromUs(r.outputEndUs), originalStart: fromUs(r.startUs),
+    originalEnd: fromUs(r.endUs), duration: fromUs(r.endUs - r.startUs) }));
 }
-
-/**
- * 将新时间轴上的时间转换为原始时间轴上的时间
- */
-export function mapToOriginalTime(
-  newTime: number,
-  segments: TimeSegment[]
-): number {
-  // 找到包含该时间的段
-  const segment = segments.find(seg => newTime >= seg.start && newTime <= seg.end);
-  
-  if (!segment) {
-    // 如果不在任何段中，返回最近段的开始或结束时间
-    if (newTime <= 0) {
-      return segments[0]?.originalStart || 0;
-    }
-    
-    const lastSegment = segments[segments.length - 1];
-    return lastSegment?.originalEnd || 0;
-  }
-
-  // 在段内进行线性映射
-  const progressInSegment = (newTime - segment.start) / segment.duration;
-  return segment.originalStart + (progressInSegment * segment.duration);
+export function calculateDeletedSegments(transcript: SubtitleTranscript, selected: Set<string>): TimeSegment[] {
+  return decision(transcript, selected).deleted.map((r, i) => ({ id: `deleted-${i}`,
+    start: fromUs(r.startUs), end: fromUs(r.endUs), originalStart: fromUs(r.startUs), originalEnd: fromUs(r.endUs), duration: fromUs(r.endUs - r.startUs) }));
 }
-
-/**
- * 将原始时间轴上的时间转换为新时间轴上的时间
- */
-export function mapToNewTime(
-  originalTime: number,
-  segments: TimeSegment[]
-): number | null {
-  // 找到包含该原始时间的段
-  const segment = segments.find(
-    seg => originalTime >= seg.originalStart && originalTime <= seg.originalEnd
-  );
-  
-  if (!segment) {
-    // 原始时间在被删除的区间中
-    return null;
-  }
-
-  // 在段内进行线性映射
-  const progressInSegment = (originalTime - segment.originalStart) / segment.duration;
-  return segment.start + (progressInSegment * segment.duration);
+function fromSegments(segments: TimeSegment[]) {
+  const duration = segments.at(-1)?.originalEnd;
+  if (!duration) return null;
+  const ranges = [...segments].sort((a, b) => a.originalStart - b.originalStart);
+  let start = 0; const deleted = [];
+  for (const r of ranges) { if (r.originalStart > start) deleted.push({ start, end: r.originalStart }); start = r.originalEnd; }
+  return createEdl(duration, deleted);
 }
-
-/**
- * 检查原始时间是否在保留的区间中
- */
-export function isTimeInKeptSegments(
-  originalTime: number,
-  segments: TimeSegment[]
-): boolean {
-  return segments.some(
-    seg => originalTime >= seg.originalStart && originalTime <= seg.originalEnd
-  );
+export function mapToOriginalTime(time: number, segments: TimeSegment[]): number {
+  const edl = fromSegments(segments); return edl ? outputToSource(edl, time) ?? 0 : 0;
 }
-
-/**
- * 计算编辑会话的统计信息
- */
-export function calculateEditingStats(
-  transcript: SubtitleTranscript,
-  selectedChunkIds: Set<string>
-) {
-  if (!transcript) {
-    return {
-      originalDuration: 0,
-      currentDuration: 0,
-      totalDeletedTime: 0,
-      compressionRatio: 0,
-      deletedChunksCount: 0,
-      keptChunksCount: 0,
-    };
-  }
-
-  const keptSegments = calculateKeptSegments(transcript, selectedChunkIds);
-  const deletedSegments = calculateDeletedSegments(transcript, selectedChunkIds);
-
-  const currentDuration = keptSegments.reduce((total, seg) => total + seg.duration, 0);
-  const totalDeletedTime = deletedSegments.reduce((total, seg) => total + seg.duration, 0);
-  const compressionRatio = transcript.duration > 0 ? (currentDuration / transcript.duration) : 0;
-
-  return {
-    originalDuration: transcript.duration,
-    currentDuration,
-    totalDeletedTime,
-    compressionRatio,
-    deletedChunksCount: selectedChunkIds.size,
-    keptChunksCount: transcript.chunks.length - selectedChunkIds.size,
-  };
+export function mapToNewTime(time: number, segments: TimeSegment[]): number | null {
+  const edl = fromSegments(segments); return edl ? sourceToOutput(edl, time) : null;
 }
-
+export function isTimeInKeptSegments(time: number, segments: TimeSegment[]): boolean {
+  return segments.some(r => time >= r.originalStart && time < r.originalEnd);
+}
+export function calculateEditingStats(transcript: SubtitleTranscript, selected: Set<string>) {
+  const edl = decision(transcript, selected); const totalDeletedTime = edl.deleted.reduce((n, r) => n + fromUs(r.endUs - r.startUs), 0);
+  const currentDuration = transcript.duration - totalDeletedTime;
+  return { originalDuration: transcript.duration, currentDuration, totalDeletedTime,
+    compressionRatio: currentDuration / transcript.duration, deletedChunksCount: selected.size, keptChunksCount: transcript.chunks.length - selected.size };
+}
 /**
  * 格式化时间差显示
  */

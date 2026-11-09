@@ -1,3 +1,5 @@
+import { edlCopy } from '@/locales/edl';
+import { projectCues, outputDuration } from '../shared/editing/edl';
 // FlyCut Caption - 智能视频字幕裁剪工具
 
 import { useCallback, useMemo, useState, useRef, useEffect } from 'react';
@@ -109,9 +111,12 @@ export function FlyCutCaptionContent(props: FlyCutCaptionProps) {
   const stage = useAppStore(state => state.stage);
   const videoFile = useAppStore(state => state.videoFile);
   const chunks = useChunks();
+  const edl = useHistoryStore(s => s.edl);
+  const cutError = useHistoryStore(s => s.cutError);
+  const updatingCuts = useHistoryStore(s => s.updatingCuts);
   const wordChunks = useWordChunks();
   const hasWordTimestamps = useHasWordTimestamps();
-  const insertBlankChunks = useHistoryStore(state => state.insertBlankChunks);
+  const insertBlankChunks = useHistoryStore(state => state.proposeCuts);
   const smartCutSilenceThreshold = useAppStore(state => state.smartCutSilenceThreshold);
   const videoDuration = useAppStore(state => state.videoPlayerState.duration);
 
@@ -158,7 +163,7 @@ export function FlyCutCaptionContent(props: FlyCutCaptionProps) {
   const effectiveTheme = mergedConfig.theme === 'auto' ? resolvedTheme : mergedConfig.theme;
 
   // 国际化
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
 
   // 语言选项
 
@@ -349,7 +354,8 @@ export function FlyCutCaptionContent(props: FlyCutCaptionProps) {
 
   // 导出字幕
   const handleExportSubtitles = useCallback(async (format: SubtitleExportFormat, exportMode: SubtitleDisplayMode) => {
-    const keptChunks = chunks.filter(chunk => !chunk.deleted);
+    if (!edl || cutError || updatingCuts || !outputDuration(edl)) { toast.error(t('common.error')); return; }
+    const keptChunks = projectCues(edl, chunks);
     if (keptChunks.length === 0) {
       toast.error(t('messages.subtitle.emptySubtitleText'));
       return;
@@ -376,7 +382,7 @@ export function FlyCutCaptionContent(props: FlyCutCaptionProps) {
       const detail = error instanceof Error ? error.message : t('common.error');
       toast.error(t('messages.subtitle.exportFailed'), { description: detail });
     }
-  }, [chunks, videoMeta, subtitleStylePair, onExportComplete, t]);
+  }, [edl, cutError, updatingCuts, chunks, videoMeta, subtitleStylePair, onExportComplete, t]);
 
 
 
@@ -404,11 +410,11 @@ export function FlyCutCaptionContent(props: FlyCutCaptionProps) {
         toast.success(
           t('components.workstation.smartCutDone')
             .replace('{count}', String(result.segments.length))
-            .replace('{seconds}', result.totalBlankSeconds.toFixed(1)),
+            .replace('{seconds}', result.totalBlankSeconds.toFixed(1)) + ' · ' + edlCopy(language).preview,
         );
       },
     });
-  }, [chunks, smartCutSilenceThreshold, videoDuration, insertBlankChunks, t]);
+  }, [chunks, smartCutSilenceThreshold, videoDuration, insertBlankChunks, language, t]);
 
 
   // 监听字幕变化并通知外部

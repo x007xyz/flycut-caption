@@ -1,3 +1,4 @@
+import { edlCopy } from '@/locales/edl';
 // 字幕列表组件
 
 import { useCallback, useMemo, useState, type RefObject } from 'react';
@@ -41,7 +42,7 @@ export function SubtitleList({
   isASRLoading,
   asrProgress,
 }: SubtitleListProps) {
-  const { t } = useTranslation();
+  const { t, language: uiLanguage } = useTranslation();
   const chunks = useChunks();
   const text = useHistoryText();
   const language = useHistoryLanguage();
@@ -78,7 +79,7 @@ export function SubtitleList({
 
   const deleteSelected = useHistoryStore(state => state.deleteSelected);
   const restoreSelected = useHistoryStore(state => state.restoreSelected);
-  const insertBlankChunks = useHistoryStore(state => state.insertBlankChunks);
+  const insertBlankChunks = useHistoryStore(state => state.proposeCuts);
   const smartCutSilenceThreshold = useAppStore(state => state.smartCutSilenceThreshold);
   const videoDuration = useAppStore(state => state.videoPlayerState.duration);
 
@@ -155,7 +156,7 @@ export function SubtitleList({
         toast.success(
           t('components.workstation.smartCutDone')
             .replace('{count}', String(result.segments.length))
-            .replace('{seconds}', result.totalBlankSeconds.toFixed(1)),
+            .replace('{seconds}', result.totalBlankSeconds.toFixed(1)) + ' · ' + edlCopy(uiLanguage).preview,
         );
       },
     });
@@ -164,7 +165,7 @@ export function SubtitleList({
     smartCutSilenceThreshold,
     videoDuration,
     insertBlankChunks,
-    t,
+    uiLanguage, t,
   ]);
 
   const handleRestoreDeleted = () => {

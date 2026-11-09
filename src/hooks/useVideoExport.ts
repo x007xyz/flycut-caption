@@ -1,5 +1,7 @@
+import { createEdl } from '../../shared/editing/edl';
+import { useHistoryStore } from '@/stores/historyStore';
 // 视频导出流程：选择保存位置 → 选择引擎 → 处理 → 保存/通知
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { useTranslation } from '@/contexts/LocaleProvider';
 import { useClientRuntime } from '@/runtime/context';
@@ -34,6 +36,9 @@ export function useVideoExport({
   onProgress, onVideoProcessed, onExportComplete, onError,
 }: UseVideoExportInput) {
   const { t } = useTranslation();
+  const edl = useHistoryStore(s => s.edl);
+  const cutError = useHistoryStore(s => s.cutError);
+  const updatingCuts = useHistoryStore(s => s.updatingCuts);
   const { videoEngines } = useClientRuntime();
   const setError = useAppStore(state => state.setError);
 
@@ -156,11 +161,6 @@ export function useVideoExport({
     }
   }, [videoEngines, isProcessing, currentEngine, startVideoProcessing, completeVideoProcessing, errorVideoProcessing, handleProgress, onVideoProcessed, onExportComplete, onError, t]);
 
-  const subtitleExportChunks = useMemo(
-    () => chunks.filter((chunk) => !chunk.deleted),
-    [chunks],
-  );
-
   // 开始视频处理
   const handleStartProcessing = useCallback(async (options: VideoProcessingOptions) => {
     if (!videoFile) {
@@ -169,7 +169,10 @@ export function useVideoExport({
     }
 
     try {
+      if (cutError || updatingCuts) throw new Error('Invalid or unsettled cuts');
+      const frozen = structuredClone({ chunks, wordChunks, edl: edl ?? createEdl(timelineDuration) });
       const segments = buildVideoExportSegments({
+        edl: frozen.edl,
         chunks,
         wordChunks,
         hasWordTimestamps,
@@ -178,7 +181,8 @@ export function useVideoExport({
 
       await processVideo(videoFile, segments, {
         ...options,
-        subtitleChunks: subtitleExportChunks,
+        edl: frozen.edl,
+        subtitleChunks: frozen.chunks.filter(c => !c.deleted),
       });
     } catch (error) {
       console.error('视频处理失败:', error);
@@ -194,7 +198,7 @@ export function useVideoExport({
     wordChunks,
     hasWordTimestamps,
     timelineDuration,
-    subtitleExportChunks,
+    edl, cutError, updatingCuts,
     processVideo,
     setError,
     t,

@@ -2,6 +2,8 @@
 
 export interface SubtitleChunk {
   text: string;
+  /** Text derived from still-active source words, rather than a user correction. */
+  edlWordProjection?: boolean;
   /** 当前录音中的匿名说话人编号；不表示跨录音身份。 */
   speaker?: string;
   secondText?: string; // 副字幕文本
@@ -17,6 +19,8 @@ export interface SubtitleChunk {
 }
 
 export interface SubtitleTranscript {
+  /** F-0005: formal edits only; pending suggestions are never serialized. */
+  editing?: import('../../shared/editing/edl').Editing;
   text: string;
   /** 句子级字幕（必选，用于列表/时间轴/导出） */
   chunks: SubtitleChunk[];
