@@ -45,3 +45,9 @@ pnpm build
 ## F-0005 实施
 
 `history.edl` 是剪辑真源，字幕 deleted 只作显示投影；播放器/导出/字幕映射读 shared/editing/edl。`pendingCuts` 和 `historyPreview` 只用于预览，不进入项目、恢复副本或导出。`editingOf` 生成正式持久快照；CutHistoryPanel 先保存再读历史，回退失败保留当前编辑，回执丢失先读回核对。
+
+## F-0028 实施
+
+字幕画面统一走 `shared/subtitle-graphics/`：`drawFrame`、`frameKey`、`layoutScene`、`subtitleBand` 只依赖 Canvas 2D，预览和 Host / WebAV / ffmpeg.wasm 共用。`src/subtitle/graphicsScene.ts` 把现有 `SubtitleStylePair` 和 chunks 适配成场景，预览用原始时间轴，导出用 EDL 投影后的时间轴。
+
+`SubtitleOverlay` 用 `requestVideoFrameCallback` 的 `mediaTime` 绘制，暂停拖动在 `seeked` 补画，同一字幕条按 `frameKey` 跳过重画；画布按显示尺寸 × DPR（上限 2）。字体改为 `FontFace` 加载 `public/fonts/subtitle/` 下的完整文件，状态分 loading / ready / error，失败显示「字幕渲染不可用」和重试，不静默用系统字体或 ASS。空字幕不绘制、不显示加载提示。WebAV 用 `SubtitleGraphicsClip`，ffmpeg.wasm 用 cue PNG + concat + VP9 alpha；两者都读同一场景。

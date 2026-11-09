@@ -10,6 +10,7 @@
 - **Tauri 只做桌面外壳**：Rust 只保留 Host 启动（`ensure_host`）、原生对话框（`pick_media_file`、`pick_save_media_file`、`pick_model_directory`）、媒体暂存和 `save_host_asset`。ASR、模型清单/下载/扫描、视频导出都在 Host 插件中，不要再新增执行业务的 Tauri command。
 - **桌面媒体文件使用原生路径**：前端通过 `pick_media_file` 获取路径写入 `VideoFile.path`，需要上传给 Host 时用 `convertFileSrc` 读取后走 `/assets`，RPC 不接收任意本地路径。
 - **媒体文件识别前需转 WAV**：`sherpa-onnx` 读取 WAV；mp4/mov 等视频输入应由 sidecar 使用 `ffmpeg` 提取为 16k 单声道 WAV 后再识别。
+- **字幕字体与 Skia 随 Host 打包**（F-0028）：`scripts/fetch-subtitle-fonts.sh` 把 Noto Sans SC / Inter 的完整字体下载到 `public/fonts/subtitle/` 和 `src-tauri/shared_assets/subtitle-fonts/`（同一份字节）。Host 用 `@napi-rs/canvas` 的 `GlobalFonts` 注册这份文件，`pnpm package:host` 会把 `@napi-rs/canvas` 及当前平台预编译 `.node` 放进 `src-tauri/host/node_modules/`；Tauri `shared_assets/**/*` 会带上字体。缺字体或原生模块时导出必须显示「字幕渲染不可用」及原因，不退回 ASS。
 
 ## 验证
 

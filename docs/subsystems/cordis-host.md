@@ -37,3 +37,7 @@ pnpm tsc -b --noEmit
 ## F-0005 实施
 
 项目格式 3 的每视频 edits 可带 `editing`（EDL v1 与剪辑历史），保存仍用 saveVideoEdits；读旧 edits 不写盘。export.start 可带 edl，Host 独立校验媒体时长与 segments 一致，使用 shared 核心派生保留段。旧 export.start 的 segments 语义保留，legacy 迁移据此复现旧实际成片。具体契约见 ADR-0005。
+
+## F-0028 实施
+
+硬字幕的新契约是 `options.subtitleScene`（`version: 1`）+ `subtitleTransport: 'skia-band'`：客户端发投影后的场景、样式和字体 id，Host 不再解析字幕编辑状态。Host 用 `server/subtitle-render.ts` 动态加载 `@napi-rs/canvas`，注册 `shared_assets/subtitle-fonts` 的完整字体，按场景算字幕条带；`server/plugins/export.ts` 以 `-f rawvideo -pix_fmt rgba -s <band> -r <fps> -i pipe:0` 写帧，遵守背压，filter 必须 `overlay=...:format=yuv420`。场景尺寸与探测到的视频不一致、字体缺失或原生模块加载失败都直接报错；`assContent` 只保留给旧客户端，新路径不自动回退。
