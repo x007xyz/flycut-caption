@@ -80,6 +80,9 @@ export interface FlyCutCaptionLocale {
       nextFrame: string;
       skipBackward: string;
       skipForward: string;
+      subtitleLoading: string;
+      subtitleUnavailable: string;
+      dragSubtitle: string;
     };
     subtitleEditor: {
       title: string;

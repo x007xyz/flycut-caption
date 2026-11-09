@@ -437,6 +437,8 @@ export const EnhancedVideoPlayer = forwardRef<EnhancedVideoPlayerRef, EnhancedVi
             secondaryStyle={secondaryStyle}
             displayMode={displayMode}
             onPrimaryStyleChange={onPrimaryStyleChange || (() => {})}
+            videoRef={videoRef}
+            duration={duration}
             containerDimensions={{
               width: actualVideoDisplaySize.width,
               height: actualVideoDisplaySize.height

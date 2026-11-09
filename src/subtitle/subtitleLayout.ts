@@ -1,8 +1,8 @@
-import { prepareWithSegments, layoutWithLines } from '@chenglou/pretext';
 import type { SubtitleStyle } from './subtitleStyle';
-import { buildCanvasFont, resolveVideoFontSize } from './subtitleMetrics';
-import { applyCjkBreakHints, fixCjkLineStarts, stripSubtitleDisplayPunctuation } from './cjkPunctuation';
+import { getStyleFontFamily } from './subtitleStyle';
+import { resolveVideoFontSize } from './subtitleMetrics';
 import { getMaxWidthRatio } from './subtitlePresets';
+import { layoutTextLines } from '../../shared/subtitle-graphics/layout';
 
 export interface LayoutSubtitleOptions {
   maxWidth: number;
@@ -20,29 +20,14 @@ export function layoutSubtitleLines(
   options: LayoutSubtitleOptions,
 ): string[] {
   const { maxWidth, videoHeight, fontSizePx } = options;
-  const displayText = stripSubtitleDisplayPunctuation(text);
-  if (!displayText || maxWidth <= 0) return [];
-
   const fontSize = fontSizePx ?? resolveVideoFontSize(style, videoHeight);
-  const font = buildCanvasFont(style, fontSize);
-  const lineHeight = fontSize * style.lineHeight;
-  const letterSpacing = style.letterSpacing;
-
-  const paragraphs = displayText.split('\n').map((p) => p.trim()).filter(Boolean);
-  const sourceParagraphs = paragraphs.length > 0 ? paragraphs : [displayText];
-
-  const allLines: string[] = [];
-
-  for (const paragraph of sourceParagraphs) {
-    const hinted = applyCjkBreakHints(paragraph);
-    const prepared = prepareWithSegments(hinted, font, {
-      letterSpacing: letterSpacing > 0 ? letterSpacing : undefined,
-    });
-    const { lines } = layoutWithLines(prepared, maxWidth, lineHeight);
-    allLines.push(...lines.map((line) => line.text.replace(/\u200b/g, '')));
-  }
-
-  return fixCjkLineStarts(allLines);
+  return layoutTextLines(text, {
+    fontFamily: getStyleFontFamily(style),
+    fontStyle: style.fontStyle,
+    fontWeight: style.fontWeight,
+    lineHeight: style.lineHeight,
+    letterSpacing: style.letterSpacing,
+  }, fontSize, maxWidth).map((line) => line.text);
 }
 
 /** 计算视频坐标系下的最大文本宽度 */

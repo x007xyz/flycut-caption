@@ -77,6 +77,9 @@ const zhCN: FlyCutCaptionLocale = {
       nextFrame: '下一帧',
       skipBackward: '快退',
       skipForward: '快进',
+      subtitleLoading: '正在加载字幕字体…',
+      subtitleUnavailable: '字幕渲染不可用',
+      dragSubtitle: '拖拽调整字幕位置',
     },
     subtitleEditor: {
       title: '字幕编辑器',

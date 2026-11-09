@@ -80,6 +80,9 @@ const customJaJP: FlyCutCaptionLocale = {
       nextFrame: '次のフレーム',
       skipBackward: '巻き戻し',
       skipForward: '早送り',
+      subtitleLoading: '字幕フォントを読み込み中…',
+      subtitleUnavailable: '字幕を描画できません',
+      dragSubtitle: 'ドラッグして字幕の位置を調整',
     },
     subtitleEditor: {
       title: '字幕エディター',

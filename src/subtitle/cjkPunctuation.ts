@@ -1,52 +1,6 @@
-/** 画面上字幕展示时去掉的标点（ASR/编辑数据仍保留） */
-const SUBTITLE_DISPLAY_PUNCTUATION_RE = /\p{P}/gu;
-
-/**
- * 去掉画面上字幕的标点符号。仅用于预览/烧录展示，不影响 ASR 结果与编辑器原文。
- */
-export function stripSubtitleDisplayPunctuation(text: string): string {
-  if (!text) return text;
-  return text.replace(SUBTITLE_DISPLAY_PUNCTUATION_RE, '').trim();
-}
-
-/** 行首禁则标点（避头） */
-const LINE_START_FORBIDDEN = new Set('，。！？；：、」』）】》〉』”’'.split(''));
-
-/** 行尾禁则标点（避尾） */
-const LINE_END_FORBIDDEN = new Set('「『（【《〈『“‘'.split(''));
-
-/**
- * 将行首禁则标点移至上一行末尾（中文标点禁则简化实现）。
- */
-export function fixCjkLineStarts(lines: string[]): string[] {
-  if (lines.length <= 1) return lines;
-
-  const result = [...lines];
-
-  for (let i = 1; i < result.length; i++) {
-    let line = result[i];
-    while (line.length > 0 && LINE_START_FORBIDDEN.has(line[0])) {
-      const punct = line[0];
-      result[i - 1] = result[i - 1] + punct;
-      line = line.slice(1);
-    }
-    result[i] = line;
-  }
-
-  return result.filter((line) => line.length > 0);
-}
-
-/**
- * 避免在禁则标点处断行：在标点后插入零宽空格提示换行偏好（供 Pretext 分词）。
- */
-export function applyCjkBreakHints(text: string): string {
-  let out = '';
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    out += ch;
-    if (LINE_END_FORBIDDEN.has(ch)) {
-      out += '\u200b';
-    }
-  }
-  return out;
-}
+// 字幕标点规则与 shared 图形层共用一份实现。
+export {
+  stripSubtitleDisplayPunctuation,
+  fixCjkLineStarts,
+  applyCjkBreakHints,
+} from '../../shared/subtitle-graphics/text';

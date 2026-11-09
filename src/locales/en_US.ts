@@ -77,6 +77,9 @@ const enUS: FlyCutCaptionLocale = {
       nextFrame: 'Next Frame',
       skipBackward: 'Skip Backward',
       skipForward: 'Skip Forward',
+      subtitleLoading: 'Loading subtitle fonts…',
+      subtitleUnavailable: 'Subtitle rendering is unavailable',
+      dragSubtitle: 'Drag to adjust subtitle position',
     },
     subtitleEditor: {
       title: 'Subtitle Editor',

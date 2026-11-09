@@ -23,7 +23,15 @@ export {
   resolveExportSubtitleMetrics,
 } from './subtitleMetrics';
 
-export { registerSubtitleFonts, ensureSubtitleFont } from './subtitleFonts';
+export {
+  registerSubtitleFonts,
+  ensureSubtitleFont,
+  ensureSubtitleFonts,
+  retrySubtitleFonts,
+  getSubtitleFontState,
+  subscribeSubtitleFontState,
+} from './subtitleFonts';
+export type { SubtitleFontState, SubtitleFontStatus } from './subtitleFonts';
 
 export {
   layoutSubtitleLines,
@@ -33,6 +41,8 @@ export {
 
 export { renderSubtitleFrame } from './subtitleRenderer';
 export type { SubtitleRenderContent, SubtitleRenderFrame, SubtitleDisplayMode } from './subtitleRenderer';
+
+export { toGraphicStyle, buildPreviewSubtitleScene, buildExportSubtitleScene } from './graphicsScene';
 
 export {
   ASPECT_PRESETS,
