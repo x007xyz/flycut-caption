@@ -41,8 +41,8 @@ approved_at:
 
 - 前后端读取同一份 Noto / Inter 字体文件；`cmp` 确认 `public/fonts/subtitle` 与 `src-tauri/shared_assets/subtitle-fonts` 字节一致。
 - 预览用 `requestVideoFrameCallback` 的 `mediaTime` 绘制；暂停拖动监听 `seeked` 补画。E2E 在 120 ms 内读取到正确帧。
-- 同一 cue 的 `frameKey` 不变，20 秒 WKWebView 播放只触发 14 次实际绘制；无字幕区间 alpha 为 0。
-- 系统 WKWebView 三次测量：掉帧 0.33% / 2.68% / 1.50%，拖动 p95 102 / 89 / 102 ms。窗口报告 `visible: false, onActiveSpace: false`，数据不作为验收证据。
+- 同一 cue 的 `frameKey` 不变；20 秒播放中每条 cue 只在进入和离开时各画一次（最终版 14 次 / 20 秒），无字幕区间 alpha 为 0。
+- 系统 WKWebView 四次测量：掉帧 0.33% / 2.68% / 1.50% / 1.17%，拖动 p95 102 / 89 / 102 / 104 ms。窗口报告 `visible: false, onActiveSpace: false`，数据不作为验收证据。
 - **真实 Tauri 前台窗口 1080p30 多次测量：Not run（当前会话没有活动桌面）。**
 
 ### AC-3 Host Skia 条带、FFmpeg overlay 与性能
