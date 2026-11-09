@@ -212,6 +212,6 @@ cargo check --manifest-path src-tauri/Cargo.toml
 - https://github.com/deepseek-ai/deepseek-harness/tree/master/vendor/cordis
 - https://docs.langchain.com/oss/javascript/langgraph/workflows-agents
 
-## F-0005 工作分支变更（待验收）
+## F-0005 统一剪辑时间轴
 
 统一 EDL 位于 shared/editing/edl，单位整数微秒。项目格式 3 将正式 EDL 和仅剪辑的持久历史与每视频 edits 一起保存；临时建议与预览不持久化。Host 新导出计划校验 EDL 和 source/segments，预览与字幕共用区间映射。该变更尚未获维护者验收，验证限制见 F-0005/04-test-report.md。

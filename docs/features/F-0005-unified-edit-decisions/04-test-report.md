@@ -1,9 +1,9 @@
 ---
 id: F-0005
 stage: 04-test-report
-status: review
-approved_by:
-approved_at:
+status: approved
+approved_by: zhangxiang.chen
+approved_at: 2026-11-09
 ---
 
 # F-0005 统一时间映射与编辑决策（EDL）：测试与验收
@@ -12,7 +12,7 @@ approved_at:
 
 ## 设计与实现摘要
 
-每个视频以原媒体坐标上的整数微秒删除并集为唯一真源，保留区段、字幕 cue、预览和视频导出全部从 shared EDL 派生。正式 EDL 与只含剪辑的持久历史写入项目格式 3；待确认建议和历史预览只在内存中。Host 与 FFmpeg 适配器共用全局输出时钟 filter，WebAV 也消费同一捕获快照。历史回退先保存，再按内容判断结果；保存响应丢失时会读回 Host 确认。ADR-0005 仍为 `proposed`，请在验收时一并审阅。
+每个视频以原媒体坐标上的整数微秒删除并集为唯一真源，保留区段、字幕 cue、预览和视频导出全部从 shared EDL 派生。正式 EDL 与只含剪辑的持久历史写入项目格式 3；待确认建议和历史预览只在内存中。Host 与 FFmpeg 适配器共用全局输出时钟 filter，WebAV 也消费同一捕获快照。历史回退先保存，再按内容判断结果；保存响应丢失时会读回 Host 确认。ADR-0005 已随本报告验收接受。
 
 相对设计的主要偏差是：一个纯核心模块代替多个文件、区间映射使用顺序扫描、历史回退同步等待 Host。技术取舍与遗留环境验证见 [03-implementation.md](03-implementation.md)。
 
@@ -81,4 +81,4 @@ approved_at:
 
 ## 结论
 
-可以发布。ADR-0005 仍为 `proposed`，请维护者在确认本报告时审阅并接受；实现与测试范围到此完成。
+可以发布。ADR-0005 已接受；实现与测试范围到此完成。

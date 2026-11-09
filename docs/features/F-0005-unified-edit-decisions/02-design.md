@@ -102,7 +102,7 @@ RPC 继续由插件注册，shared/protocol.ts 声明类型；Gateway 不加业�
 
 ## 架构决策
 
-[ADR-0005 统一原媒体编辑决策与派生时间映射](../../20-architecture/adr/0005-unified-edit-decisions.md)，proposed；维护者在验收时审阅。新操作删除规则已由 PRD 确认，设计与存储实现仍需测试证明。
+[ADR-0005 统一原媒体编辑决策与派生时间映射](../../20-architecture/adr/0005-unified-edit-decisions.md) 已随本需求验收接受。新操作删除规则已由 PRD 确认，设计与存储实现由 04 的测试证据覆盖。
 
 ## 自行决定的事项
 

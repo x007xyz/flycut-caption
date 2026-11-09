@@ -1,8 +1,8 @@
 ---
 id: ADR-0005
-status: proposed
+status: accepted
 date: 2026-11-05
-deciders:
+deciders: zhangxiang.chen
 feature: F-0005
 superseded_by:
 ---
@@ -31,7 +31,7 @@ F-0005 PRD 已确认：新操作只删除明确选择的区间，其余媒体保
 
 ## 后果
 
-需迁移所有消费者、历史状态、项目持久化与旧格式，并实测帧级输出而非只比较计划。旧 Host 的单段尾裁剪 fast path 在新路径需验证修正；迁移仍以旧实际输出为准。精度、边界、非法数据、恢复入口和全部 AC 的设计见 F-0005/02-design.md。F-0002 验收前不开发；本 ADR 保持 proposed，技术选择由维护者在验收时审阅。
+需迁移所有消费者、历史状态、项目持久化与旧格式，并实测帧级输出而非只比较计划。旧 Host 的单段尾裁剪 fast path 在新路径需验证修正；迁移仍以旧实际输出为准。精度、边界、非法数据、恢复入口和全部 AC 的设计与验收证据见 F-0005/02-design.md 和 F-0005/04-test-report.md。
 
 ## 实施说明（待验收，2026-11-09）
 
@@ -40,4 +40,4 @@ F-0005 PRD 已确认：新操作只删除明确选择的区间，其余媒体保
 - F-0004 恢复副本可选携带 editing，旧副本没有该字段时沿用旧比较方式；临时建议、历史预览均不进入副本。
 - `export.start` 可选 edl，新增客户端始终发送；Host 检查 segments 与 EDL 一致并探测媒体时长。旧客户端的 segments 请求语义保留。
 - Host 与 FFmpeg 适配器共用 `ffmpegVideoFilter`，对完整输出时钟做 fps 量化，字幕仍取同一保留区间交集。
-- 仅剪辑持久历史不等同于把原有会话 undo/redo 序列持久化。本 ADR 保持 proposed，未自动接受。
+- 仅剪辑持久历史不等同于把原有会话 undo/redo 序列持久化。该取舍已随 F-0005 验收由维护者接受。

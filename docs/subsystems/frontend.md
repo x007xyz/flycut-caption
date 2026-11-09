@@ -42,6 +42,6 @@ pnpm build
 
 涉及字幕分句、智能剪空白等纯逻辑的，跑对应 `pnpm test:sentence-grouping` / `pnpm test:smart-cut`。
 
-## F-0005 实施（待验收）
+## F-0005 实施
 
 `history.edl` 是剪辑真源，字幕 deleted 只作显示投影；播放器/导出/字幕映射读 shared/editing/edl。`pendingCuts` 和 `historyPreview` 只用于预览，不进入项目、恢复副本或导出。`editingOf` 生成正式持久快照；CutHistoryPanel 先保存再读历史，回退失败保留当前编辑，回执丢失先读回核对。

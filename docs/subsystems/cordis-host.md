@@ -34,6 +34,6 @@ pnpm tsc -b --noEmit
 
 同时动到 Tauri/sidecar 的，还要满足 [funasr-tauri.md](funasr-tauri.md) 的验证要求。
 
-## F-0005 实施（待验收）
+## F-0005 实施
 
 项目格式 3 的每视频 edits 可带 `editing`（EDL v1 与剪辑历史），保存仍用 saveVideoEdits；读旧 edits 不写盘。export.start 可带 edl，Host 独立校验媒体时长与 segments 一致，使用 shared 核心派生保留段。旧 export.start 的 segments 语义保留，legacy 迁移据此复现旧实际成片。具体契约见 ADR-0005。

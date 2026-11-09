@@ -63,4 +63,4 @@ F-0002 要把项目（转写、字幕修改、样式）保存到 Host，并且�
 | 1 | F-0002 | 本 ADR 的初始格式 |
 | 2 | F-0003 | 视频级修订号和样式来源、项目级字幕样式、回收站标记；第一次写入时保留 `project.v1.json`。见 [ADR-0003](0003-multi-video-projects.md) |
 
-| 3 | F-0005（待验收） | 每视频 edits 增加 EDL/持久剪辑历史；旧 edits 只读派生，下一次写入持久化，备份沿用版本迁移机制。见 [ADR-0005](0005-unified-edit-decisions.md) |
+| 3 | F-0005 | 每视频 edits 增加 EDL/持久剪辑历史；旧 edits 只读派生，下一次写入持久化，备份沿用版本迁移机制。见 [ADR-0005](0005-unified-edit-decisions.md) |
