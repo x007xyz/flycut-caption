@@ -218,3 +218,47 @@ for (const theme of ['light', 'dark'] as const) for (const english of [false, tr
     });
   });
 }
+
+test('F-0005/AC-5 real WebAV fallback consumes the captured EDL rather than treating keep-only segments as an uncut video', async ({ page }) => {
+  test.setTimeout(90_000);
+  await prepare(page, 'light'); const f = fixture(); await connect(page, f.handlers);
+  await page.goto(`/#/projects/${P}/videos/${VIDEO_ID}`);
+  await expect(page.locator('video')).toBeVisible();
+  const result = await page.evaluate(async () => {
+    const enginePath = '/src/services/videoEngines/WebAVEngine.ts'; const corePath = '/shared/editing/edl/index.ts';
+    const { WebAVEngine } = await import(enginePath); const { createEdl, exportSegments, outputToSource } = await import(corePath);
+    const url = document.querySelector('video')!.src; const blob = await (await fetch(url)).blob();
+    const file = new File([blob], 'marker.mp4', { type: 'video/mp4' }); const engine = new WebAVEngine();
+    try {
+      await engine.initialize({ file, url, name: file.name, duration: 10, size: file.size, type: file.type });
+      const edl = createEdl(10, [{ start: 0.5, end: 2 }, { start: 4, end: 10 }]);
+      const output = await engine.processVideo(exportSegments(edl), { edl, format: 'mp4', quality: 'medium', preserveAudio: false, subtitleProcessing: 'none' });
+      const video = document.createElement('video'); video.src = URL.createObjectURL(output);
+      await new Promise<void>((resolve, reject) => { video.onloadedmetadata = () => resolve(); video.onerror = () => reject(new Error('Invalid WebAV output')); });
+      const frameAt = async (target: HTMLVideoElement, time: number) => {
+        target.currentTime = time;
+        await new Promise<void>(resolve => { target.onseeked = () => resolve(); });
+        const canvas = new OffscreenCanvas(80, 45); const context = canvas.getContext('2d')!;
+        context.drawImage(target, 0, 0, 80, 45);
+        return Array.from(context.getImageData(0, 0, 80, 45).data).filter((_, i) => i % 4 === 0);
+      };
+      const sourceVideo = document.createElement('video'); sourceVideo.muted = true; sourceVideo.src = URL.createObjectURL(blob);
+      await new Promise<void>(resolve => { sourceVideo.onloadedmetadata = () => resolve(); });
+      const contentMae = [];
+      for (const outputTime of [0.12, 0.44, 0.56, 1.25, 2.35]) {
+        const frame = await frameAt(video, outputTime); const sourceTime = outputToSource(edl, outputTime)!;
+        let best = Infinity;
+        for (let shift = -0.06; shift <= 0.0601; shift += 0.01) {
+          const candidate = await frameAt(sourceVideo, Math.max(0, sourceTime + shift));
+          const mae = frame.reduce((sum, value, i) => sum + Math.abs(value - candidate[i]), 0) / frame.length;
+          best = Math.min(best, mae);
+        }
+        contentMae.push({ outputTime, sourceTime, best });
+      }
+      const duration = video.duration; URL.revokeObjectURL(video.src); URL.revokeObjectURL(sourceVideo.src);
+      return { duration, size: output.size, contentMae };
+    } finally { await engine.cleanup(); }
+  });
+  expect(result.size).toBeGreaterThan(1000); expect(Math.abs(result.duration - 2.5)).toBeLessThanOrEqual(0.04);
+  expect(Math.max(...result.contentMae.map(item => item.best))).toBeLessThan(12);
+});

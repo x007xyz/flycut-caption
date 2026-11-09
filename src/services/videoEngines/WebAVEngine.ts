@@ -1,4 +1,4 @@
-import { projectFromKept } from '../../../shared/editing/edl';
+import { projectFromKept, exportSegments, validateEdl } from '../../../shared/editing/edl';
 // WebAV 视频处理引擎实现
 
 import { Combinator, MP4Clip, OffscreenSprite, EmbedSubtitlesClip } from '@webav/av-cliper';
@@ -141,9 +141,11 @@ export class WebAVEngine implements IVideoProcessingEngine {
       this.reportProgress('processing', 10, '分析删除片段...');
 
       // 获取所有删除的片段并合并连续片段
-      const deletedSegments = this.mergeConsecutiveSegments(
-        segments.filter(seg => !seg.keep)
-      );
+      if (options.edl && JSON.stringify(keptSegments.map(s => [s.start, s.end])) !== JSON.stringify(exportSegments(options.edl).map(s => [s.start, s.end])))
+        throw new Error('The supplied segments disagree with the EDL');
+      const deletedSegments = options.edl
+        ? validateEdl(options.edl).deleted.map(r => ({ start: r.startUs / 1e6, end: r.endUs / 1e6, keep: false }))
+        : this.mergeConsecutiveSegments(segments.filter(seg => !seg.keep));
 
       console.log('删除片段:', deletedSegments.map(s => `${s.start}s-${s.end}s`));
       console.log('保留片段:', keptSegments.map(s => `${s.start}s-${s.end}s`));
@@ -177,18 +179,20 @@ export class WebAVEngine implements IVideoProcessingEngine {
       let totalDuration = 0;
       for (let i = 0; i < splitClips.length; i++) {
         const clip = splitClips[i];
+        const segmentDuration = Math.round((keptSegments[i].end - keptSegments[i].start) * 1e6);
         
         console.log(`添加视频片段 ${i + 1}/${splitClips.length}, 持续时间: ${clip.meta.duration / 1e6}s`);
 
         const sprite = new OffscreenSprite(clip);
         
-        // 设置时间偏移
-        sprite.time.offset = totalDuration;
+        // MP4Clip.split returns complete encoded samples at the boundary. Constrain the sprite to the
+        // captured EDL duration so a sample at the join cannot add a frame to every retained segment.
+        sprite.time = { offset: totalDuration, duration: segmentDuration, playbackRate: 1 };
         
         // 添加到合成器
         await this.combinator.addSprite(sprite);
 
-        totalDuration += clip.meta.duration;
+        totalDuration += segmentDuration;
 
         this.reportProgress(
           'processing', 
@@ -333,7 +337,7 @@ export class WebAVEngine implements IVideoProcessingEngine {
         const keepDuration = deleteSegment.start - currentTime;
         console.log(`保留片段: ${currentTime}s-${deleteSegment.start}s, 时长: ${keepDuration}s`);
         
-        if (keepDuration > 0.01) { // 最小0.01秒片段
+        if (keepDuration > 0) {
           // 在删除片段开始处分割
           const splitTime = (deleteSegment.start - currentTime) * 1e6; // 转换为微秒
           const [keepPart, remaining] = await currentClip.split(splitTime);
@@ -368,7 +372,7 @@ export class WebAVEngine implements IVideoProcessingEngine {
     }
 
     // 如果还有剩余的视频片段，添加到结果中
-    if (currentClip && currentClip.meta.duration > 0.01 * 1e6) {
+    if (currentClip && currentClip.meta.duration > 0) {
       console.log(`保留最后的片段，时长: ${currentClip.meta.duration / 1e6}s`);
       resultClips.push(currentClip);
     }
