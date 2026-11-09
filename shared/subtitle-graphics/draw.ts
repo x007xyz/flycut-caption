@@ -257,12 +257,14 @@ export function subtitleBand(
   let minTop = scene.height;
   let maxBottom = 0;
   let margin = 8;
+  let hasContent = false;
   for (const layout of layouts) {
     if (layout.primaryTop !== undefined) minTop = Math.min(minTop, layout.primaryTop);
     if (layout.secondaryTop !== undefined) minTop = Math.min(minTop, layout.secondaryTop);
     maxBottom = Math.max(maxBottom, layout.bottom);
     for (const block of [layout.primary, layout.secondary]) {
       if (!block) continue;
+      hasContent = true;
       const style = block.style;
       margin = Math.max(
         margin,
@@ -271,7 +273,7 @@ export function subtitleBand(
       );
     }
   }
-  if (layouts.length === 0) return { x: 0, y: 0, width: scene.width, height: 2 };
+  if (!hasContent) return { x: 0, y: 0, width: scene.width - (scene.width % 2), height: 2 };
   let y = Math.floor(minTop - margin);
   let height = Math.ceil(maxBottom + margin - y);
   y = Math.max(0, y - (y % 2));

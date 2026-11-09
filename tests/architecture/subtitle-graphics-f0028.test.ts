@@ -96,6 +96,9 @@ test('F-0028/AC-1 band crop keeps the same bbox as a full-frame render (offset <
   assert.ok(Math.abs(fullBox.minX - croppedBox.minX) <= 2);
   assert.ok(Math.abs((fullBox.minY - band.y) - croppedBox.minY) <= 2);
   assert.ok(Math.abs((fullBox.maxY - band.y) - croppedBox.maxY) <= 2);
+
+  const empty = scene({ cues: [{ id: 'empty', start: 0, end: 1, text: '' }] });
+  assert.deepEqual(subtitleBand(empty, layoutScene(ctx, empty)), { x: 0, y: 0, width: 1920, height: 2 });
 });
 
 test('F-0028/AC-1 three aspect presets, styles and display modes produce visible pixels', () => {
