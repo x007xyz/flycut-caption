@@ -38,13 +38,6 @@ export interface VideoProcessingProgress {
   error?: string;
 }
 
-export interface VideoProcessorConfig {
-  engine: 'host';
-  outputFormat: 'mp4' | 'webm';
-  quality: 'high' | 'medium' | 'low';
-  preserveAudio: boolean;
-}
-
 export interface ExportOptions {
   format: 'mp4' | 'webm' | 'avi';
   quality: 'high' | 'medium' | 'low';
@@ -56,5 +49,4 @@ export type VideoAction =
   | { type: 'SET_VIDEO_FILE'; videoFile: VideoFile }
   | { type: 'SET_PLAYER_STATE'; playerState: Partial<VideoPlayerState> }
   | { type: 'SET_PROCESSING_PROGRESS'; progress: VideoProcessingProgress }
-  | { type: 'SET_PROCESSOR_CONFIG'; config: Partial<VideoProcessorConfig> }
   | { type: 'RESET_VIDEO' };

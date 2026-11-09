@@ -18,7 +18,7 @@ import type { VideoExportOptions } from '@/components/ExportPanel/ExportDialog';
 import type { SubtitleStylePair } from '@/subtitle';
 import type { SubtitleChunk } from '@/types/subtitle';
 import type { VideoFile, VideoSegment, VideoProcessingProgress } from '@/types/video';
-import type { VideoProcessingOptions, VideoEngineType } from '@/types/videoEngine';
+import type { VideoProcessingOptions } from '@/types/videoEngine';
 import type { FlyCutCaptionProps } from '@/types';
 
 interface UseVideoExportInput extends Pick<FlyCutCaptionProps, 'onProgress' | 'onVideoProcessed' | 'onExportComplete' | 'onError'> {
@@ -53,7 +53,6 @@ export function useVideoExport({
   const [videoProgress, setVideoProgress] = useState<VideoProcessingProgress | null>(null);
   const processingMessageIdRef = useRef<string | null>(null);
   const exportSaveTargetRef = useRef<VideoExportSaveTarget | null>(null);
-  const [currentEngine, setCurrentEngine] = useState<VideoEngineType | null>(null);
   const processorRef = useRef<UnifiedVideoProcessor | null>(null);
 
   const handleProgress = useCallback((progressData: VideoProcessingProgress) => {
@@ -103,12 +102,8 @@ export function useVideoExport({
         outputPath: options?.outputPath ?? exportSaveTargetRef.current?.outputPath,
       };
 
-      // 初始化处理器（如果还没有初始化或需要切换引擎）
-      const engineType = await processorRef.current.initialize(
-        videoFile,
-        resolvedOptions.engine || currentEngine || undefined
-      );
-      setCurrentEngine(engineType);
+      // 初始化 Host 导出处理器
+      await processorRef.current.initialize(videoFile);
 
       // 处理视频
       const resultBlob = await processorRef.current.processVideo(segments, resolvedOptions);
@@ -159,7 +154,7 @@ export function useVideoExport({
       processingMessageIdRef.current = null;
       exportSaveTargetRef.current = null;
     }
-  }, [videoEngines, isProcessing, currentEngine, startVideoProcessing, completeVideoProcessing, errorVideoProcessing, handleProgress, onVideoProcessed, onExportComplete, onError, t]);
+  }, [videoEngines, isProcessing, startVideoProcessing, completeVideoProcessing, errorVideoProcessing, handleProgress, onVideoProcessed, onExportComplete, onError, t]);
 
   // 开始视频处理
   const handleStartProcessing = useCallback(async (options: VideoProcessingOptions) => {

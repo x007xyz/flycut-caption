@@ -1,6 +1,6 @@
 // 应用程序状态类型定义
 
-import type { VideoFile, VideoPlayerState, VideoProcessingProgress, VideoProcessorConfig } from './video';
+import type { VideoFile, VideoPlayerState, VideoProcessingProgress } from './video';
 import type { SubtitleTranscript, ASRProgress } from './subtitle';
 
 export interface AppState {
@@ -11,7 +11,6 @@ export interface AppState {
   videoFile: VideoFile | null;
   videoPlayerState: VideoPlayerState;
   videoProcessingProgress: VideoProcessingProgress | null;
-  videoProcessorConfig: VideoProcessorConfig;
   
   // 字幕相关状态  
   transcript: SubtitleTranscript | null;
@@ -33,7 +32,6 @@ export type AppAction =
   | { type: 'SET_VIDEO_FILE'; videoFile: VideoFile }
   | { type: 'SET_VIDEO_PLAYER_STATE'; playerState: Partial<VideoPlayerState> }
   | { type: 'SET_VIDEO_PROCESSING_PROGRESS'; progress: VideoProcessingProgress }
-  | { type: 'SET_VIDEO_PROCESSOR_CONFIG'; config: Partial<VideoProcessorConfig> }
   | { type: 'SET_TRANSCRIPT'; transcript: SubtitleTranscript }
   | { type: 'SET_ASR_PROGRESS'; progress: ASRProgress }
   | { type: 'SET_CURRENT_TIME'; time: number }

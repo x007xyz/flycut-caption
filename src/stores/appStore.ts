@@ -5,8 +5,7 @@ import { devtools, persist } from 'zustand/middleware'
 import type { 
   VideoFile, 
   VideoPlayerState, 
-  VideoProcessingProgress,
-  VideoProcessorConfig 
+  VideoProcessingProgress
 } from '@/types/video'
 import type { ASRProgress } from '@/types/subtitle'
 import type { ModelRef, OptionValue } from '../../shared/providers'
@@ -36,7 +35,6 @@ export interface AppState {
   videoFile: VideoFile | null
   videoPlayerState: VideoPlayerState
   videoProcessingProgress: VideoProcessingProgress | null
-  videoProcessorConfig: VideoProcessorConfig
   
   // ASR相关状态（仅进度，实际数据在historyStore）
   asrProgress: ASRProgress | null
@@ -85,7 +83,6 @@ export interface AppActions {
   setVideoFile: (videoFile: VideoFile | null) => void
   setVideoPlayerState: (playerState: Partial<VideoPlayerState>) => void
   setVideoProcessingProgress: (progress: VideoProcessingProgress) => void
-  setVideoProcessorConfig: (config: Partial<VideoProcessorConfig>) => void
   
   // ASR管理（仅进度）
   setASRProgress: (progress: ASRProgress) => void
@@ -139,12 +136,6 @@ const initialState: AppState = {
     playbackRate: 1,
   },
   videoProcessingProgress: null,
-  videoProcessorConfig: {
-    engine: 'host',
-    outputFormat: 'mp4',
-    quality: 'medium',
-    preserveAudio: true,
-  },
   
   asrProgress: null,
   currentTime: 0,
@@ -214,15 +205,6 @@ export const createAppStore = () => createStore<AppState & AppActions>()(
         set((state) => ({
           ...state,
           videoProcessingProgress: progress
-        })),
-      
-      setVideoProcessorConfig: (config) =>
-        set((state) => ({
-          ...state,
-          videoProcessorConfig: {
-            ...state.videoProcessorConfig,
-            ...config
-          }
         })),
       
       // ASR管理（仅进度）

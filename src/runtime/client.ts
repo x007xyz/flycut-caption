@@ -88,10 +88,10 @@ export const aiClientPlugin = { name: 'flycut-ai-client', inject: ['connection']
 export const videoEngineRegistryPlugin = { name: 'flycut-video-engines', apply(ctx: Context) {
   ctx.provide('videoEngines', new VideoEngineRegistry());
 } };
-/** Host FFmpeg is the primary export engine everywhere. */
+/** Host FFmpeg is the only export engine everywhere. */
 export const hostExportEnginePlugin = { name: 'flycut-host-export-engine', inject: ['connection', 'videoEngines'], apply(ctx: Context) {
   const connection = ctx.connection;
-  ctx.effect(() => ctx.videoEngines.register('host', () => new HostExportEngine(connection), 0));
+  ctx.effect(() => ctx.videoEngines.register('host', () => new HostExportEngine(connection)));
 } };
 export async function createClientRuntime(options: HostConnectionOptions, shell: UISlots['shell'], plugins: object[] = []) {
   const ctx = new Context();

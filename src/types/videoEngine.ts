@@ -21,7 +21,6 @@ export interface VideoProcessingOptions {
   subtitleStyle?: SubtitleStyle; // 字幕样式配置（向后兼容，引擎优先用 subtitleStylePair）
   subtitleStylePair?: SubtitleStylePair; // 主/副字幕样式对
   subtitleExportMode?: SubtitleDisplayMode; // 导出内容：主/副/双语
-  engine?: VideoEngineType; // 指定使用的引擎
   videoWidth?: number;
   videoHeight?: number;
   /** 源视频帧率；Host 会以探测值为准，这里只作缺省 */

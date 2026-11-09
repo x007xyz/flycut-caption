@@ -100,7 +100,7 @@ export function buildPreviewSubtitleScene(input: SceneInput): SubtitleGraphicSce
   return sceneShell(input, cues);
 }
 
-/** 导出场景：先按现有 EDL 投影到成片时间轴，再交给 Host / 回退引擎。 */
+/** 导出场景：先按现有 EDL 投影到成片时间轴，再交给 Host。 */
 export function buildExportSubtitleScene(input: SceneInput & { keptSegments: VideoSegment[] }): SubtitleGraphicScene {
   const active = input.chunks
     .filter((chunk) => !chunk.deleted && !chunk.isBlankSpacer)
