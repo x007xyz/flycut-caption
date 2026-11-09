@@ -59,7 +59,7 @@ depends_on: [F-0016]
 
 - **AC-3**：Host使用Skia字幕条带、frameKey复用及FFmpeg overlay format=yuv420；真实20/60分钟1080p导出记录总耗时和峰值内存，与同机ASS基线比较，静态不慢于基线1.2倍、动画不慢于1.5倍（建议门槛）。
 
-- **AC-4**：WebAV与ffmpeg.wasm回退同样使用共用图形层，在Web真实导出对比帧；桌面仅Host导出，SRT/VTT/ASS文件和软字幕回归通过；macOS安装包中的.node和字体可加载，离线完整导出成功。
+- **AC-4（2026-11-09 调整：本地回退移除）**：WebAV 与 ffmpeg.wasm 回退不再交付；Host 是唯一视频导出路径，SRT/VTT/ASS 文件和软字幕回归通过；macOS 安装包中的 .node 和字体可加载，离线完整导出成功。原 WebAV / ffmpeg.wasm 成片对比要求保留为历史。
 
 - **AC-5**：**入口与空态**：沿用现有播放器、字幕样式面板与导出入口，不新增「共用字幕图形层」技术入口。无字幕时不绘制字幕层；字幕字体载入前显示「正在加载字幕字体… / Loading subtitle fonts…」，不能先用替代字体伪装最终预览。
 
