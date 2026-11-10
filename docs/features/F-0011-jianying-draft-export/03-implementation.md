@@ -20,12 +20,12 @@ approved_at: 2026-11-10
 
 | 日期 | 清单项 | 提交 | 检查 |
 |---|---|---|---|
-| 2026-11-10 | 1. 共享能力/preflight/start/source 契约、非重叠校验和能力对象 | `5a886f8`, 本次本地提交 | 默认/内部模式、严格 source 联合、重叠字幕拒绝；Host 类型检查通过 |
-| 2026-11-10 | 2. Host 目录 grant、冻结、job、持久幂等和原子 staging | `d00c4f6`, 本次本地提交 | F-0011 Host 6/6：shell-only/CORS、一次性 grant、server linked-media 硬拒绝、丢回包/重启幂等、独立时间和失败清理 |
-| 2026-11-10 | 3. Tauri 原生目录选择 shell 外壳 | 本次本地提交 | `cargo test ... jianying_output` 2/2；只返回 opaque grant |
-| 2026-11-10 | 4. 完整导出面板状态机与中英文 | `c72cff2`, 本次本地提交 | 目录、准备、进度、取消、错误、成功和默认/Web 禁用；20 个中英明暗 Playwright 用例通过 |
-| 2026-11-10 | 5. Host/生成器/回读/安全失败测试 | `5a886f8`, `d00c4f6`, 本次本地提交 | 非重叠明显时间字幕、独立期望、SHA-256、同级 staging 清理、取消和 post-copy failure 通过 |
-| 2026-11-10 | 6. 全量静态/回归与界面证据 | 本次本地提交 | 静态 4 项、架构 97/97、F-0011 E2E 20/20；两段口播/编辑/重开/搬迁/Windows 仍 Not run |
+| 2026-11-10 | 1. 共享能力/preflight/start/source 契约、非重叠校验和能力对象 | `5a886f8`, `7b8feac` | 默认/内部模式、严格 source 联合、重叠字幕拒绝；Host 类型检查通过 |
+| 2026-11-10 | 2. Host 目录 grant、冻结、job、持久幂等和原子 staging | `d00c4f6`, `7b8feac` | F-0011 Host 6/6：shell-only/CORS、一次性 grant、server linked-media 硬拒绝、丢回包/重启幂等、独立时间和失败清理 |
+| 2026-11-10 | 3. Tauri 原生目录选择 shell 外壳 | `7b8feac` | `cargo test ... jianying_output` 2/2；只返回 opaque grant |
+| 2026-11-10 | 4. 完整导出面板状态机与中英文 | `c72cff2`, `7b8feac` | 目录、准备、进度、取消、错误、成功和默认/Web 禁用；20 个中英明暗 Playwright 用例通过 |
+| 2026-11-10 | 5. Host/生成器/回读/安全失败测试 | `5a886f8`, `d00c4f6`, `7b8feac` | 非重叠明显时间字幕、独立期望、SHA-256、同级 staging 清理、取消和 post-copy failure 通过 |
+| 2026-11-10 | 6. 全量静态/回归与界面证据 | `7b8feac` | 静态 4 项、架构 97/97、F-0011 E2E 20/20；两段口播/编辑/重开/搬迁/Windows 仍 Not run |
 
 ## 自行决定的事项
 
