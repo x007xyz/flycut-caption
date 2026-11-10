@@ -86,6 +86,7 @@
     "feature": "node scripts/feature.mjs",
     "test:e2e": "playwright test",
     "bench:f0017": "tsx --tsconfig server/tsconfig.json scripts/bench-f0017.ts",
+    "bench:f0017:tauri": "tsx --tsconfig server/tsconfig.json scripts/bench-f0017-tauri.ts",
     "e2e:evidence": "node scripts/e2e-evidence.mjs",
     "build:core": "node scripts/build-core.mjs",
     "host:dev": "pnpm build:core && tsx watch --tsconfig server/tsconfig.json server/main.ts",

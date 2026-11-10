@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { access, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { cpus, loadavg, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { chromium, expect, type Browser, type Page } from '@playwright/test';
 import { createHost } from '../server/app';
+import { F0017_REAL_SOURCES, makeF0017RealTranscript, type F0017Transcript as Transcript } from '../tests/e2e/lib/longTranscript';
 
 const root = resolve('.');
 const token = 'f0017-bench-token';
@@ -12,28 +13,6 @@ const shellToken = 'f0017-bench-shell';
 const port = 8797;
 const runs = Number(process.env.F0017_RUNS ?? 5);
 const outputDir = join(root, 'test-results/f0017-bench');
-const sources = [
-  'tests/media/external/coscup-BWgFrY91F_I',
-  'tests/media/external/coscup-3UegVxMFyeo',
-];
-
-interface Chunk {
-  id: string;
-  text: string;
-  timestamp: [number, number];
-  wordIds?: string[];
-  secondText?: string;
-}
-
-interface Transcript {
-  text: string;
-  chunks: Chunk[];
-  wordChunks?: Chunk[];
-  hasWordTimestamps: boolean;
-  language: string;
-  duration: number;
-}
-
 interface Measurement {
   elapsedMs: number;
   maxLongTaskMs: number;
@@ -50,44 +29,6 @@ interface BenchWindow extends Window {
 function run(command: string, args: string[]): void {
   const result = spawnSync(command, args, { cwd: root, encoding: 'utf8' });
   if (result.status !== 0) throw new Error(`${command} failed: ${result.stderr}`);
-}
-
-async function readTranscript(prefix: string, offset: number, sequence: number): Promise<{ transcript: Transcript; duration: number }> {
-  const source = JSON.parse(await readFile(join(root, `${prefix}.transcript.json`), 'utf8')) as Transcript;
-  const mapId = (id: string) => `part-${sequence}-${id}`;
-  const wordChunks = (source.wordChunks ?? []).map(word => ({
-    ...word,
-    id: mapId(word.id),
-    timestamp: [word.timestamp[0] + offset, word.timestamp[1] + offset] as [number, number],
-  }));
-  const chunks = source.chunks.map(chunk => ({
-    ...chunk,
-    id: mapId(chunk.id),
-    timestamp: [chunk.timestamp[0] + offset, chunk.timestamp[1] + offset] as [number, number],
-    wordIds: chunk.wordIds?.map(mapId),
-  }));
-  return {
-    duration: source.duration,
-    transcript: {
-      ...source,
-      chunks,
-      wordChunks,
-      text: `${source.text ?? ''}`,
-    },
-  };
-}
-
-async function makeTranscript(): Promise<Transcript> {
-  const first = await readTranscript(sources[0], 0, 1);
-  const second = await readTranscript(sources[1], first.duration + 0.2, 2);
-  return {
-    text: [first.transcript.text, second.transcript.text].filter(Boolean).join(' '),
-    chunks: [...first.transcript.chunks, ...second.transcript.chunks],
-    wordChunks: [...(first.transcript.wordChunks ?? []), ...(second.transcript.wordChunks ?? [])],
-    hasWordTimestamps: true,
-    language: 'zh',
-    duration: first.duration + second.duration + 0.2,
-  };
 }
 
 async function rpc<T>(method: string, payload: unknown = {}): Promise<T> {
@@ -224,16 +165,16 @@ async function main(): Promise<void> {
   await mkdir(outputDir, { recursive: true });
   const ffmpeg = process.env.FFMPEG_PATH ?? join(root, 'src-tauri/binaries/ffmpeg');
   try {
-    for (const source of sources) await access(join(root, `${source}.mp4`));
+    for (const source of F0017_REAL_SOURCES) await access(join(root, `${source}.mp4`));
     const list = join(temp, 'concat.txt');
-    await writeFile(list, sources.map((source, index) => {
+    await writeFile(list, F0017_REAL_SOURCES.map((source, index) => {
       const path = join(root, `${source}.mp4`).replaceAll("'", "'\\''");
-      return `file '${path}'${index === sources.length - 1 ? '' : '\n'}`;
+      return `file '${path}'${index === F0017_REAL_SOURCES.length - 1 ? '' : '\n'}`;
     }).join(''));
     run(ffmpeg, ['-y', '-v', 'error', '-f', 'concat', '-safe', '0', '-i', list, '-c', 'copy', '-movflags', '+faststart', longMedia]);
     run(ffmpeg, ['-y', '-v', 'error', '-ss', '0', '-t', '10', '-i', longMedia, '-c', 'copy', shortMedia]);
 
-    const transcript = await makeTranscript();
+    const transcript = await makeF0017RealTranscript(root);
     const shortTranscript: Transcript = {
       text: '短视频第一句', chunks: [{ id: 'short-1', text: '短视频第一句', timestamp: [0, 4] }],
       hasWordTimestamps: false, language: 'zh', duration: 4,

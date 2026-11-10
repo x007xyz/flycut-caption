@@ -26,13 +26,19 @@ const shortTranscript = {
 
 let mediaDir = '';
 let longMedia = '';
+let asrMedia = '';
 test.beforeAll(() => {
   mediaDir = mkdtempSync(join(tmpdir(), 'flycut-f0017-ui-'));
   longMedia = join(mediaDir, 'sixty-minutes.mp4');
+  asrMedia = join(mediaDir, 'provider-return.mp4');
   const run = spawnSync(resolve('src-tauri/binaries/ffmpeg'), ['-y', '-v', 'error', '-f', 'lavfi',
     '-i', 'color=c=black:s=160x90:r=1:d=3600', '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'stillimage',
     '-pix_fmt', 'yuv420p', '-movflags', '+faststart', longMedia], { encoding: 'utf8' });
   if (run.status !== 0) throw new Error(run.stderr);
+  const audio = spawnSync(resolve('src-tauri/binaries/ffmpeg'), ['-y', '-v', 'error', '-f', 'lavfi',
+    '-i', 'color=c=black:s=160x90:r=25:d=2', '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=16000:duration=2',
+    '-shortest', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', asrMedia], { encoding: 'utf8' });
+  if (audio.status !== 0) throw new Error(audio.stderr);
 });
 test.afterAll(() => rmSync(mediaDir, { recursive: true, force: true }));
 
@@ -59,8 +65,8 @@ function openResult(videoId = LONG, transcript = longTranscript, extra: Record<s
   };
 }
 
-async function routeLongMedia(page: Page) {
-  const bytes = readFileSync(longMedia);
+async function routeMedia(page: Page, file: string) {
+  const bytes = readFileSync(file);
   await page.route(`${MOCK_HOST}/projects/**/media/**`, route => {
     const range = /bytes=(\d+)-(\d*)/.exec(route.request().headers().range ?? '');
     const start = range ? Number(range[1]) : 0;
@@ -69,6 +75,10 @@ async function routeLongMedia(page: Page) {
       headers: { 'Accept-Ranges': 'bytes', 'Content-Length': String(end - start + 1),
         ...(range ? { 'Content-Range': `bytes ${start}-${end}/${bytes.length}` } : {}) } });
   });
+}
+
+async function routeLongMedia(page: Page) {
+  await routeMedia(page, longMedia);
 }
 
 async function findVirtualRow(page: Page, text: string) {
@@ -133,6 +143,67 @@ for (const theme of ['light', 'dark'] as const) {
     await expect(page.locator('[data-chunk-id="row-1172"]')).toBeVisible();
     await expect(page.getByText(/总计: 1173 \| 有效: 1173/)).toBeVisible();
     await shot(page, F, `long-bottom-${theme}`);
+  });
+
+  test(`F-0017/AC-3 AC-10 AC-11 provider job completion injects a long transcript into the bounded editor (${theme})`, async ({ page }) => {
+    const asrSettings = JSON.stringify({ state: { language: 'zh', asrModel: { providerId: 'test-provider', modelId: 'long-video' } }, version: 1 });
+    await prepare(page, theme, { 'app-settings': asrSettings });
+    await page.addInitScript(() => {
+      const target = window as Window & { __f0017LongTasks?: Array<{ startTime: number; duration: number }>; __f0017ProviderReturnedAt?: number };
+      target.__f0017LongTasks = [];
+      if (PerformanceObserver.supportedEntryTypes.includes('longtask')) {
+        new PerformanceObserver(list => {
+          for (const entry of list.getEntries()) target.__f0017LongTasks!.push({ startTime: entry.startTime, duration: entry.duration });
+        }).observe({ type: 'longtask', buffered: true });
+      }
+    });
+    let release!: () => void;
+    const providerGate = new Promise<void>(resolve => { release = resolve; });
+    const transcriptWithoutLoadedState = { ...longTranscript, editing: undefined };
+    const host = await mockHost(page, {
+      'projects.list': () => [projectItem(P, NAME, { durationSeconds: 3600, videoId: LONG })],
+      'projects.open': () => ({
+        ...openResult(LONG, undefined, {}, true),
+        video: { ...video(LONG, '六十分钟.mp4', 3600), hasTranscript: false },
+        videos: [{ ...video(LONG, '六十分钟.mp4', 3600), hasTranscript: false }, video(SHORT, '短视频.mp4', 10)],
+        transcript: undefined,
+      }),
+      'projects.saveTranscript': () => ({ status: 'saved', revision: 2, updatedAt: T }),
+      'workflow.start': () => ({ id: uuid(991), status: 'queued', createdAt: T, updatedAt: T }),
+      'jobs.get': async () => {
+        await providerGate;
+        await page.evaluate(() => {
+          (window as Window & { __f0017ProviderReturnedAt?: number }).__f0017ProviderReturnedAt = performance.now();
+        });
+        return { id: uuid(991), status: 'complete', result: { transcript: transcriptWithoutLoadedState, cuts: [] }, createdAt: T, updatedAt: T };
+      },
+      'assets.delete': () => ({ deleted: true }),
+    });
+    await routeMedia(page, asrMedia);
+    await page.goto(`/#/projects/${P}/videos/${LONG}`);
+    await expect.poll(() => host.calls.some(call => call.method === 'workflow.start')).toBe(true);
+    release();
+    const first = page.locator('[data-chunk-id="row-0"]').getByTestId('subtitle-main-text');
+    await expect(first).toHaveValue(/第 1 句/);
+    await first.fill('ASR 返回后可编辑');
+    await expect(first).toHaveValue('ASR 返回后可编辑');
+    const editableAt = await page.evaluate(() => performance.now());
+    const elapsedMs = await page.evaluate(() => performance.now()
+      - (window as Window & { __f0017ProviderReturnedAt?: number }).__f0017ProviderReturnedAt!);
+    expect(elapsedMs).toBeLessThan(3000);
+    expect(await page.locator('[data-chunk-id]').count()).toBeLessThan(30);
+    expect(await page.locator('textarea').count()).toBeLessThan(60);
+    await expect(page.getByText(/总计: 1173 \| 有效: 1173/)).toBeVisible();
+    await page.waitForTimeout(1000);
+    const maxLongTaskMs = await page.evaluate(start => Math.max(0, ...((window as Window & {
+      __f0017LongTasks?: Array<{ startTime: number; duration: number }> }).__f0017LongTasks ?? [])
+      .filter(entry => entry.startTime + entry.duration >= start).map(entry => entry.duration)), editableAt);
+    expect(maxLongTaskMs).toBeLessThanOrEqual(200);
+    await expect.poll(() => host.calls.filter(call => call.method === 'projects.saveTranscript').length).toBe(1);
+    const saved = host.calls.find(call => call.method === 'projects.saveTranscript')!.payload;
+    expect(saved.providerId).toBeUndefined();
+    expect((saved.transcript as { chunks: unknown[] }).chunks).toHaveLength(1173);
+    await shot(page, F, `long-provider-return-${theme}`);
   });
 }
 
