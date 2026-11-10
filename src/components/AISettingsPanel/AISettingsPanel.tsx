@@ -24,6 +24,7 @@ interface FormState {
   name: string
   baseUrl: string
   apiKey: string
+  clearApiKey: boolean
   model: string
   temperature: string
 }
@@ -31,6 +32,7 @@ const EMPTY_FORM: FormState = {
   name: '',
   baseUrl: 'https://api.openai.com/v1',
   apiKey: '',
+  clearApiKey: false,
   model: 'gpt-4o-mini',
   temperature: '0.2',
 }
@@ -50,7 +52,7 @@ export function AISettingsPanel() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
-  const [busy, setBusy] = useState<'save' | 'delete' | 'select' | 'test' | 'migrate' | null>(null)
+  const [busy, setBusy] = useState<'reload' | 'save' | 'delete' | 'select' | 'test' | 'migrate' | null>(null)
   const [message, setMessage] = useState<Message | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<AIModelView | null>(null)
   const [migration, setMigration] = useState<{ source: LegacyAISettingsSource; migrationId: string } | null>(null)
@@ -59,6 +61,7 @@ export function AISettingsPanel() {
 
   useEffect(() => {
     const epoch = ++requestEpoch.current
+    setBusy(null); setDialogOpen(false); setEditingId(null); setDeleteTarget(null); setMigrationOpen(false); setForm(EMPTY_FORM)
     setMigration(hostId ? prepareAIMigration(hostId) : null)
     setMessage(null)
     return () => { if (requestEpoch.current === epoch) requestEpoch.current += 1 }
@@ -67,15 +70,23 @@ export function AISettingsPanel() {
   const currentHost = () => app.getState().aiSettingsHostId
   const currentRevision = () => app.getState().aiSettingsRevision
   const sameHost = (responseHostId: string, expectedHostId: string) => responseHostId === expectedHostId && currentHost() === expectedHostId
+  const requestIsCurrent = (epoch: number, expectedHostId: string) => epoch === requestEpoch.current && currentHost() === expectedHostId
 
   const reload = async () => {
-    setBusy('select'); setMessage(null)
+    if (!hostId) return
+    const expectedHostId = hostId; const epoch = requestEpoch.current
+    setBusy('reload'); setMessage(null)
     try {
       const snapshot = await connection.call('aiSettings.list')
+      if (!requestIsCurrent(epoch, expectedHostId)) return
+      if (!sameHost(snapshot.hostId, expectedHostId)) {
+        setMessage({ kind: 'warning', text: t('components.aiSettings.hostChanged') })
+        return
+      }
       applyAISettings(snapshot); setMessage({ kind: 'success', text: t('components.aiSettings.refreshed') })
     } catch (error) {
-      setMessage({ kind: 'error', text: error instanceof Error ? error.message : String(error) })
-    } finally { setBusy(null) }
+      if (requestIsCurrent(epoch, expectedHostId)) setMessage({ kind: 'error', text: error instanceof Error ? error.message : String(error) })
+    } finally { if (requestIsCurrent(epoch, expectedHostId)) setBusy(null) }
   }
 
   const openAdd = () => {
@@ -84,22 +95,23 @@ export function AISettingsPanel() {
 
   const openEdit = (model: AIModelView) => {
     setEditingId(model.id)
-    setForm({ name: model.name, baseUrl: model.baseUrl, apiKey: '', model: model.model,
+    setForm({ name: model.name, baseUrl: model.baseUrl, apiKey: '', clearApiKey: false, model: model.model,
       temperature: model.temperature !== undefined ? String(model.temperature) : '' })
     setMessage(null); setDialogOpen(true)
   }
 
   const handleSave = async () => {
     if (!hostId || !form.name.trim() || !form.baseUrl.trim() || !form.model.trim()) return
-    const expectedHostId = hostId
+    const expectedHostId = hostId; const epoch = requestEpoch.current
     setBusy('save'); setMessage(null)
     try {
       const result = await connection.call('aiSettings.save', {
         hostId: expectedHostId, expectedRevision: revision, configId: editingId ?? undefined,
         config: { name: form.name.trim(), baseUrl: form.baseUrl.trim(), model: form.model.trim(),
           temperature: form.temperature.trim() ? Number(form.temperature) : undefined,
-          apiKey: form.apiKey || undefined },
+          apiKey: form.apiKey || undefined, clearApiKey: form.clearApiKey || undefined },
       })
+      if (epoch !== requestEpoch.current) return
       if (!sameHost(result.snapshot.hostId, expectedHostId)) return
       applyAISettings(result.snapshot)
       if (result.status === 'conflict') {
@@ -109,17 +121,18 @@ export function AISettingsPanel() {
       setDialogOpen(false); setForm(EMPTY_FORM)
       setMessage({ kind: 'success', text: t('components.aiSettings.saved') })
     } catch (error) {
-      setMessage({ kind: 'error', text: error instanceof Error ? error.message : String(error) })
-    } finally { setBusy(null) }
+      if (requestIsCurrent(epoch, expectedHostId)) setMessage({ kind: 'error', text: error instanceof Error ? error.message : String(error) })
+    } finally { if (requestIsCurrent(epoch, expectedHostId)) setBusy(null) }
   }
 
   const remove = async () => {
     if (!deleteTarget || !hostId) return
-    const expectedHostId = hostId
+    const expectedHostId = hostId; const epoch = requestEpoch.current
     setBusy('delete'); setMessage(null)
     try {
       const result = await connection.call('aiSettings.remove', { hostId: expectedHostId,
         expectedRevision: currentRevision(), configId: deleteTarget.id })
+      if (epoch !== requestEpoch.current) return
       if (!sameHost(result.snapshot.hostId, expectedHostId)) return
       applyAISettings(result.snapshot)
       setDeleteTarget(null)
@@ -127,36 +140,37 @@ export function AISettingsPanel() {
         ? { kind: 'warning', text: t('components.aiSettings.conflict') }
         : { kind: 'success', text: t('components.aiSettings.deleted') })
     } catch (error) {
-      setMessage({ kind: 'error', text: error instanceof Error ? error.message : String(error) })
-    } finally { setBusy(null) }
+      if (requestIsCurrent(epoch, expectedHostId)) setMessage({ kind: 'error', text: error instanceof Error ? error.message : String(error) })
+    } finally { if (requestIsCurrent(epoch, expectedHostId)) setBusy(null) }
   }
 
   const select = async (configId: string) => {
     if (!hostId || configId === selectedAIModelId) return
-    const expectedHostId = hostId
+    const expectedHostId = hostId; const epoch = requestEpoch.current
     setBusy('select'); setMessage(null)
     try {
       const result = await connection.call('aiSettings.select', { hostId: expectedHostId,
         expectedRevision: currentRevision(), configId })
+      if (epoch !== requestEpoch.current) return
       if (!sameHost(result.snapshot.hostId, expectedHostId)) return
       applyAISettings(result.snapshot)
       if (result.status === 'conflict') setMessage({ kind: 'warning', text: t('components.aiSettings.conflict') })
     } catch (error) {
-      setMessage({ kind: 'error', text: error instanceof Error ? error.message : String(error) })
-    } finally { setBusy(null) }
+      if (requestIsCurrent(epoch, expectedHostId)) setMessage({ kind: 'error', text: error instanceof Error ? error.message : String(error) })
+    } finally { if (requestIsCurrent(epoch, expectedHostId)) setBusy(null) }
   }
 
   const test = async (model: AIModelView) => {
     if (!hostId) return
-    const expectedHostId = hostId
+    const expectedHostId = hostId; const epoch = requestEpoch.current
     setBusy('test'); setMessage(null)
     try {
       const result = await connection.call('aiSettings.test', { hostId: expectedHostId, configId: model.id })
-      if (currentHost() !== expectedHostId) return
+      if (!requestIsCurrent(epoch, expectedHostId)) return
       setMessage({ kind: result.status === 'ok' ? 'success' : 'error', text: result.message })
     } catch (error) {
-      setMessage({ kind: 'error', text: error instanceof Error ? error.message : String(error) })
-    } finally { setBusy(null) }
+      if (requestIsCurrent(epoch, expectedHostId)) setMessage({ kind: 'error', text: error instanceof Error ? error.message : String(error) })
+    } finally { if (requestIsCurrent(epoch, expectedHostId)) setBusy(null) }
   }
 
   const migrate = async () => {
@@ -180,10 +194,13 @@ export function AISettingsPanel() {
       setMigration(null); setMigrationOpen(false)
       setMessage({ kind: 'success', text: t('components.aiSettings.migrationDone') })
     } catch (error) {
-      setMessage({ kind: 'error', text: `${t('components.aiSettings.migrationFailed')}: ${error instanceof Error ? error.message : String(error)}` })
-    } finally { setBusy(null) }
+      if (epoch === requestEpoch.current && currentHost() === expectedHostId) {
+        setMessage({ kind: 'error', text: `${t('components.aiSettings.migrationFailed')}: ${error instanceof Error ? error.message : String(error)}` })
+      }
+    } finally { if (epoch === requestEpoch.current && currentHost() === expectedHostId) setBusy(null) }
   }
 
+  const editingHasKey = !!editingId && !!aiModels.find(model => model.id === editingId)?.hasApiKey
   const canSave = !!hostId && !!form.name.trim() && !!form.baseUrl.trim() && !!form.model.trim()
     && (!!editingId || !!form.apiKey.trim()) && busy !== 'save'
 
@@ -196,7 +213,7 @@ export function AISettingsPanel() {
         </div>
         <div className="flex items-center gap-1">
           <Button size="sm" variant="outline" onClick={() => void reload()} disabled={!hostId || !!busy} data-testid="ai-settings-refresh">
-            <RefreshCw className={cn('mr-1 h-3.5 w-3.5', busy === 'select' && 'animate-spin')} />
+            <RefreshCw className={cn('mr-1 h-3.5 w-3.5', busy === 'reload' && 'animate-spin')} />
             {t('components.aiSettings.refresh')}
           </Button>
           <Button size="sm" onClick={openAdd} disabled={!hostId || !!busy} data-testid="ai-config-add">
@@ -266,7 +283,12 @@ export function AISettingsPanel() {
             <div className="space-y-1"><Label>{t('components.aiSettings.name')}</Label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="My GPT-4o" /></div>
             <div className="space-y-1"><Label>{t('components.aiSettings.baseUrl')}</Label><Input value={form.baseUrl} onChange={e => setForm(f => ({ ...f, baseUrl: e.target.value }))} placeholder="https://api.openai.com/v1" /></div>
             <div className="space-y-1"><Label>{t('components.aiSettings.model')}</Label><Input value={form.model} onChange={e => setForm(f => ({ ...f, model: e.target.value }))} placeholder="gpt-4o-mini" /></div>
-            <div className="space-y-1"><Label>{t('components.aiSettings.apiKey')}</Label><Input data-testid="ai-api-key" type="password" autoComplete="new-password" value={form.apiKey} onChange={e => setForm(f => ({ ...f, apiKey: e.target.value }))} placeholder={editingId ? t('components.aiSettings.keepKey') : 'sk-...'} /></div>
+            <div className="space-y-1"><Label>{t('components.aiSettings.apiKey')}</Label><Input data-testid="ai-api-key" type="password" autoComplete="new-password" value={form.apiKey} onChange={e => setForm(f => ({ ...f, apiKey: e.target.value, ...(e.target.value ? { clearApiKey: false } : {}) }))} placeholder={editingId ? t('components.aiSettings.keepKey') : 'sk-...'} />
+              {editingHasKey && !form.apiKey && <button type="button" className="text-[11px] text-destructive underline underline-offset-2" onClick={() => setForm(f => ({ ...f, clearApiKey: !f.clearApiKey }))} data-testid="ai-clear-api-key">
+                {form.clearApiKey ? t('components.aiSettings.cancelClearKey') : t('components.aiSettings.clearKey')}
+              </button>}
+              {form.clearApiKey && <p className="text-[11px] text-amber-600 dark:text-amber-300">{t('components.aiSettings.clearKeyPending')}</p>}
+            </div>
             <div className="space-y-1"><Label>{t('components.aiSettings.temperature')}</Label><Input value={form.temperature} onChange={e => setForm(f => ({ ...f, temperature: e.target.value }))} placeholder="0.2" /></div>
           </DialogBody>
           <DialogFooter className="border-t">

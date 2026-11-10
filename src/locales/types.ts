@@ -610,12 +610,16 @@ export interface FlyCutCaptionLocale {
       hostTarget: string;
       processing: string;
       conflict: string;
+      hostChanged: string;
       saved: string;
       deleted: string;
       keyConfigured: string;
       keyMissing: string;
       test: string;
       keepKey: string;
+      clearKey: string;
+      cancelClearKey: string;
+      clearKeyPending: string;
       deleteConfirmTitle: string;
       deleteConfirm: string;
       migrationTitle: string;

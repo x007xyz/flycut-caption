@@ -53,9 +53,11 @@ mkdirSync(recordings, { recursive: true });
 const reportFile = join('test-results', `${id}-evidence.json`);
 mkdirSync('test-results', { recursive: true });
 
-const run = spawnSync('pnpm', ['exec', 'playwright', 'test', spec, '--reporter=list,json'], {
+const playwrightArgs = ['exec', 'playwright', 'test', spec, '--reporter=list,json'];
+if (process.env.FLYCUT_E2E_CONFIG) playwrightArgs.push('--config', process.env.FLYCUT_E2E_CONFIG);
+const run = spawnSync('pnpm', playwrightArgs, {
   stdio: 'inherit',
-  env: { ...process.env, UPDATE_SHOTS: '1', ...(record ? { PW_VIDEO: '1' } : {}), PLAYWRIGHT_JSON_OUTPUT_NAME: reportFile },
+  env: { ...process.env, UPDATE_SHOTS: '1', ...(record ? { PW_VIDEO: '1' } : {}), PLAYWRIGHT_JSON_OUTPUT_FILE: reportFile },
 });
 if (!existsSync(reportFile)) {
   console.error('Playwright 没有生成结果文件，看上面的输出');

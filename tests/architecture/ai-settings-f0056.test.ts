@@ -19,13 +19,17 @@ async function setup(options: { home?: string; patch?: Record<string, unknown>; 
       ...(options.profile === 'server' ? { privateNetwork: false } : {}), ...options.patch } } } }],
   });
   const base = `http://127.0.0.1:${(ctx.httpServer.address() as { port: number }).port}`;
-  const call = async <T = any>(method: string, payload: unknown = {}): Promise<T> => {
-    const response = await fetch(`${base}/rpc`, { method: 'POST', headers: { Authorization: 'Bearer f0056-token', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'client-request', rpcId: crypto.randomUUID(), method, payload }) });
-    const envelope = await response.json();
-    if (!envelope.result.ok) throw new Error(envelope.result.error.message);
-    return envelope.result.value;
+  const makeClient = () => {
+    const call = async <T = any>(method: string, payload: unknown = {}): Promise<T> => {
+      const response = await fetch(`${base}/rpc`, { method: 'POST', headers: { Authorization: 'Bearer f0056-token', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'client-request', rpcId: crypto.randomUUID(), method, payload }) });
+      const envelope = await response.json();
+      if (!envelope.result.ok) throw new Error(envelope.result.error.message);
+      return envelope.result.value;
+    };
+    return { call };
   };
+  const client = makeClient(); const call = client.call;
   const wait = async (id: string) => {
     for (let i = 0; i < 100; i++) {
       const job = await call<JobSnapshot>('jobs.get', { id });
@@ -34,7 +38,7 @@ async function setup(options: { home?: string; patch?: Record<string, unknown>; 
     }
     throw new Error('job did not settle');
   };
-  return { home, ctx, base, call, wait, async close(remove = true) {
+  return { home, ctx, base, call, makeClient, wait, async close(remove = true) {
     await ctx.fiber.dispose(); if (remove) await rm(home, { recursive: true, force: true });
   } };
 }
@@ -83,8 +87,10 @@ test('F-0056/AC-4 encrypted secret files serialize mutations and remove temporar
 test('F-0056/AC-1 AC-3 AC-7 AC-8 config IDs, immutable secret refs, restart and lost-response migration', async () => {
   const api = await fixtureApi({ value: 'first-secret' });
   const host = await setup({ patch: { secretBackend: 'encrypted-file' } });
+  const secondClient = host.makeClient();
   try {
     const identity = await host.call('projects.identity');
+    assert.deepEqual(await secondClient.call('projects.identity'), identity);
     assert.deepEqual(await host.call('aiSettings.list'), { hostId: identity.hostId, revision: 0, selectedId: null, configs: [] });
     const saved = await host.call('aiSettings.save', { hostId: identity.hostId, expectedRevision: 0,
       config: { name: 'Fixture', baseUrl: api.baseUrl, model: 'fixture-model', temperature: 0.2, apiKey: 'first-secret' } });
@@ -104,6 +110,13 @@ test('F-0056/AC-1 AC-3 AC-7 AC-8 config IDs, immutable secret refs, restart and 
     assert.equal(api.seen.at(-1)?.body.includes('first-secret'), false);
     assert.equal(JSON.stringify(await host.call('jobs.get', { id: correction.id })).includes('first-secret'), false);
     assert.equal((await host.call('aiSettings.test', { hostId: identity.hostId, configId: saved.configId })).status, 'ok');
+    const secondSnapshot = await secondClient.call('aiSettings.list');
+    assert.deepEqual(secondSnapshot, saved.snapshot);
+    assert.equal(JSON.stringify(secondSnapshot).includes('first-secret'), false);
+    const secondCorrection = await host.wait((await secondClient.call('text.start', { mode: 'correction',
+      items: [{ id: 's1', text: 'second client' }], configId: saved.configId })).id);
+    assert.equal(secondCorrection.status, 'complete', secondCorrection.error);
+    assert.equal(api.seen.at(-1)?.auth, 'Bearer first-secret');
 
     const unchanged = await host.call('aiSettings.save', { hostId: identity.hostId, expectedRevision: 1, configId: saved.configId,
       config: { name: 'Renamed', baseUrl: api.baseUrl, model: 'fixture-model' } });

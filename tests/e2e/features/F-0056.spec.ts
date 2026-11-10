@@ -10,6 +10,7 @@ import { shot } from '../lib/evidence';
 const P = uuid(156);
 const AI_A = uuid(956);
 const AI_B = uuid(957);
+const E2E_HOST_B = uuid(958);
 const T = '2026-11-09T12:00:00Z';
 const transcript = { text: '', language: 'zh', duration: 3, hasWordTimestamps: false, chunks: [] };
 let mediaDir: string; let media: string;
@@ -45,7 +46,8 @@ async function connect(page: Page, options: { conflict?: boolean; importFailure?
         return { status: 'conflict', snapshot };
       }
       const next = { id, name: payload.config.name, baseUrl: payload.config.baseUrl, model: payload.config.model,
-        temperature: payload.config.temperature, hasApiKey: payload.config.apiKey ? true : current?.hasApiKey ?? false };
+        temperature: payload.config.temperature,
+        hasApiKey: payload.config.clearApiKey ? false : payload.config.apiKey ? true : current?.hasApiKey ?? false };
       snapshot = { ...snapshot, revision: snapshot.revision + 1, selectedId: snapshot.selectedId ?? id,
         configs: current ? snapshot.configs.map((item: any) => item.id === id ? next : item) : [...snapshot.configs, next] };
       return { status: 'saved', configId: id, snapshot };
@@ -125,6 +127,15 @@ for (const theme of ['light', 'dark'] as const) for (const lang of ['zh', 'en'] 
       await expect(panel.getByTestId('ai-config-row')).toContainText('Edited locally');
 
       await panel.getByTestId('ai-config-edit').click();
+      await dialog.getByTestId('ai-clear-api-key').click();
+      await dialog.getByTestId('ai-config-save').click();
+      const clearCall = state.host.calls.filter(call => call.method === 'aiSettings.save').at(-1);
+      expect(clearCall?.payload.config).toMatchObject({ clearApiKey: true });
+      expect(clearCall?.payload.config).not.toHaveProperty('apiKey');
+      await expect(panel.getByTestId('ai-config-row')).toContainText(/No key configured|未配置 Key/);
+      await shot(page, 'F-0056', `settings-key-cleared-${theme}-${lang}`);
+
+      await panel.getByTestId('ai-config-edit').click();
       state.setConflict();
       await dialog.getByPlaceholder('My GPT-4o').fill('Pending local edit');
       await dialog.getByTestId('ai-config-save').click();
@@ -138,6 +149,14 @@ for (const theme of ['light', 'dark'] as const) for (const lang of ['zh', 'en'] 
       await panel.getByTestId('ai-config-delete').click();
       await page.getByTestId('ai-delete-confirm').click();
       await expect(panel.getByTestId('ai-empty')).toBeVisible();
+
+      state.host.set('aiSettings.list', () => ({ hostId: E2E_HOST_B, revision: 7, selectedId: AI_A,
+        configs: [{ id: AI_A, name: 'Foreign Host', baseUrl: 'https://foreign.example/v1', model: 'foreign', hasApiKey: true }] }));
+      await panel.getByTestId('ai-settings-refresh').click();
+      await expect(panel.getByTestId('ai-message-warning')).toContainText(/another Host|另一个 Host/);
+      await expect(panel.getByTestId('ai-empty')).toBeVisible();
+      await expect(panel).not.toContainText(E2E_HOST_B);
+      await shot(page, 'F-0056', `settings-host-mismatch-${theme}-${lang}`);
 
       state.host.set('aiSettings.list', () => pending());
       await panel.getByTestId('ai-settings-refresh').click();
