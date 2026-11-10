@@ -19,7 +19,12 @@ export interface HostConfig { home: string; port: number; token: string; resourc
   /** Secret only the desktop shell holds; authorizes `shell` routes. Unset: those routes reject every request. */
   shellToken?: string;
   /** Browser session lifetime in milliseconds (default 12 hours). Sessions live in Host memory. */
-  sessionTtlMs?: number }
+  sessionTtlMs?: number;
+  /** F-0015 resumable media limits. Defaults live in `shared/uploads.ts`. */
+  uploadChunkBytes?: number;
+  uploadMaxBytes?: number;
+  uploadSessionTtlHours?: number;
+  uploadDiskReserveBytes?: number }
 export type ProgressReporter = (progress: ASRProgress) => void;
 /**
  * One inference backend. Capabilities are optional methods: implement only what the backend does.
@@ -49,7 +54,7 @@ export interface ProviderRegistry {
   detectVoice(ref: ModelRef, audioPath: string, signal: AbortSignal, report: ProgressReporter): Promise<VoiceActivityResult>;
 }
 export interface JobService {
-  create(run: (signal: AbortSignal, report: ProgressReporter, id: string) => Promise<unknown>): JobSnapshot;
+  create(run: (signal: AbortSignal, report: ProgressReporter, id: string) => Promise<unknown>, options?: { operationId?: string }): JobSnapshot;
   get(id: string): JobSnapshot;
   list(): JobSnapshot[];
   cancel(id: string): Promise<JobSnapshot>;
@@ -59,7 +64,7 @@ export interface AssetService {
   /** Streams a body into a new asset, rejecting it once it exceeds `limit` bytes. */
   putStream(source: NodeJS.ReadableStream, limit: number): Promise<string>;
   /** Moves a finished file (e.g. an export output) into the asset store without copying. */
-  adopt(file: string): Promise<string>;
+  adopt(file: string, id?: string): Promise<string>;
   /** Moves an uploaded asset out of the store to `target` (e.g. into a project), so the TTL cleanup no longer applies. */
   claim(id: string, target: string): Promise<void>;
   read(id: string): Promise<Buffer>;

@@ -4,6 +4,7 @@ import type { SubtitleTranscript, ASRProgress } from '../src/types/subtitle';
 import type { EditorPluginManifest } from '../src/types/plugin';
 import { asrRequestSchema, modelRefSchema, type ProviderModels, type ProviderSummary } from './providers';
 import { subtitleGraphicSceneSchema } from './subtitle-graphics/scene';
+import type { UploadCapabilities } from './uploads';
 import type { ProjectFile, ProjectListItem, ProjectOpenResult, SaveResult, projectCreateSchema, projectOpenSchema, saveTranscriptSchema,
   saveEditsSchema, duplicateSchema, relinkSchema, thumbnailSchema,
   createEmptySchema, projectRefSchema, renameSchema, emptyTrashSchema, addVideoSchema, removeVideoSchema, saveVideoEditsSchema, saveProjectStyleSchema, createFromSnapshotSchema,
@@ -16,12 +17,14 @@ export type RpcRequest = z.infer<typeof rpcRequestSchema>;
 export type RpcResponse = { type: 'server-response'; rpcId: string; result:
   { ok: true; value: unknown } | { ok: false; error: { code: string; message: string; details: Record<string, unknown> } } };
 export type JobStatus = 'queued' | 'running' | 'complete' | 'error' | 'cancelled';
-export interface JobSnapshot { id: string; status: JobStatus; progress?: ASRProgress; result?: unknown; error?: string; createdAt: string; updatedAt: string }
+export interface JobSnapshot { id: string; status: JobStatus; progress?: ASRProgress; result?: unknown; error?: string; createdAt: string; updatedAt: string;
+  /** F-0015: repeating a start with the same operation id returns this job instead of starting another. */
+  operationId?: string }
 
 /** An ASR request (`{ providerId, modelId }` + language/options) on an uploaded 16 kHz WAV asset. */
 export const asrInputSchema = asrRequestSchema.extend({ assetId: z.string().uuid() });
 export type AsrInput = z.infer<typeof asrInputSchema>;
-export const pipelineInputSchema = z.object({ asr: asrInputSchema, steps: z.array(z.object({ id: z.string(),
+export const pipelineInputSchema = z.object({ operationId: z.uuid().optional(), asr: asrInputSchema, steps: z.array(z.object({ id: z.string(),
   providerId: z.string(), capabilityId: z.string(), enabled: z.boolean(), config: z.record(z.string(), z.unknown()).default({}) })).optional() });
 export type PipelineInput = z.infer<typeof pipelineInputSchema>;
 export interface PipelineResult { transcript: SubtitleTranscript; cuts: Array<{ start: number; end: number; stepId: string;
@@ -29,7 +32,7 @@ export interface PipelineResult { transcript: SubtitleTranscript; cuts: Array<{ 
 
 export const exportSegmentSchema = z.object({ start: z.number().finite().min(0), end: z.number().finite().gt(0), keep: z.boolean(),
   text: z.string().optional(), secondText: z.string().optional(), id: z.string().optional() });
-export const exportInputSchema = z.object({ edl: edlSchema.optional(), assetId: z.string().uuid(), segments: z.array(exportSegmentSchema).min(1),
+export const exportInputSchema = z.object({ operationId: z.uuid().optional(), edl: edlSchema.optional(), assetId: z.string().uuid(), segments: z.array(exportSegmentSchema).min(1),
   options: z.object({ format: z.enum(['mp4', 'webm']), quality: z.enum(['high', 'medium', 'low']), preserveAudio: z.boolean(),
     joinFadeMs: z.number().min(0).max(100).optional(),
     subtitleProcessing: z.enum(['none', 'soft', 'hard']).default('none'), subtitleExportMode: z.enum(['Bilingual', 'Main', 'Second']).optional(),
@@ -87,6 +90,8 @@ export interface HostInfo {
  */
 export interface RpcMethods {
   'host.info': { input: void; output: HostInfo };
+  /** F-0015: limits and protocol advertised by the Host's resumable upload plugin. */
+  'uploads.capabilities': { input: void; output: UploadCapabilities };
   'host.shutdown': { input: void; output: { stopping: true } };
   'jobs.list': { input: void; output: JobSnapshot[] };
   'jobs.get': { input: z.input<typeof jobIdSchema>; output: JobSnapshot };

@@ -157,9 +157,11 @@ export class ProjectStore {
     return items.filter(item => !!item).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
-  async create(input: { name: string; video: Pick<ProjectVideo, 'name' | 'durationSeconds' | 'model'>; media: (projectId: string, videoId: string) => Promise<ProjectMedia> }) {
+  async create(input: { id?: string; videoId?: string; name: string; video: Pick<ProjectVideo, 'name' | 'durationSeconds' | 'model'>;
+    media: (projectId: string, videoId: string) => Promise<ProjectMedia> }) {
     await this.init();
-    const id = randomUUID(); const videoId = randomUUID(); const now = new Date().toISOString();
+    const id = input.id ?? randomUUID(); const videoId = input.videoId ?? randomUUID(); const now = new Date().toISOString();
+    this.dir(id); this.videoDir(id, videoId);
     await mkdir(this.videoDir(id, videoId), { recursive: true });
     try {
       const media = await input.media(id, videoId);

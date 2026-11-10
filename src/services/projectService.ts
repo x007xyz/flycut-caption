@@ -10,9 +10,9 @@ import type { ProjectEdits, ProjectOpenResult, ProjectPlayback, ProjectStyle, Sa
 import type { ProjectsSort } from '@/components/Project/types';
 import type { SubtitleChunk, SubtitleTranscript } from '@/types/subtitle';
 import type { VideoFile } from '@/types/video';
-import type { RemoteConnection } from '@/runtime/connection';
+import { ConnectionUnavailableError, UploadRequestError, type RemoteConnection } from '@/runtime/connection';
 import type { RuntimeStores } from '@/stores/runtimeStore';
-import type { CurrentProject, ProjectRoute } from '@/stores/projectStore';
+import type { CurrentProject, MediaUploadView, ProjectRoute } from '@/stores/projectStore';
 import type { SubtitleStylePair } from '@/subtitle';
 import { defaultSubtitleStylePair } from '@/subtitle';
 import type { TextRecord } from '../../shared/text/corrections';
@@ -22,6 +22,10 @@ import { IndexedDbRecoveryStorage, type RecoveryStorage } from '@/recovery/stora
 import { RecoveryRecorder } from '@/recovery/recorder';
 import { holdSession, liveSessions } from '@/recovery/sessions';
 import type { RecoveryState } from '@/stores/projectStore';
+import type { UploadCapabilities, UploadSession } from '../../shared/uploads';
+import { hashFile } from '@/upload/sha256';
+import { transferMissingChunks, validateUploadSelection } from '@/upload/client';
+import { UploadLocatorStore, viewFromLocator, type UploadLocator } from '@/upload/locator';
 
 declare module '@deepseek-ai/cordis' {
   interface Context { projects: ProjectService }
@@ -41,6 +45,17 @@ const SORT_KEY = 'flycut.projects.sort';
 export const AUTOSAVE_DELAY_MS = 1500;
 /** 保存失败后的重试间隔（AC-4），之后一直按最后一档重试 */
 export const RETRY_DELAYS_MS = [2000, 4000, 8000, 16000, 30000];
+const UPLOAD_RETRY_DELAYS_MS = [500, 1_000, 2_000, 4_000];
+
+function isUploadTransportError(error: unknown) {
+  return error instanceof ConnectionUnavailableError || error instanceof TypeError
+    || (error instanceof DOMException && ['AbortError', 'NetworkError'].includes(error.name));
+}
+
+function uploadFailureMessage(error: unknown): string {
+  if (error instanceof UploadRequestError) return error.code;
+  return error instanceof Error ? error.message : String(error);
+}
 
 export function routeToHash(route: ProjectRoute) {
   switch (route.name) {
@@ -151,6 +166,19 @@ export class ProjectService {
   /** 写入失败的转写结果：随自动保存一起重试，避免识别结果丢失 */
   private pendingTranscript: { videoFile: VideoFile; transcript: SubtitleTranscript; model: ModelRef | null } | null = null;
 
+  // ---------- 断点续传（F-0015） ----------
+  private uploadLocators = new UploadLocatorStore();
+  /** Source files are deliberately memory-only; refresh/reconnect requires the user to choose them again. */
+  private uploadFiles = new Map<string, File>();
+  private uploadVideos = new Map<string, VideoFile>();
+  private uploadControllers = new Map<string, AbortController>();
+  private uploadTasks = new Map<string, Promise<void>>();
+  private uploadTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private uploadTokens = new Map<string, number>();
+  private uploadCompleted = new Set<string>();
+  private uploadCapabilities?: Promise<UploadCapabilities>;
+  private resumeUploadsTask: Promise<void> | null = null;
+
   // ---------- 崩溃恢复（F-0004） ----------
   private recoveryStorage: RecoveryStorage;
   /** 当前编辑会话：每次载入一个视频的编辑器开一个新会话，各自只覆盖自己的副本 */
@@ -180,6 +208,346 @@ export class ProjectService {
     const next = this.queue.catch(() => undefined).then(task);
     this.queue = next;
     return next;
+  }
+
+  // ---------- 断点续传（F-0015） ----------
+
+  private uploadAt(key: string) {
+    return this.state.uploads.find(item => item.key === key);
+  }
+
+  private patchUpload(key: string, patch: Partial<MediaUploadView>) {
+    this.state.set({ uploads: this.state.uploads.map(item => item.key === key ? { ...item, ...patch } : item) });
+  }
+
+  private removeUploadView(key: string) {
+    this.state.set({ uploads: this.state.uploads.filter(item => item.key !== key) });
+  }
+
+  private uploadTarget() {
+    return this.stores.connection.getState().target?.url ?? 'Host';
+  }
+
+  private async uploadLimits(): Promise<UploadCapabilities> {
+    if (this.stores.connection.getState().capabilities?.resumableUpload !== true) {
+      throw new UploadRequestError(501, 'unsupported', 'This Host does not support resumable uploads');
+    }
+    if (!this.uploadCapabilities) {
+      const pending = this.connection.uploadCapabilities();
+      this.uploadCapabilities = pending;
+      pending.catch(() => { if (this.uploadCapabilities === pending) this.uploadCapabilities = undefined; });
+    }
+    return this.uploadCapabilities;
+  }
+
+  private locatorFor(key: string): UploadLocator | undefined {
+    if (!this.hostId) return undefined;
+    return this.uploadLocators.read(this.hostId).find(item => item.operationId === key);
+  }
+
+  private saveLocator(locator: UploadLocator) {
+    this.uploadLocators.save(locator);
+  }
+
+  private removeLocator(locator: Pick<UploadLocator, 'hostId' | 'sessionId'>) {
+    this.uploadLocators.remove(locator.hostId, locator.sessionId);
+  }
+
+  private sourceVideo(file: File, durationSeconds = 0): VideoFile {
+    let url = '';
+    try { url = URL.createObjectURL(file); } catch { /* File may be a test placeholder. */ }
+    return { file, url, duration: durationSeconds, size: file.size, type: file.type, name: file.name };
+  }
+
+  /** Starts a browser upload. Desktop local-path imports stay on the F-0002 mediaRef path. */
+  private async startResumableUpload(videoFile: VideoFile, kind: 'create' | 'add', projectId?: string): Promise<boolean> {
+    const operationId = crypto.randomUUID();
+    const view: MediaUploadView = { key: operationId, kind, projectId, operationId, fileName: videoFile.name, size: videoFile.file.size,
+      mimeType: videoFile.type, target: this.uploadTarget(), phase: 'checking', uploadedBytes: 0, attempts: 0 };
+    this.uploadFiles.set(operationId, videoFile.file);
+    this.uploadVideos.set(operationId, videoFile);
+    this.state.set({ uploads: [...this.state.uploads.filter(item => item.key !== operationId), view] });
+    return this.runUpload(operationId, videoFile);
+  }
+
+  private async runUpload(key: string, videoFile?: VideoFile): Promise<boolean> {
+    const running = this.uploadTasks.get(key);
+    if (running) {
+      await running;
+      if (['hashing', 'uploading', 'verifying', 'complete'].includes(this.uploadAt(key)?.phase ?? 'complete')) {
+        return this.uploadAt(key)?.phase === 'complete';
+      }
+    }
+    const task = this.performUpload(key, videoFile)
+      .catch(() => undefined)
+      .finally(() => { if (this.uploadTasks.get(key) === taskPromise) this.uploadTasks.delete(key); });
+    const taskPromise = task;
+    this.uploadTasks.set(key, taskPromise);
+    await taskPromise;
+    const completed = this.uploadCompleted.delete(key);
+    return completed || this.uploadAt(key)?.phase === 'complete';
+  }
+
+  private async performUpload(key: string, suppliedVideoFile?: VideoFile): Promise<void> {
+    const initial = this.uploadAt(key);
+    if (!initial) return;
+    const hostId = await this.hostIdentity();
+    const file = suppliedVideoFile?.file ?? this.uploadFiles.get(key);
+    const operationToken = (this.uploadTokens.get(key) ?? 0) + 1;
+    this.uploadTokens.set(key, operationToken);
+    const controller = new AbortController();
+    this.uploadControllers.get(key)?.abort();
+    this.uploadControllers.set(key, controller);
+    const current = () => this.uploadAt(key);
+    const alive = () => this.uploadTokens.get(key) === operationToken && !!current();
+    let locator = this.locatorFor(key);
+
+    try {
+      const capabilities = await this.uploadLimits();
+      if (!alive()) return;
+      if (!locator && !file) { this.patchUpload(key, { phase: 'needs-file' }); return; }
+      let mimeType = initial.mimeType;
+      if (!locator && file) {
+        const validation = validateUploadSelection(file, capabilities);
+        if ('error' in validation) { this.patchUpload(key, { phase: 'rejected', error: validation.error }); return; }
+        mimeType = validation.mimeType;
+      }
+
+      this.patchUpload(key, { phase: 'hashing', error: undefined, uploadedBytes: locator ? initial.uploadedBytes : 0 });
+      const sha256 = file ? await hashFile(file) : locator?.sha256;
+      if (!sha256 || !alive()) return;
+      if (locator && locator.sha256 !== sha256) {
+        this.patchUpload(key, { phase: 'mismatch', error: 'integrity-mismatch', sha256 });
+        return;
+      }
+
+      let session: UploadSession | undefined;
+      if (locator) {
+        try {
+          session = await this.connection.getUploadSession(locator.sessionId, controller.signal);
+        } catch (error) {
+          if (error instanceof UploadRequestError && [404, 410].includes(error.status)) {
+            this.patchUpload(key, { phase: 'expired', error: 'expired' });
+            this.removeLocator(locator);
+            return;
+          }
+          throw error;
+        }
+      } else if (file) {
+        session = await this.connection.createUploadSession({ fileName: file.name, size: file.size, mimeType, sha256,
+          idempotencyKey: key }, controller.signal);
+        if (!alive()) {
+          void this.connection.cancelUploadSession(session.id).catch(() => undefined);
+          return;
+        }
+        locator = { version: 1, hostId, sessionId: session.id, operationId: key, kind: initial.kind, projectId: initial.projectId,
+          fileName: file.name, size: file.size, mimeType, sha256, target: this.uploadTarget(), createdAt: new Date().toISOString() };
+        this.saveLocator(locator);
+      }
+      if (!session || !locator || !alive()) return;
+      this.patchUpload(key, { sessionId: session.id, sha256, mimeType, size: session.size, uploadedBytes: session.uploadedBytes,
+        phase: session.state === 'complete' || session.state === 'finalizing' ? 'verifying' : 'uploading' });
+
+      if (session.state !== 'complete') {
+        if (file && session.state === 'active') {
+          session = await transferMissingChunks(this.connection, file, session, {
+            signal: controller.signal,
+            onSession: next => { if (alive()) this.patchUpload(key, { uploadedBytes: next.uploadedBytes, phase: 'uploading' }); },
+          });
+        }
+        if (!alive()) return;
+        this.patchUpload(key, { phase: 'verifying', uploadedBytes: session.uploadedBytes, error: undefined });
+        session = await this.connection.completeUploadSession(session.id, sha256, controller.signal);
+      }
+      if (!alive()) return;
+      const completionVideo = suppliedVideoFile ?? this.uploadVideos.get(key) ?? (file ? this.sourceVideo(file) : undefined);
+      await this.finishUploadProject(key, locator, session, completionVideo, controller.signal);
+    } catch (error) {
+      if (this.uploadAt(key)?.phase === 'paused' || controller.signal.aborted) return;
+      if (!alive()) return;
+      const attempts = (this.uploadAt(key)?.attempts ?? 0) + 1;
+      if (error instanceof UploadRequestError && error.code === 'unsupported') {
+        this.patchUpload(key, { phase: 'unsupported', attempts, error: error.code });
+        return;
+      }
+      if (this.uploadAt(key)?.phase === 'verifying') {
+        this.patchUpload(key, { attempts, error: uploadFailureMessage(error) });
+        return;
+      }
+      if (isUploadTransportError(error) || (error instanceof UploadRequestError && [401, 403].includes(error.status))) {
+        this.patchUpload(key, { phase: 'interrupted', attempts, error: uploadFailureMessage(error) });
+        if (attempts < UPLOAD_RETRY_DELAYS_MS.length && file) {
+          const timer = setTimeout(() => { this.uploadTimers.delete(key); if (this.connection.isReady()) void this.runUpload(key); },
+            UPLOAD_RETRY_DELAYS_MS[attempts - 1]);
+          this.uploadTimers.set(key, timer);
+        }
+        return;
+      }
+      if (error instanceof UploadRequestError && error.status === 410) {
+        this.patchUpload(key, { phase: 'expired', attempts, error: 'expired' });
+        if (locator) this.removeLocator(locator);
+        return;
+      }
+      if (error instanceof UploadRequestError && error.status === 404) {
+        this.patchUpload(key, { phase: 'expired', attempts, error: 'invalid-session' });
+        if (locator) this.removeLocator(locator);
+        return;
+      }
+      this.patchUpload(key, { phase: 'failed', attempts, error: uploadFailureMessage(error) });
+    } finally {
+      if (this.uploadControllers.get(key) === controller) this.uploadControllers.delete(key);
+    }
+  }
+
+  private async finishUploadProject(key: string, locator: UploadLocator, session: UploadSession, videoFile: VideoFile | undefined,
+    signal: AbortSignal) {
+    if (!session.assetId) throw new Error('The Host completed the upload without an asset');
+    this.patchUpload(key, { phase: 'verifying', uploadedBytes: session.size, error: undefined });
+    if (locator.kind === 'create') {
+      const name = baseName(locator.fileName);
+      const created = await this.connection.call('projects.create', { name, videoName: locator.fileName,
+        durationSeconds: Number.isFinite(videoFile?.duration) ? videoFile!.duration : 0,
+        media: { assetId: session.assetId, mimeType: session.mimeType }, operationId: key });
+      if (videoFile) this.owners.set(videoFile, { projectId: created.projectId, videoId: created.videoId });
+      this.patchUpload(key, { phase: 'complete' });
+      this.uploadCompleted.add(key);
+      this.removeLocator(locator);
+      this.uploadFiles.delete(key);
+      this.uploadVideos.delete(key);
+      this.removeUploadView(key);
+      if (videoFile && !signal.aborted) {
+        const video = created.project.videos[0];
+        this.loadEditor({ projectId: created.projectId, videoId: created.videoId, name, revision: created.revision, hasTranscript: false,
+          media: { status: 'ok', name: locator.fileName }, videoName: locator.fileName, videoRevision: 0, styleRevision: 0, styleSource: 'project',
+          projectStyle: defaultSubtitleStylePair, videos: [{ id: video.id, name: video.name, durationSeconds: video.durationSeconds,
+            createdAt: video.createdAt, updatedAt: video.createdAt, hasTranscript: false, mediaMissing: false, hasThumbnail: false,
+            styleSource: 'project', revision: 0 }] }, videoFile);
+      } else if (this.state.route.name === 'home') void this.refresh();
+      return;
+    }
+    if (!locator.projectId) throw new Error('Upload target project is missing');
+    await this.connection.call('projects.addVideo', { projectId: locator.projectId, videoName: locator.fileName,
+      durationSeconds: Number.isFinite(videoFile?.duration) ? videoFile!.duration : 0,
+      media: { assetId: session.assetId, mimeType: session.mimeType }, operationId: key });
+    this.patchUpload(key, { phase: 'complete' });
+    this.uploadCompleted.add(key);
+    this.removeLocator(locator);
+    this.uploadFiles.delete(key);
+    this.uploadVideos.delete(key);
+    this.removeUploadView(key);
+    this.thumbnails.clear();
+    if (this.state.detail?.projectId === locator.projectId) await this.reloadDetail(locator.projectId).catch(() => undefined);
+  }
+
+  /** Rebuilds upload rows after a refresh/reconnect and verifies every Host session before showing it. */
+  async resumeUploads() {
+    if (this.resumeUploadsTask) return this.resumeUploadsTask;
+    const task = (async () => {
+      if (!this.connection.isReady()) return;
+      const hostId = await this.hostIdentity();
+      if (this.hostId !== hostId) return;
+      const saved = this.uploadLocators.read(hostId);
+      for (const locator of saved) {
+        if (this.uploadAt(locator.operationId)) continue;
+        const view = viewFromLocator(locator);
+        this.state.set({ uploads: [...this.state.uploads.filter(item => item.key !== view.key), view] });
+        try {
+          let session = await this.connection.getUploadSession(locator.sessionId);
+          if (session.state === 'active') {
+            const file = this.uploadFiles.get(locator.operationId);
+            this.patchUpload(locator.operationId, { uploadedBytes: session.uploadedBytes, phase: file ? 'interrupted' : 'needs-file' });
+            if (file) void this.runUpload(locator.operationId);
+          } else if (session.state === 'finalizing') {
+            this.patchUpload(locator.operationId, { uploadedBytes: session.uploadedBytes, phase: 'verifying' });
+            session = await this.connection.completeUploadSession(session.id, locator.sha256);
+            await this.finishUploadProject(locator.operationId, locator, session, undefined, new AbortController().signal);
+          } else if (session.state === 'complete') {
+            this.patchUpload(locator.operationId, { uploadedBytes: session.size, phase: 'verifying' });
+            await this.finishUploadProject(locator.operationId, locator, session, undefined, new AbortController().signal);
+          } else {
+            this.removeLocator(locator);
+            this.removeUploadView(locator.operationId);
+          }
+        } catch (error) {
+          if (error instanceof UploadRequestError && [404, 410].includes(error.status)) {
+            this.patchUpload(locator.operationId, { phase: 'expired', error: 'expired' });
+            this.removeLocator(locator);
+          } else if (isUploadTransportError(error)) {
+            this.patchUpload(locator.operationId, { phase: 'interrupted', error: uploadFailureMessage(error) });
+          } else {
+            this.patchUpload(locator.operationId, { phase: 'verifying', error: uploadFailureMessage(error) });
+          }
+        }
+      }
+    })().finally(() => { if (this.resumeUploadsTask === task) this.resumeUploadsTask = null; });
+    this.resumeUploadsTask = task;
+    return task;
+  }
+
+  pauseUpload(key: string) {
+    const view = this.uploadAt(key);
+    if (!view || !['hashing', 'uploading', 'interrupted'].includes(view.phase)) return;
+    this.uploadTokens.set(key, (this.uploadTokens.get(key) ?? 0) + 1);
+    this.uploadControllers.get(key)?.abort();
+    const timer = this.uploadTimers.get(key); if (timer) clearTimeout(timer); this.uploadTimers.delete(key);
+    this.patchUpload(key, { phase: 'paused', error: undefined });
+  }
+
+  async resumeUpload(key: string) {
+    const view = this.uploadAt(key); if (!view) return false;
+    const file = this.uploadFiles.get(key);
+    if (!file) { this.patchUpload(key, { phase: 'needs-file' }); return false; }
+    this.patchUpload(key, { phase: 'interrupted', error: undefined });
+    return this.runUpload(key, this.uploadVideos.get(key));
+  }
+
+  async retryUpload(key: string) {
+    const view = this.uploadAt(key); if (!view) return false;
+    if (view.phase === 'verifying') return this.runUpload(key);
+    return this.resumeUpload(key);
+  }
+
+  async chooseResumeFile(key: string, videoFile: VideoFile) {
+    const view = this.uploadAt(key); if (!view) return false;
+    const locator = this.locatorFor(key);
+    if (locator && videoFile.file.size !== locator.size) {
+      this.patchUpload(key, { phase: 'mismatch', error: 'integrity-mismatch' });
+      return false;
+    }
+    this.uploadFiles.set(key, videoFile.file);
+    this.uploadVideos.set(key, videoFile);
+    this.patchUpload(key, { phase: 'hashing', error: undefined });
+    return this.runUpload(key, videoFile);
+  }
+
+  async cancelUpload(key: string) {
+    const locator = this.locatorFor(key);
+    this.uploadTokens.set(key, (this.uploadTokens.get(key) ?? 0) + 1);
+    this.uploadControllers.get(key)?.abort();
+    const timer = this.uploadTimers.get(key); if (timer) clearTimeout(timer); this.uploadTimers.delete(key);
+    this.uploadFiles.delete(key);
+    this.uploadVideos.delete(key);
+    if (locator) {
+      try {
+        const session = await this.connection.cancelUploadSession(locator.sessionId);
+        if (session.state === 'complete') this.patchUpload(key, { phase: 'complete' });
+      } catch {
+        try {
+          const session = await this.connection.getUploadSession(locator.sessionId);
+          if (session.state === 'complete') this.patchUpload(key, { phase: 'complete' });
+        } catch { /* The locator is removed locally; Host expiry remains authoritative. */ }
+      }
+      this.removeLocator(locator);
+    }
+    this.removeUploadView(key);
+  }
+
+  dismissUpload(key: string) {
+    const view = this.uploadAt(key);
+    if (!view || !['unsupported', 'rejected', 'complete'].includes(view.phase)) return;
+    this.removeUploadView(key);
+    this.uploadFiles.delete(key);
+    this.uploadVideos.delete(key);
   }
 
   // ---------- 首页 ----------
@@ -214,6 +582,13 @@ export class ProjectService {
     if (!(await this.confirmLeave())) return null;
     set({ creating: true });
     try {
+      // Browser/Cloud media uses the resumable protocol. Tauri keeps its authenticated local path
+      // and existing mediaRef contract so the desktop shell never uploads a local path string.
+      if (!isTauriRuntime()) {
+        if (!(await this.startResumableUpload(videoFile, 'create'))) return null;
+        const current = this.state.current;
+        return current ? { projectId: current.projectId, videoId: current.videoId, name: current.name } : null;
+      }
       const name = baseName(videoFile.name);
       const media = await this.mediaSource(videoFile);
       const created = await this.connection.call('projects.create', { name, videoName: videoFile.name,
@@ -361,10 +736,17 @@ export class ProjectService {
     for (const [index, videoFile] of videoFiles.entries()) {
       const key = rows[index].key;
       try {
-        const media = await this.mediaSource(videoFile);
-        await this.connection.call('projects.addVideo', { projectId, videoName: videoFile.name,
-          durationSeconds: Number.isFinite(videoFile.duration) ? videoFile.duration : 0, media });
-        await this.reloadDetail(projectId).catch(() => undefined);
+        if (!isTauriRuntime()) {
+          if (!(await this.startResumableUpload(videoFile, 'add', projectId))) {
+            patchAdding(adding => adding.map(row => row.key === key ? { ...row, status: 'failed' } : row));
+            continue;
+          }
+        } else {
+          const media = await this.mediaSource(videoFile);
+          await this.connection.call('projects.addVideo', { projectId, videoName: videoFile.name,
+            durationSeconds: Number.isFinite(videoFile.duration) ? videoFile.duration : 0, media });
+          await this.reloadDetail(projectId).catch(() => undefined);
+        }
         patchAdding(adding => adding.filter(row => row.key !== key));
       } catch (error) {
         console.error('添加视频失败', error);
@@ -878,8 +1260,11 @@ export class ProjectService {
     if (!this.connected) return;
     this.connected = false;
     this.identity = null;
+    this.uploadCapabilities = undefined;
     this.disconnectEpoch += 1;
     clearTimeout(this.timer); clearTimeout(this.retryTimer); this.failures = 0;
+    this.state.set({ uploads: this.state.uploads.map(item => ['checking', 'hashing', 'uploading'].includes(item.phase)
+      ? { ...item, phase: 'interrupted' as const } : item) });
     if (this.state.current?.hasTranscript) this.state.setSave({ status: 'offline', error: undefined, conflictAt: undefined });
   }
 
@@ -901,6 +1286,7 @@ export class ProjectService {
       const hostId = await this.hostIdentity();
       if (epoch !== this.disconnectEpoch) return;
       if (previousHostId && hostId !== previousHostId) { this.resetForIdentityChange(); return; }
+      await this.resumeUploads();
       if (!current.hasTranscript) {
         this.state.setSave({ status: this.isDirty() ? 'pending' : 'saved', error: undefined });
         if (this.isDirty()) this.onEdit();
@@ -955,10 +1341,16 @@ export class ProjectService {
     this.baseline = null; this.transcriptRecord = undefined; this.pendingTranscript = null;
     this.recoveryCopies.clear();
     this.hostId = null; this.identity = null; this.connected = true;
+    this.uploadCapabilities = undefined;
+    this.uploadFiles.clear();
+    this.uploadVideos.clear();
+    this.uploadCompleted.clear();
+    this.uploadControllers.forEach(controller => controller.abort()); this.uploadControllers.clear();
+    this.uploadTimers.forEach(timer => clearTimeout(timer)); this.uploadTimers.clear();
     this.openGeneration += 1;
     this.state.set({ current: null, save: { status: 'saved' }, conflictDialog: false, unsavedDialog: null, projectDeleted: null,
       detail: null, trash: { status: 'loading', items: [], restoringId: null }, projects: [], listStatus: 'loading',
-      transcribing: null, recovery: { phase: 'idle', candidates: [], selectedKey: null }, recoveryHealth: 'ok' });
+      transcribing: null, recovery: { phase: 'idle', candidates: [], selectedKey: null }, recoveryHealth: 'ok', uploads: [] });
     this.stores.history.getState().reset(); this.stores.app.getState().setVideoFile(null);
     this.navigate({ name: 'home' });
     void this.refresh();
@@ -972,10 +1364,16 @@ export class ProjectService {
     this.baseline = null; this.transcriptRecord = undefined; this.pendingTranscript = null;
     this.recoveryCopies.clear();
     this.hostId = null; this.identity = null; this.connected = false;
+    this.uploadCapabilities = undefined;
+    this.uploadFiles.clear();
+    this.uploadVideos.clear();
+    this.uploadCompleted.clear();
+    this.uploadControllers.forEach(controller => controller.abort()); this.uploadControllers.clear();
+    this.uploadTimers.forEach(timer => clearTimeout(timer)); this.uploadTimers.clear();
     this.openGeneration += 1;
     this.state.set({ current: null, save: { status: 'saved' }, conflictDialog: false, unsavedDialog: null, projectDeleted: null,
       detail: null, trash: { status: 'loading', items: [], restoringId: null }, projects: [], listStatus: 'loading',
-      transcribing: null, recovery: { phase: 'idle', candidates: [], selectedKey: null }, recoveryHealth: 'ok', route: { name: 'home' } });
+      transcribing: null, recovery: { phase: 'idle', candidates: [], selectedKey: null }, recoveryHealth: 'ok', uploads: [], route: { name: 'home' } });
     this.stores.history.getState().reset(); this.stores.app.getState().setVideoFile(null);
   }
 
@@ -1294,7 +1692,7 @@ export const projectsClientPlugin = { name: 'flycut-projects-client', inject: ['
   const service = new ProjectService(ctx);
   ctx.provide('projects', service);
   // F-0004：先读好 Host 身份，打开项目时检查恢复内容不用再等 Host
-  void service.hostIdentity().catch(error => console.warn('读取 Host 身份失败', error));
+  void service.hostIdentity().then(() => service.resumeUploads()).catch(error => console.warn('读取 Host 身份失败', error));
   ctx.effect(() => ctx.connection.subscribe(() => service.connectionChanged(ctx.connection.snapshot())));
   // 首页卡片上的转写进度（AC-14）：识别开始时记下它属于哪个项目，离开编辑器后也能继续显示
   ctx.effect(() => ctx.stores.app.subscribe((app, previous) => {

@@ -53,7 +53,7 @@ export const langgraphPlugin = { name: 'flycut-langgraph', inject: ['providers',
     start(raw) {
       const input = pipelineInputSchema.parse(raw);
       ctx.providers.get(input.asr.providerId);
-      return ctx.jobs.create((signal, report) => run(input, signal, report));
+      return ctx.jobs.create((signal, report) => run(input, signal, report), { operationId: input.operationId });
     },
   };
   ctx.provide('workflows', workflows);

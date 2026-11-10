@@ -18,7 +18,7 @@ F-0015 需要让浏览器通过远程 Host 上传 10–60 分钟口播素材，�
 ## 决策
 
 - **Host 是会话真源。** `uploads` 插件在 `<home>/uploads/<sessionId>/` 保存原子写入的 `session.json` 与确认分片。会话记录创建者身份摘要、文件大小/类型、完整 SHA-256、分片大小、确认分片、过期时间、状态和确定性 assetId。
-- **身份来自 Gateway。** 每次上传路由都在既有鉴权后执行；浏览器会话主体来自 HttpOnly Cookie，bearer 主体来自 Host token 摘要。查询、写片、完成、取消都要求主体一致，不一致返回 404。普通页面刷新复用仍有效的 Cookie 会话；登出删除会话，过期后签发新身份。客户端不能提供 owner 或 namespace。
+- **身份来自 Gateway。** 每次上传路由都在既有 `flycut_session` Cookie/CSRF 或 bearer 鉴权后执行。浏览器上传主体使用 Host 首次上传时签发的 HttpOnly `flycut_upload_owner`；cookie 是带随机不可预测 id、签发过期时间和 HMAC-SHA256 签名的 opaque 值，签名 key 绑定 Host home 身份与 token，服务端验证签名和过期时间。bearer 主体使用 Host token 摘要；owner 只是鉴权后的归属标签，不能单独访问路由。查询、写片、完成、取消都要求主体一致，不一致返回 404。普通刷新复用有效 Cookie 会话；Host 重启或会话过期重新授权后 owner 仍稳定；登出同时清除会话和 owner。伪造/篡改/过期 owner 会被拒绝并重签，客户端不能提供 owner 或 namespace。当前单租户 Host 没有账户身份；同一浏览器不登出而换上游账号无法区分，这是现有账号边界限制。
 - **分片幂等。** 每片请求带 index、offset、摘要；Host 校验范围、长度、末片余量和内容摘要后原子 rename。相同 index 相同内容返回原确认；相同 index 不同内容、错误 offset 或越界返回冲突，不累加字节。
 - **完成后原子落资产。** 服务端确认没有缺失分片，顺序流式重算完整 SHA-256 和大小，再检查媒体容器头。先在会话中持久化确定性 assetId 和 `finalizing`，再原子移入资产目录，最后标记 `complete`。重复完成返回同一 assetId；重启时根据 finalizing 记录补完或回滚，不产生第二份资产。
 - **取消、过期与空间。** 每个会话串行化完成与取消；完成前取消删除临时目录，完成后取消不删除可能已被项目接管的资产。查询和每小时扫描都处理过期，过期返回 410。创建和写片前检查公开最大大小、允许类型和磁盘余量；磁盘不足返回 507。

@@ -27,6 +27,7 @@ import { ConfirmDialog, DeleteProjectDialog, MediaMissingBanner, ProjectDeletedD
   UnsavedChangesDialog } from './ProjectDialogs';
 import { RecoveryCheckingDialog, RecoveryChooseDialog, RecoveryConflictDialog, RecoveryDiscardDialog, RecoveryFailedDialog,
   RecoveryUnavailableBanner } from './RecoveryDialogs';
+import { MediaUploadPanel } from './MediaUploadPanel';
 import type { ProjectSummary, ProjectVideoItem, ProjectsView } from './types';
 import type { ProjectVideoSummary } from '../../../shared/projects';
 import { fill, isMacPlatform, saveShortcutLabel } from './format';
@@ -169,6 +170,7 @@ function ProjectsHomePage({ version }: { version: string }) {
   return (
     <ProjectsShell version={version} onOpenSettings={() => setSettingsOpen(true)} active="projects" onNavigate={navigate}>
       <input ref={media.uploadInputRef} type="file" className="hidden" data-testid="project-file-input" accept={MEDIA_ACCEPT} onChange={media.handleNativeFileSelect} />
+      <div className="mx-auto w-full max-w-6xl px-8"><MediaUploadPanel kind="create" /></div>
       <ProjectsHome status={listStatus} projects={summaries} totalCount={items.length} query={query} onQueryChange={setQuery}
         view={view} onViewChange={changeView} sort={sort} onSortChange={next => projects.setSort(next)} openingId={openingId} creating={creating || media.isMediaLoading}
         onOpen={id => { void projects.openFromHome(id).catch(error => toast.error(errorText(error))); }}
@@ -224,6 +226,7 @@ function ProjectDetailPage({ version }: { version: string }) {
     <ProjectsShell version={version} onOpenSettings={() => setSettingsOpen(true)} active="projects" onNavigate={navigate}>
       <input ref={input} type="file" multiple className="hidden" data-testid="project-add-input" accept={MEDIA_ACCEPT}
         onChange={event => { const files = [...(event.target.files ?? [])]; event.target.value = ''; void Promise.all(files.map(videoFileFromFile)).then(addFiles); }} />
+      <div className="mx-auto w-full max-w-6xl px-8"><MediaUploadPanel kind="add" projectId={projectId} /></div>
       <ProjectDetail status={detail.status} name={detail.name} videos={videos} adding={detail.adding} openingVideoId={detail.openingVideoId} dragActive={desktopDrag}
         onBack={() => { void projects.goHome(); }} onRetry={() => { void projects.loadDetail(projectId); }}
         onOpenVideo={id => { void projects.openVideo(id).catch(error => toast.error(errorText(error))); }}

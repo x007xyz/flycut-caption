@@ -11,7 +11,7 @@ interface Entry { schema?: z.ZodType; handler: (input: unknown) => unknown }
  * `client` routes take the frontend token, `shell` routes only the desktop shell's secret (`HostConfig.shellToken`).
  */
 export interface HttpRoute {
-  method: 'GET' | 'POST';
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
   pattern: RegExp;
   auth: 'client' | 'shell';
   /**
@@ -19,7 +19,16 @@ export interface HttpRoute {
    * read-only route may also accept `?token=`. Keep it off for writes and generic RPC.
    */
   queryToken?: boolean;
-  handle(req: IncomingMessage, res: ServerResponse, match: RegExpMatchArray): Promise<void>;
+  handle(req: IncomingMessage, res: ServerResponse, match: RegExpMatchArray, auth: HttpRouteAuth): Promise<void>;
+}
+
+/** The Gateway's already-verified transport identity. Plugins must not accept an owner from the request body. */
+export interface HttpRouteAuth {
+  kind: 'session' | 'bearer';
+  /** Authenticated transport principal; useful for audit and bearer-only routes. */
+  principal: string;
+  /** Stable Host-issued browser subject, or the bearer principal for non-browser clients. Never client supplied. */
+  subject: string;
 }
 
 export interface RpcService {

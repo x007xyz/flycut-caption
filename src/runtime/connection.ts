@@ -1,6 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis';
 import type { HostFrame, JobSnapshot, RemoteEventName, RemoteEvents, RpcInput, RpcMethod, RpcOutput, RpcResponse } from '../../shared/protocol';
 import { PROTOCOL_VERSION } from '../../shared/protocol';
+import type { UploadCapabilities, UploadCompleteInput, UploadCreateInput, UploadSession } from '../../shared/uploads';
 import {
   classifyHttpStatus, isReadOnlyRpc, type HostAuth, type HostConnectionOptions, type HostSessionService,
 } from './connectionModel';
@@ -13,6 +14,12 @@ export interface RemoteConnection {
   /** Subscribes to a Host event the Host chose to expose. Wrap in `ctx.effect` inside client plugins. */
   on<E extends RemoteEventName>(name: E, listener: (payload: RemoteEvents[E]) => void): () => void;
   upload(audio: Blob): Promise<string>;
+  uploadCapabilities(): Promise<UploadCapabilities>;
+  createUploadSession(input: UploadCreateInput, signal?: AbortSignal): Promise<UploadSession>;
+  getUploadSession(id: string, signal?: AbortSignal): Promise<UploadSession>;
+  putUploadChunk(id: string, index: number, chunk: Blob, offset: number, sha256: string, signal?: AbortSignal): Promise<UploadSession>;
+  completeUploadSession(id: string, sha256: string, signal?: AbortSignal): Promise<UploadSession>;
+  cancelUploadSession(id: string, signal?: AbortSignal): Promise<UploadSession>;
   download(assetId: string): Promise<Blob>;
   /** Absolute URL of a Host HTTP route for elements that cannot send headers (`<video src>`). */
   resourceUrl(path: string): string;
@@ -48,6 +55,15 @@ export class HostRequestError extends Error {
 
 export class SessionClosedError extends Error {
   constructor() { super('Host session closed'); this.name = 'SessionClosedError'; }
+}
+
+/** A Host upload-route failure. Messages omit credentials and raw request data. */
+export class UploadRequestError extends Error {
+  readonly status: number;
+  readonly code: string;
+  constructor(status: number, code: string, message: string) {
+    super(message); this.name = 'UploadRequestError'; this.status = status; this.code = code;
+  }
 }
 
 export class ConnectionUnavailableError extends Error {
@@ -162,6 +178,46 @@ export class HostConnection implements RemoteConnection {
       headers: this.authHeaders() });
     if (!response.ok) throw await this.httpFailure(response);
     return (await response.json() as { assetId: string }).assetId;
+  }
+
+  private async uploadRequest(path: string, init: RequestInit): Promise<Response> {
+    if (this.stopped) throw new SessionClosedError();
+    if (this.status !== 'connected') throw new ConnectionUnavailableError();
+    const response = await fetch(`${this.options.url}${path}`, { ...init, credentials: this.credentials(),
+      headers: { ...this.authHeaders(), ...(init.headers as Record<string, string> | undefined) } });
+    if (response.ok) return response;
+    if (response.status === 401 || response.status === 403) this.notifyError(new HostRequestError(response.status));
+    const body = await response.json().catch(() => ({})) as { error?: { code?: string; message?: string } };
+    throw new UploadRequestError(response.status, body.error?.code ?? 'invalid-session', body.error?.message ?? `Upload request failed (HTTP ${response.status})`);
+  }
+
+  uploadCapabilities() { return this.call('uploads.capabilities'); }
+
+  async createUploadSession(input: UploadCreateInput, signal?: AbortSignal) {
+    const response = await this.uploadRequest('/uploads', { method: 'POST', signal,
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
+    return response.json() as Promise<UploadSession>;
+  }
+
+  async getUploadSession(id: string, signal?: AbortSignal) {
+    return (await this.uploadRequest(`/uploads/${id}`, { method: 'GET', signal })).json() as Promise<UploadSession>;
+  }
+
+  async putUploadChunk(id: string, index: number, chunk: Blob, offset: number, sha256: string, signal?: AbortSignal) {
+    const response = await this.uploadRequest(`/uploads/${id}/chunks/${index}`, { method: 'PUT', signal, body: chunk,
+      headers: { 'Content-Type': 'application/octet-stream', 'X-Flycut-Offset': String(offset), 'X-Chunk-SHA256': sha256 } });
+    return response.json() as Promise<UploadSession>;
+  }
+
+  async completeUploadSession(id: string, sha256: string, signal?: AbortSignal) {
+    const input: UploadCompleteInput = { sha256 };
+    const response = await this.uploadRequest(`/uploads/${id}/complete`, { method: 'POST', signal,
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
+    return response.json() as Promise<UploadSession>;
+  }
+
+  async cancelUploadSession(id: string, signal?: AbortSignal) {
+    return (await this.uploadRequest(`/uploads/${id}`, { method: 'DELETE', signal })).json() as Promise<UploadSession>;
   }
 
   async download(assetId: string) {
