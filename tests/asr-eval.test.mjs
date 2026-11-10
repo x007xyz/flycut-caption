@@ -1,6 +1,10 @@
 // F-0001 评测指标的单元测试（不需要模型和素材）。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { characterErrorRate, evaluate, fillerRecall, markerRecall, parseReference } from './lib/asrEval.mjs';
 
 test('F-0001 字错率去掉标点和语气词，按词元计替换、删除、插入', () => {
@@ -53,4 +57,64 @@ test('F-0001 参考文本：未听校时拒绝，--allow-draft 取 A；非讲者
   const result = evaluate(ref, transcript);
   assert.equal(result.referenceTokens, 14); assert.equal(result.errors, 2);
   assert.equal(result.fillers.reference, 1); assert.equal(result.fillers.recalled, 0);
+});
+
+test('F-0001 未听校但已无分歧的参考仍不得用于正式评测', () => {
+  const draft = markdown.replace(/\{([^|{}]*)\|[^{}]*\}/g, '$1');
+  assert.throws(() => parseReference(draft), /尚未完成听校/);
+  assert.equal(parseReference(draft, { allowDraft: true }).reviewed, false);
+  const reviewed = draft.replace('status: draft', 'status: reviewed');
+  assert.equal(parseReference(reviewed).reviewed, true);
+});
+
+test('F-0001 参考范围和句子为空或无效时拒绝评测', () => {
+  for (const range of ['[40, 10]', '[10, 10]', '[NaN, 40]', '[10]']) {
+    assert.throws(() => parseReference(markdown.replace('[10, 40]', range), { allowDraft: true }), /评测范围无效/);
+  }
+  assert.throws(() => parseReference('---\nstatus: reviewed\nrange: [0, 10]\n---\n'), /没有可评测的讲者文本/);
+});
+
+test('F-0001 就绪检查不启动推理，草稿与已听校文本返回不同退出码', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'flycut-reference-check-'));
+  try {
+    const file = join(dir, 'reference.md');
+    const run = () => spawnSync(process.execPath, [new URL('../scripts/eval-asr.mjs', import.meta.url).pathname,
+      '--check-reference', '--reference', file], { encoding: 'utf8' });
+    writeFileSync(file, markdown);
+    const draft = run();
+    assert.equal(draft.status, 1, draft.stderr);
+    assert.equal(JSON.parse(draft.stdout).references[0].unresolved, 2);
+    writeFileSync(file, markdown.replace(/\{([^|{}]*)\|[^{}]*\}/g, '$1').replace('status: draft', 'status: reviewed'));
+    const reviewed = run();
+    assert.equal(reviewed.status, 0, reviewed.stderr);
+    assert.equal(JSON.parse(reviewed.stdout).ready, true);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('F-0001 字错率必须是最小编辑距离，不以最长公共子序列高估替换错误', () => {
+  assert.deepEqual(characterErrorRate('甲乙丙', '丙乙甲'), {
+    cer: 2 / 3, errors: 2, substitutions: 2, deletions: 0, insertions: 0, referenceTokens: 3,
+  });
+  assert.equal(characterErrorRate('甲乙丙丁', '乙丙丁甲').errors, 2);
+});
+
+test('F-0001 编辑距离与独立小样本矩阵一致，错误分类之和等于距离', () => {
+  const samples = [''];
+  let level = [''];
+  for (let size = 1; size <= 3; size++) {
+    level = level.flatMap((prefix) => [...'甲乙丙'].map((c) => prefix + c));
+    samples.push(...level);
+  }
+  for (const a of samples) for (const b of samples) {
+    const matrix = Array.from({ length: a.length + 1 }, () => Array(b.length + 1).fill(0));
+    for (let i = 0; i <= a.length; i++) matrix[i][0] = i;
+    for (let j = 0; j <= b.length; j++) matrix[0][j] = j;
+    for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) {
+      matrix[i][j] = Math.min(matrix[i - 1][j] + 1, matrix[i][j - 1] + 1,
+        matrix[i - 1][j - 1] + Number(a[i - 1] !== b[j - 1]));
+    }
+    const r = characterErrorRate(a, b);
+    assert.equal(r.errors, matrix[a.length][b.length], `${a} -> ${b}`);
+    assert.equal(r.errors, r.substitutions + r.deletions + r.insertions);
+  }
 });

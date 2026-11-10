@@ -30,6 +30,9 @@ export function parseReference(markdown, { allowDraft = false } = {}) {
     return [line.slice(0, at).trim(), line.slice(at + 1).trim()];
   }).filter(([key]) => key));
   const range = (meta.range ?? '').replace(/[[\]\s]/g, '').split(',').map(Number);
+  if (range.length !== 2 || !range.every(Number.isFinite) || range[0] < 0 || range[1] <= range[0]) {
+    throw new Error('参考文本评测范围无效：需要 [开始秒数, 结束秒数]，且结束晚于开始');
+  }
   let unresolved = 0;
   const sentences = [];
   for (const line of markdown.split('\n')) {
@@ -45,6 +48,12 @@ export function parseReference(markdown, { allowDraft = false } = {}) {
   }
   if (unresolved && !allowDraft) {
     throw new Error(`参考文本还有 ${unresolved} 处分歧没有听校（status: ${meta.status ?? '?'}）。初稿试算请加 --allow-draft`);
+  }
+  if (!sentences.some((sentence) => sentence.speaker && sentence.text.trim())) {
+    throw new Error('参考文本没有可评测的讲者文本');
+  }
+  if (meta.status !== 'reviewed' && !allowDraft) {
+    throw new Error('参考文本尚未完成听校：确认逐句听校后才能标记 status: reviewed；试算请加 --allow-draft');
   }
   sentences.forEach((sentence, index) => { sentence.end = sentences[index + 1]?.start ?? range[1]; });
   return { meta, range: { start: range[0], end: range[1] }, sentences, unresolved, reviewed: meta.status === 'reviewed' };
@@ -67,19 +76,37 @@ const isFiller = (token) => FILLER_CLASS.has(token);
 
 /**
  * 字错率：去掉标点和单字语气词后按词元比较。
- * 错误数按对齐的编辑片段计：替换片段算较长一侧的长度，删除、插入按长度，是 Levenshtein 距离的上界、通常相等。
+ * 用精确 Levenshtein 距离统计替换/删除/插入。只保留两行，避免长口播的平方内存开销。
+ * 同成本时优先对角线（匹配/替换），再删除、插入，以保证分类结果可复现。
  */
 export function characterErrorRate(referenceText, hypothesis) {
   const ref = tokens(referenceText).filter((t) => !isFiller(t));
   const hyp = tokens(hypothesis).filter((t) => !isFiller(t));
-  let substitutions = 0; let deletions = 0; let insertions = 0;
-  for (const op of diffChars(ref, hyp)) {
-    const a = op.i2 - op.i1; const b = op.j2 - op.j1;
-    if (op.tag === 'replace') { substitutions += Math.min(a, b); if (a > b) deletions += a - b; else insertions += b - a; }
-    else if (op.tag === 'delete') deletions += a;
-    else if (op.tag === 'insert') insertions += b;
+  const row = () => Array.from({ length: 4 }, () => new Uint32Array(hyp.length + 1));
+  let previous = row(); let current = row();
+  for (let j = 0; j <= hyp.length; j++) { previous[0][j] = j; previous[3][j] = j; }
+  for (let i = 1; i <= ref.length; i++) {
+    current[0][0] = i; current[1][0] = 0; current[2][0] = i; current[3][0] = 0;
+    for (let j = 1; j <= hyp.length; j++) {
+      const substitution = ref[i - 1] === hyp[j - 1] ? 0 : 1;
+      const diagonal = previous[0][j - 1] + substitution;
+      const deletion = previous[0][j] + 1;
+      const insertion = current[0][j - 1] + 1;
+      if (diagonal <= deletion && diagonal <= insertion) {
+        current[0][j] = diagonal;
+        current[1][j] = previous[1][j - 1] + substitution;
+        current[2][j] = previous[2][j - 1]; current[3][j] = previous[3][j - 1];
+      } else if (deletion <= insertion) {
+        current[0][j] = deletion;
+        current[1][j] = previous[1][j]; current[2][j] = previous[2][j] + 1; current[3][j] = previous[3][j];
+      } else {
+        current[0][j] = insertion;
+        current[1][j] = current[1][j - 1]; current[2][j] = current[2][j - 1]; current[3][j] = current[3][j - 1] + 1;
+      }
+    }
+    [previous, current] = [current, previous];
   }
-  const errors = substitutions + deletions + insertions;
+  const [errors, substitutions, deletions, insertions] = previous.map((values) => values[hyp.length]);
   return { cer: ref.length ? errors / ref.length : 0, errors, substitutions, deletions, insertions, referenceTokens: ref.length };
 }
 

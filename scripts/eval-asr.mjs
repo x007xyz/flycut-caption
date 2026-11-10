@@ -6,6 +6,7 @@
 //   pnpm eval:asr --models sensevoice-…,paraformer-…
 //   pnpm eval:asr --allow-draft                # 参考文本还没听校完时试算（分歧处取 A，结果不能当结论）
 //   pnpm eval:asr --long                       # 长音频：两段 COSCUP 拼成约 60 分钟，只记耗时和内存
+//   pnpm eval:asr --check-reference            # 只检查听校就绪情况，不需要模型，也不启动推理
 //
 // 素材在 tests/media/（不入库，用 pnpm fetch:test-media 或各样本 .md 里的命令获取）。
 // 结果写到 test-results/asr-eval/：report.md、report.json，模型输出缓存在 cache/（--rerun 重新转写）。
@@ -20,9 +21,26 @@ import { evaluate, parseReference } from '../tests/lib/asrEval.mjs';
 const { values } = parseArgs({ options: {
   reference: { type: 'string', multiple: true }, models: { type: 'string' }, out: { type: 'string', default: 'test-results/asr-eval' },
   'allow-draft': { type: 'boolean', default: false }, rerun: { type: 'boolean', default: false }, long: { type: 'boolean', default: false },
+  'check-reference': { type: 'boolean', default: false },
 } });
 
 const root = projectRoot();
+const refDir = join(root, 'tests/fixtures/asr-reference');
+const referenceFiles = values.reference ?? readdirSync(refDir).filter((f) => f.endsWith('.md')).map((f) => join(refDir, f));
+if (values['check-reference']) {
+  const references = referenceFiles.map((file) => {
+    try {
+      const reference = parseReference(readFileSync(file, 'utf8'), { allowDraft: true });
+      return { file, status: reference.meta.status, sentences: reference.sentences.length, unresolved: reference.unresolved,
+        referenceBasis: reference.meta.reference_basis ?? null, timestampBasis: reference.meta.timestamp_basis ?? null,
+        ready: reference.reviewed && reference.unresolved === 0,
+        mediaAvailable: existsSync(join(root, 'tests/media', reference.meta.media ?? '')) && Boolean(reference.meta.media) };
+    } catch (error) { return { file, ready: false, error: error.message }; }
+  });
+  const ready = references.length > 0 && references.every((reference) => reference.ready);
+  console.log(JSON.stringify({ ready, references }, null, 2));
+  process.exit(ready ? 0 : 1);
+}
 const sidecar = resolveSidecar(root); const ffmpeg = resolveFfmpeg(root); const vadDir = resolveFsmnVadDir(root);
 const missing = [!sidecar && 'funasr-asr sidecar（pnpm build:funasr-sidecar）', !ffmpeg && 'ffmpeg（pnpm fetch:ffmpeg）', !vadDir && 'FSMN VAD（pnpm fetch:shared-assets）'].filter(Boolean);
 if (missing.length) { console.error(`缺少：${missing.join('、')}`); process.exit(1); }
@@ -96,8 +114,6 @@ try {
     process.exit(0);
   }
 
-  const refDir = join(root, 'tests/fixtures/asr-reference');
-  const referenceFiles = values.reference ?? readdirSync(refDir).filter((f) => f.endsWith('.md')).map((f) => join(refDir, f));
   const results = [];
   for (const file of referenceFiles) {
     const reference = parseReference(readFileSync(file, 'utf8'), { allowDraft: values['allow-draft'] });
@@ -118,6 +134,7 @@ try {
       }
       const audioSeconds = reference.range.end - reference.range.start;
       results.push({ sample, model: model.id, family: model.family, reviewed: reference.reviewed, unresolved: reference.unresolved,
+        referenceBasis: reference.meta.reference_basis ?? null, referenceSha256: reference.meta.reference_sha256 ?? null,
         ...evaluate(reference, run.transcript), elapsedMs: run.elapsedMs, rtf: run.elapsedMs / 1000 / audioSeconds, peakBytes: run.peakBytes, audioSeconds });
     }
   }
@@ -126,6 +143,8 @@ try {
   const lines = [
     '# 中文口播转写评测', '',
     provisional ? '> ⚠ 参考文本还没听校完（分歧处取初稿 A），以下数字只能当参考，不能当结论。\n' : '',
+    results.some((r) => r.referenceBasis === 'maintainer-accepted-corrected-asr')
+      ? '> 文字基准为维护者确认的 SenseVoice 精校版，存在来源偏差，未声称经过独立人工逐字听校。现有 ASR 时间戳未验证，本报告不提供时间误差结论。\n' : '',
     '| 样本 | 模型 | 字错率 | 替换 / 删除 / 插入 | 语气词召回 | 多出的语气词 | 那个 | 就是 | 实时率 | 峰值内存 |',
     '|---|---|---|---|---|---|---|---|---|---|',
     ...results.map((r) => `| ${r.sample} | ${r.model} | ${pct(r.cer)} | ${r.substitutions} / ${r.deletions} / ${r.insertions} | ${pct(r.fillers.recall)}（${r.fillers.recalled}/${r.fillers.reference}） | ${r.fillers.extra} | ${r.markers.那个.recalled}/${r.markers.那个.reference} | ${r.markers.就是.recalled}/${r.markers.就是.reference} | ${r.rtf.toFixed(3)} | ${gb(r.peakBytes)} |`),
