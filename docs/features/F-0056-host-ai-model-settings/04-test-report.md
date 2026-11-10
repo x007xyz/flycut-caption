@@ -110,10 +110,11 @@ ID 重试，成功后才清理。所有面板写操作和根快照加载都绑�
 
 ### 执行结果（2026-11-10）
 
-- `pnpm tauri:dev` 通过 `package:host`（31 个 Host 依赖及当前平台 Node）、FunASR sidecar
-  release 构建、FFmpeg/shared assets 检查、Vite 启动和 Cargo 编译；Cargo 415/415 完成，
-  进程进入 `Running target/debug/flycut-caption`。
-- 桌面 Host 启动失败：`target/debug/binaries/flycut-node` 加载
+- F-0017 清理前台后，从无监听端口的状态重新运行 `pnpm tauri:dev`。Host 打包（31 个依赖及
+  当前平台 Node）、FunASR sidecar release 构建、FFmpeg/shared assets 检查和 Vite 启动均通过；
+  Cargo 415/415 在 18.38 秒完成，进程进入 `Running target/debug/flycut-caption`。
+- 桌面 Host 启动失败：本次 dyld 进程 `22507`、`22508` 先后报告
+  `target/debug/binaries/flycut-node` 加载
   `@rpath/libnode.147.dylib` 失败，dyld 报 `Library not loaded`；已尝试的 bundle 相对路径
   `target/debug/binaries/libnode.147.dylib` 与 `target/debug/binaries/../lib/libnode.147.dylib`
   均不存在。Host 因此无法启动，AI 设置无法从真实桌面 Host 读取、保存、测试或重启复验。
@@ -123,7 +124,7 @@ ID 重试，成功后才清理。所有面板写操作和根快照加载都绑�
   debug 窗口。期间只打开并关闭了设置面板，没有保存、删除或修改任何配置，也不将该窗口计入通过。
 - 按“运行时因打包 Node/libnode 或自动驱动阻塞时保留错误并标注 Not run”的约束，没有继续修改
   dyld 搜索路径、替换 Node/打包资源或绕过自动驱动。完整 Tauri 桌面流程仍为 `⏸ Not run`。
-- 验证结束后已停止本轮启动的 5173 Tauri/Vite、5179 Vite、5191 Host 和 5207 fixture；未触碰其他
+- 复测结束后已停止本轮启动的 Tauri 与 Vite，5173、5179、5191、5207 均无监听；未触碰其他
   worktree 或旧安装包进程。
 
 ## 结论
