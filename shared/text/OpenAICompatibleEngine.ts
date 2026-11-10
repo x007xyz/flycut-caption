@@ -130,8 +130,9 @@ export class OpenAICompatibleEngine {
     })
 
     if (!resp.ok) {
-      const errText = await resp.text().catch(() => '')
-      throw new Error(`AI 请求失败 (${resp.status}): ${errText.slice(0, 200)}`)
+      // Never include an upstream body in an error surfaced through jobs or logs: it can echo request
+      // metadata, and providers may return sensitive diagnostics.
+      throw new Error(`AI 请求失败 (HTTP ${resp.status})`)
     }
 
     const data = await resp.json()
