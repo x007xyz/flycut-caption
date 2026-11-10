@@ -2,6 +2,7 @@ import type { Context } from '@deepseek-ai/cordis';
 import type { EditorPlugin } from '../../src/types/plugin';
 import type { EditorPluginRegistry } from '../services';
 import { deleteSilencePlugin } from '../../shared/editing/deleteSilencePlugin';
+import { removeFillersPlugin } from '../../shared/editing/fillerPlugin';
 
 /** Registry of edit analyzers. Each registered id is also a Workflow step capability. */
 export const editingPlugin = { name: 'flycut-editing-analysis', inject: ['rpc'], apply(ctx: Context) {
@@ -23,4 +24,8 @@ export const editingPlugin = { name: 'flycut-editing-analysis', inject: ['rpc'],
 
 export const deleteSilenceEditingPlugin = { name: 'flycut-editing-delete-silence', inject: ['editorPlugins'], apply(ctx: Context) {
   ctx.effect(() => ctx.editorPlugins.register(deleteSilencePlugin));
+} };
+
+export const removeFillersEditingPlugin = { name: 'flycut-editing-remove-fillers', inject: ['editorPlugins'], apply(ctx: Context) {
+  ctx.effect(() => ctx.editorPlugins.register(removeFillersPlugin));
 } };

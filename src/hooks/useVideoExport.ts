@@ -41,6 +41,7 @@ export function useVideoExport({
   const updatingCuts = useHistoryStore(s => s.updatingCuts);
   const { videoEngines } = useClientRuntime();
   const setError = useAppStore(state => state.setError);
+  const joinFadeMs = useAppStore(state => state.joinFadeMs);
 
   // 消息中心钩子
   const startVideoProcessing = useStartVideoProcessing();
@@ -177,6 +178,7 @@ export function useVideoExport({
       await processVideo(videoFile, segments, {
         ...options,
         edl: frozen.edl,
+        joinFadeMs,
         subtitleChunks: frozen.chunks.filter(c => !c.deleted),
       });
     } catch (error) {
@@ -194,6 +196,7 @@ export function useVideoExport({
     hasWordTimestamps,
     timelineDuration,
     edl, cutError, updatingCuts,
+    joinFadeMs,
     processVideo,
     setError,
     t,
@@ -218,8 +221,9 @@ export function useVideoExport({
       videoWidth: videoMeta.width,
       videoHeight: videoMeta.height,
       outputPath: saveTarget.outputPath,
+      joinFadeMs,
     });
-  }, [handleStartProcessing, subtitleStylePair, videoMeta, videoFile?.name]);
+  }, [handleStartProcessing, subtitleStylePair, videoMeta, videoFile?.name, joinFadeMs]);
 
   return { isProcessing, videoProgress, handleStartProcessing, handleVideoExport };
 }

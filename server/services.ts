@@ -1,5 +1,5 @@
 import type { JobSnapshot, PipelineInput, PipelineResult, ExportInput, AgentInput, TextInput } from '../shared/protocol';
-import type { AsrRequest, ModelInfo, ModelRef, ProviderKind, ProviderModels, ProviderSummary } from '../shared/providers';
+import type { AsrRequest, ModelInfo, ModelRef, ProviderKind, ProviderModels, ProviderSummary, VoiceActivityResult } from '../shared/providers';
 import type { ASRProgress, SubtitleTranscript } from '../src/types/subtitle';
 import type { Server } from 'node:http';
 import type { EditorPlugin } from '../src/types/plugin';
@@ -32,6 +32,8 @@ export interface Provider {
   models(signal?: AbortSignal): Promise<ModelInfo[]>;
   /** Downloads or prepares a model whose status is `download`. */
   prepare?(modelId: string, signal: AbortSignal, report: ProgressReporter): Promise<void>;
+  /** Optional VAD capability; audioPath is 16 kHz mono PCM16 WAV. */
+  detectVoice?(modelId: string, audioPath: string, signal: AbortSignal, report: ProgressReporter): Promise<VoiceActivityResult>;
   /** `audioPath` is a 16 kHz mono PCM16 WAV. The registry validates the result. */
   transcribe?(request: AsrRequest, audioPath: string, signal: AbortSignal, report: ProgressReporter): Promise<SubtitleTranscript>;
 }
@@ -44,6 +46,7 @@ export interface ProviderRegistry {
   /** Looks up the model, checks its declared options, runs the Provider and validates the transcript. */
   transcribe(request: AsrRequest, audioPath: string, signal: AbortSignal, report: ProgressReporter): Promise<SubtitleTranscript>;
   prepare(ref: ModelRef, signal: AbortSignal, report: ProgressReporter): Promise<void>;
+  detectVoice(ref: ModelRef, audioPath: string, signal: AbortSignal, report: ProgressReporter): Promise<VoiceActivityResult>;
 }
 export interface JobService {
   create(run: (signal: AbortSignal, report: ProgressReporter, id: string) => Promise<unknown>): JobSnapshot;

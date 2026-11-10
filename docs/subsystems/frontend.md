@@ -31,6 +31,12 @@
 - 改动交互细节前先查 [decisions.md](../decisions.md)，已拍板的行为不要在 PR 里顺手改。
 - **端到端测试**：涉及界面的 AC 写在 `tests/e2e/features/<F-编号>.spec.ts`，测试名带 AC 编号，覆盖 PRD 列出的每个状态和明暗主题；截图用 `tests/e2e/lib/evidence.ts` 的 `shot()`；`pnpm test:e2e` 只跑测试，`pnpm e2e:evidence F-NNNN` 跑测试并把截图写进需求目录的 `screenshots/`、录屏写进 `recordings/`。需要 Host 的状态，用 `page.route` 拦截 Host 请求构造，或者在 `pnpm dev` 下运行并在测试里注明。
 
+## F-0006 / F-0007 / F-0012 实施
+
+EditingSuggestionsPanel（去口癖）和 SilenceCutPanel（去静音）共用 PendingSuggestionsList；pendingSuggestions.kind 决定哪个面板显示列表。选择、预览、剪前/剪后 audition 只改临时层，确认后一次提交。historyStore.pendingCuts 只作为 F-0005 兼容派生视图，不要在新组件里直接写它。
+
+FindReplaceBar + useFindReplace 只查当前视频未删除原文；命中用只读 mark 片段呈现，不替换 textarea。全部替换先预览，确认时一次 batchUpdateText，撤销一次恢复整批。
+
 ## 命令与验证
 
 ```bash

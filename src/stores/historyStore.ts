@@ -7,6 +7,7 @@ import { normalizeAsrTranscript } from '@/utils/asrTranscriptUtils';
 import { joinWordTexts } from '../../shared/text/joinWords';
 import { changeCuts, createEdl, editingSchema, isDeleted, outputDuration, validateEdl,
   type Edl, type Editing, type CutRecord } from '../../shared/editing/edl';
+import { selectPendingRanges, validateSuggestionBatch, type SuggestionBatch } from '../../shared/editing/suggestions';
 
 type ChunkLayer = 'sentence' | 'word';
 type Chunk = SubtitleChunk;
@@ -17,6 +18,8 @@ export interface HistoryState {
   sourceDuration: number; edl: Edl | null; cutHistory: CutRecord[];
   cutError: string | null; updatingCuts: boolean;
   pendingCuts: { ranges: Array<{start: number; end: number}>; base: string; preview: boolean } | null;
+  pendingSuggestions: SuggestionBatch | null;
+  audition: { id: string; mode: 'before' | 'after' } | null;
   historyPreview: Edl | null;
   undoStack: Action[]; redoStack: Action[]; lastUpdateTime: number; mergeThreshold: number;
   text: string; duration: number; canUndo: boolean; canRedo: boolean;
@@ -34,12 +37,18 @@ export interface HistoryActions {
   batchUpdateText: (updates: {id: string; text?: string; secondText?: string}[]) => void;
   insertBlankChunks: (ranges: {start: number; end: number}[]) => void;
   proposeCuts: (ranges: {start: number; end: number}[]) => void;
+  proposeSuggestions: (batch: SuggestionBatch) => 'ok' | 'cross-kind' | 'invalid';
+  toggleSuggestion: (id: string) => void;
+  setSuggestionCategorySelected: (category: string, selected: boolean) => void;
+  rejectSuggestion: (id: string) => void;
+  auditionSuggestion: (id: string, mode: 'before' | 'after') => void;
+  stopAudition: () => void;
   previewPending: (preview: boolean) => void; confirmPending: () => void; cancelPending: () => void;
   previewHistory: (id: string | null) => void; restoreHistory: (id: string) => void;
   clearCutError: () => void; reset: () => void;
 }
 const initialState: HistoryState = { chunks: [], wordChunks: [], hasWordTimestamps: false, language: 'en',
-  sourceDuration: 0, edl: null, cutHistory: [], cutError: null, updatingCuts: false, pendingCuts: null, historyPreview: null,
+  sourceDuration: 0, edl: null, cutHistory: [], cutError: null, updatingCuts: false, pendingCuts: null, pendingSuggestions: null, audition: null, historyPreview: null,
   undoStack: [], redoStack: [], lastUpdateTime: 0, mergeThreshold: 500, text: '', duration: 0, canUndo: false, canRedo: false };
 const plain = (text: string) => text.replace(/[\p{P}\s]/gu, '');
 const keyOf = (state: Pick<HistoryState, 'edl' | 'chunks' | 'wordChunks'>) => JSON.stringify([state.edl, state.chunks, state.wordChunks]);
@@ -73,20 +82,26 @@ export const createHistoryStore = () => createStore<HistoryState & HistoryAction
     set({ ...next, ...derived(next), cutHistory: history, undoStack: [...state.undoStack, { before, after: next }],
       redoStack: [], canUndo: true, canRedo: false, lastUpdateTime: Date.now(), cutError: null, historyPreview: null, updatingCuts: false });
   };
-  const cut = (updates: {id: string; deleted: boolean; layer?: ChunkLayer}[], blanks: {start: number; end: number}[] = [], kind = 'edit') => {
+  /** `spacers: false` cuts the ranges in the EDL only, e.g. fillers inside a sentence whose words are already marked deleted. */
+  const cut = (updates: {id: string; deleted: boolean; layer?: ChunkLayer}[], blanks: {start: number; end: number}[] = [], kind = 'edit', spacers = true) => {
     try {
       const state = get(); if (state.updatingCuts || state.cutError) return;
       let { chunks, wordChunks, edl } = snapshot(state);
       const beforeWords = wordChunks;
+      const wordTextOk = new Map<string, boolean>();
       for (const u of updates) {
         const units = u.layer === 'word' ? wordChunks : chunks;
         const target = units.find(c => c.id === u.id); if (!target) continue;
         if (u.layer === 'word') {
           if (!state.hasWordTimestamps) throw new Error('Reliable word timestamps are required');
-          const sentence = chunks.find(c => c.id === target.sentenceId);
-          const words = wordChunks.filter(w => w.sentenceId === target.sentenceId && !w.deleted);
-          if (!target.deleted && sentence && plain(sentence.text) !== plain(joinWordTexts(words.map(w => w.text))))
-            throw new Error('Text was edited; use sentence-level cuts');
+          if (!target.deleted && target.sentenceId) {
+            if (!wordTextOk.has(target.sentenceId)) {
+              const sentence = chunks.find(c => c.id === target.sentenceId);
+              const words = beforeWords.filter(w => w.sentenceId === target.sentenceId && !w.deleted);
+              wordTextOk.set(target.sentenceId, !!sentence && plain(sentence.text) === plain(joinWordTexts(words.map(w => w.text))));
+            }
+            if (!wordTextOk.get(target.sentenceId)) throw new Error('Text was edited; use sentence-level cuts');
+          }
         }
         edl = changeCuts(edl, [{ start: target.timestamp[0], end: target.timestamp[1] }], u.deleted);
         if (u.layer === 'word') wordChunks = wordChunks.map(c => c.id === u.id ? { ...c, deleted: u.deleted } : c);
@@ -98,8 +113,8 @@ export const createHistoryStore = () => createStore<HistoryState & HistoryAction
         }
       }
       if (wordChunks !== beforeWords) chunks = syncWords(chunks, beforeWords, wordChunks);
-      if (blanks.length) {
-        edl = changeCuts(edl, blanks);
+      if (blanks.length) edl = changeCuts(edl, blanks);
+      if (blanks.length && spacers) {
         const ids = new Set(chunks.map(c => c.id));
         chunks = [...chunks, ...blanks.map(r => ({ id: `blank-${r.start.toFixed(3)}-${r.end.toFixed(3)}`,
           text: '', timestamp: [r.start, r.end] as [number, number], deleted: true, isBlankSpacer: true })).filter(c => !ids.has(c.id))]
@@ -166,16 +181,84 @@ export const createHistoryStore = () => createStore<HistoryState & HistoryAction
     undo: () => travel(false), redo: () => travel(true),
     clearHistory: () => set({ undoStack: [], redoStack: [], canUndo: false, canRedo: false }),
     proposeCuts: ranges => {
-      try { const s = get(); changeCuts(snapshot(s).edl, ranges); set({ pendingCuts: { ranges: structuredClone(ranges), base: keyOf(s), preview: false }, historyPreview: null, cutError: null }); }
-      catch (error) { fail(error); }
+      try {
+        const s = get(); changeCuts(snapshot(s).edl, ranges);
+        const batch: SuggestionBatch = { kind: 'silence', base: keyOf(s), preview: false,
+          items: ranges.map((range, index) => ({ id: `silence-${index}-${range.start.toFixed(6)}-${range.end.toFixed(6)}`,
+            start: range.start, end: range.end, reason: 'silence', category: 'silence', selected: true })) };
+        get().proposeSuggestions(batch);
+      } catch (error) { fail(error); }
     },
-    previewPending: preview => { const p = get().pendingCuts; if (p) set({ pendingCuts: { ...p, preview } }); },
+    proposeSuggestions: batch => {
+      try {
+        validateSuggestionBatch(batch);
+        const current = get().pendingSuggestions;
+        if (current && current.kind !== batch.kind) return 'cross-kind';
+        changeCuts(snapshot(get()).edl, selectPendingRanges({ pendingSuggestions: batch })?.ranges ?? []);
+        const view = selectPendingRanges({ pendingSuggestions: batch });
+        set({ pendingSuggestions: structuredClone(batch), pendingCuts: view, audition: null, historyPreview: null, cutError: null });
+        return 'ok';
+      } catch (error) { fail(error); return 'invalid'; }
+    },
+    toggleSuggestion: id => {
+      const batch = get().pendingSuggestions; if (!batch) return;
+      const next = { ...batch, items: batch.items.map(item => item.id === id ? { ...item, selected: !item.selected } : item) };
+      set({ pendingSuggestions: next, pendingCuts: selectPendingRanges({ pendingSuggestions: next }),
+        audition: get().audition?.id === id ? null : get().audition });
+    },
+    setSuggestionCategorySelected: (category, selected) => {
+      const batch = get().pendingSuggestions; if (!batch) return;
+      const next = { ...batch, items: batch.items.map(item => item.category === category ? { ...item, selected } : item) };
+      set({ pendingSuggestions: next, pendingCuts: selectPendingRanges({ pendingSuggestions: next }),
+        audition: next.items.some(item => item.id === get().audition?.id && item.selected) ? get().audition : null });
+    },
+    rejectSuggestion: id => {
+      const batch = get().pendingSuggestions; if (!batch) return;
+      const next = { ...batch, items: batch.items.filter(item => item.id !== id) };
+      set({ pendingSuggestions: next, pendingCuts: selectPendingRanges({ pendingSuggestions: next }),
+        audition: get().audition?.id === id ? null : get().audition });
+    },
+    auditionSuggestion: (id, mode) => {
+      const batch = get().pendingSuggestions;
+      if (!batch?.items.some(item => item.id === id)) return;
+      set({ audition: { id, mode } });
+    },
+    stopAudition: () => set({ audition: null }),
+    previewPending: preview => {
+      const batch = get().pendingSuggestions;
+      if (batch) {
+        const next = { ...batch, preview };
+        set({ pendingSuggestions: next, pendingCuts: selectPendingRanges({ pendingSuggestions: next }) });
+        return;
+      }
+      const p = get().pendingCuts; if (p) set({ pendingCuts: { ...p, preview } });
+    },
     confirmPending: () => {
-      const s = get(); if (!s.pendingCuts) return;
-      if (s.pendingCuts.base !== keyOf(s)) { fail(new Error('Suggestions are outdated. Analyze again.')); return; }
-      cut([], s.pendingCuts.ranges, 'suggestions'); if (!get().cutError) set({ pendingCuts: null });
+      const s = get(); const batch = s.pendingSuggestions;
+      if (!batch) {
+        if (!s.pendingCuts) return;
+        if (s.pendingCuts.base !== keyOf(s)) { fail(new Error('Suggestions are outdated. Analyze again.')); return; }
+        cut([], s.pendingCuts.ranges, 'suggestions'); if (!get().cutError) set({ pendingCuts: null });
+        return;
+      }
+      if (batch.base !== keyOf(s)) { fail(new Error('Suggestions are outdated. Analyze again.')); return; }
+      const selected = batch.items.filter(item => item.selected);
+      const ranges = selectPendingRanges({ pendingSuggestions: batch })?.ranges ?? [];
+      if (!selected.length || !ranges.length) return;
+      set({ cutError: null });
+      const wordUpdates: Array<{ id: string; deleted: boolean; layer: 'word' }> = [];
+      if (batch.kind === 'filler') {
+        for (const word of s.wordChunks) {
+          if (word.deleted) continue;
+          if (ranges.some(range => range.start <= word.timestamp[0] + 1e-6 && range.end >= word.timestamp[1] - 1e-6)) {
+            wordUpdates.push({ id: word.id, deleted: true, layer: 'word' });
+          }
+        }
+      }
+      cut(wordUpdates, ranges, batch.kind === 'filler' ? 'filler' : 'suggestions', batch.kind !== 'filler');
+      if (!get().cutError) set({ pendingSuggestions: null, pendingCuts: null, audition: null });
     },
-    cancelPending: () => set({ pendingCuts: null, cutError: null }),
+    cancelPending: () => set({ pendingCuts: null, pendingSuggestions: null, audition: null, cutError: null }),
     previewHistory: id => set({ historyPreview: id ? get().cutHistory.find(r => r.id === id)?.edl ?? null : null }),
     restoreHistory: id => {
       try {

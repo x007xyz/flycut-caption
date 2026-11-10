@@ -64,6 +64,8 @@ export interface AppState {
 
   // 智能剪切空白段设置
   smartCutSilenceThreshold: number // 秒，超过此时长的空白段将被标记裁剪
+  /** F-0006：EDL 内部接点的音频淡入淡出，毫秒；0 关闭 */
+  joinFadeMs: number
 
   /** 主 / 副字幕样式（含画幅 aspectPreset）。随项目保存（F-0002），不写 localStorage */
   subtitleStylePair: SubtitleStylePair
@@ -114,6 +116,7 @@ export interface AppActions {
 
   // 智能剪切空白段设置
   setSmartCutSilenceThreshold: (threshold: number) => void
+  setJoinFadeMs: (joinFadeMs: number) => void
 
   // 重置
   reset: () => void
@@ -157,6 +160,7 @@ const initialState: AppState = {
   aiTask: null,
 
   smartCutSilenceThreshold: 1.5,
+  joinFadeMs: 5,
 
   subtitleStylePair: defaultSubtitleStylePair,
   subtitleStyleRestored: false,
@@ -350,6 +354,9 @@ export const createAppStore = () => createStore<AppState & AppActions>()(
           smartCutSilenceThreshold: threshold,
         })),
 
+      setJoinFadeMs: (joinFadeMs: number) =>
+        set((state) => ({ ...state, joinFadeMs })),
+
       // 重置
       reset: () =>
         set((state) => ({
@@ -390,6 +397,7 @@ export const createAppStore = () => createStore<AppState & AppActions>()(
         aiModels: state.aiModels,
         selectedAIModelId: state.selectedAIModelId,
         smartCutSilenceThreshold: state.smartCutSilenceThreshold,
+        joinFadeMs: state.joinFadeMs,
       }),
       version: 1,
       migrate: (persisted, version) => {

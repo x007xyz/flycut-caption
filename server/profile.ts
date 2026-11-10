@@ -13,12 +13,13 @@ import { modelsPlugin } from './plugins/models';
 import { sherpaAsrPlugin } from './plugins/asr';
 import { endpointsPlugin } from './plugins/endpoints';
 import { cloudPlugin } from './plugins/cloud';
-import { deleteSilenceEditingPlugin, editingPlugin } from './plugins/editing';
+import { deleteSilenceEditingPlugin, editingPlugin, removeFillersEditingPlugin } from './plugins/editing';
 import { textPlugin } from './plugins/text';
 import { exportPlugin } from './plugins/export';
 import { projectsPlugin } from './plugins/projects';
 import { builtinAgentToolsPlugin, langgraphPlugin } from './plugins/langgraph';
 import { gatewayPlugin } from './plugins/gateway';
+import { silencePlugin } from './plugins/silence';
 
 /** A built-in or external plugin row. `provides` lets the resolver reject a profile with unmet `inject`s before boot. */
 export interface PluginRow { id: string; plugin: Plugin; provides: string[]; config?: unknown; source: 'builtin' | 'external'; module?: string }
@@ -35,6 +36,8 @@ export const BUILTINS: Record<string, Builtin> = {
   endpoints: { plugin: endpointsPlugin, provides: [] },
   editing: { plugin: editingPlugin, provides: ['editorPlugins'] },
   'editing-delete-silence': { plugin: deleteSilenceEditingPlugin, provides: [] },
+  'editing-remove-fillers': { plugin: removeFillersEditingPlugin, provides: [] },
+  silence: { plugin: silencePlugin, provides: [] },
   text: { plugin: textPlugin, provides: ['text'] },
   export: { plugin: exportPlugin, provides: ['export'] },
   projects: { plugin: projectsPlugin, provides: [] },

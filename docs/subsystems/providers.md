@@ -89,6 +89,12 @@ interface AsrRequest extends ModelRef {
 
 识别仍然通过 `workflow.start`，输入里的 `asr` 是 `AsrRequest` 加 `assetId`。
 
+## F-0006 VAD
+
+sherpa-onnx 额外暴露两个 role: 'vad' 模型：fsmn-vad（默认、中文优先）和 silero-vad。Provider 实现可选的 detectVoice，输入 16 kHz 单声道 WAV，返回 { vadType, duration, segments }（秒）。注册表只接受 role === 'vad' 且 status === 'ready' 的模型，并用 voiceActivityResultSchema 校验顺序、范围和时长；HTTP Provider 没有 detectVoice 时不会出现在去静音的可用模型里。
+
+server/plugins/silence.ts 注册 silence.analyze job，只接收 projectId/videoId，用 ProjectStore 解析媒体、提取 WAV、调用 ctx.providers.detectVoice，再用 shared/editing/silence.ts 生成候选。不要把 VAD 结果直接写成 EDL。
+
 ## 验证
 
 ```bash

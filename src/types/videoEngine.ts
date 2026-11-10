@@ -17,6 +17,8 @@ export interface VideoProcessingOptions {
   outputFormat?: 'mp4' | 'webm' | 'avi';
   quality: 'high' | 'medium' | 'low';
   preserveAudio: boolean;
+  /** Audio fade at each internal EDL join, in milliseconds. 0 disables it. */
+  joinFadeMs?: number;
   subtitleProcessing?: SubtitleProcessingType; // 字幕处理类型：无字幕、软烧录、硬烧录
   subtitleStyle?: SubtitleStyle; // 字幕样式配置（向后兼容，引擎优先用 subtitleStylePair）
   subtitleStylePair?: SubtitleStylePair; // 主/副字幕样式对

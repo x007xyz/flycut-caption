@@ -24,12 +24,14 @@ export type AsrInput = z.infer<typeof asrInputSchema>;
 export const pipelineInputSchema = z.object({ asr: asrInputSchema, steps: z.array(z.object({ id: z.string(),
   providerId: z.string(), capabilityId: z.string(), enabled: z.boolean(), config: z.record(z.string(), z.unknown()).default({}) })).optional() });
 export type PipelineInput = z.infer<typeof pipelineInputSchema>;
-export interface PipelineResult { transcript: SubtitleTranscript; cuts: Array<{ start: number; end: number; stepId: string }> }
+export interface PipelineResult { transcript: SubtitleTranscript; cuts: Array<{ start: number; end: number; stepId: string;
+  reason?: string; category?: string; label?: string; confidence?: number }> }
 
 export const exportSegmentSchema = z.object({ start: z.number().finite().min(0), end: z.number().finite().gt(0), keep: z.boolean(),
   text: z.string().optional(), secondText: z.string().optional(), id: z.string().optional() });
 export const exportInputSchema = z.object({ edl: edlSchema.optional(), assetId: z.string().uuid(), segments: z.array(exportSegmentSchema).min(1),
   options: z.object({ format: z.enum(['mp4', 'webm']), quality: z.enum(['high', 'medium', 'low']), preserveAudio: z.boolean(),
+    joinFadeMs: z.number().min(0).max(100).optional(),
     subtitleProcessing: z.enum(['none', 'soft', 'hard']).default('none'), subtitleExportMode: z.enum(['Bilingual', 'Main', 'Second']).optional(),
     /** New hard-subtitle path: the client sends a versioned scene, the Host renders it with Skia. */
     subtitleTransport: z.literal('skia-band').optional(), subtitleScene: subtitleGraphicSceneSchema.optional(),
@@ -47,6 +49,12 @@ export const agentInputSchema = z.object({ prompt: z.string().min(1).max(100000)
 export type AgentInput = z.infer<typeof agentInputSchema>;
 export interface AgentMessage { role: string; content: unknown; toolCalls?: Array<{ id?: string; name: string; args: unknown }> }
 export const providerPrepareSchema = modelRefSchema;
+export const silenceAnalyzeInputSchema = z.strictObject({
+  projectId: z.uuid(), videoId: z.uuid(), model: modelRefSchema,
+  params: z.strictObject({ minPauseSeconds: z.number().finite().positive(), guardSeconds: z.number().finite().nonnegative(),
+    mode: z.enum(['shorten', 'remove']), retainSeconds: z.number().finite().nonnegative() }),
+});
+export type SilenceAnalyzeInput = z.infer<typeof silenceAnalyzeInputSchema>;
 
 /** A user-added HTTP Provider. `apiKey` is accepted on save but never returned or persisted. */
 export const endpointInputSchema = z.object({
@@ -94,6 +102,7 @@ export interface RpcMethods {
   'cloud.status': { input: void; output: CloudStatus };
   'cloud.setApiKey': { input: { apiKey: string }; output: CloudStatus };
   'editing.list': { input: void; output: EditorPluginManifest[] };
+  'silence.analyze': { input: z.input<typeof silenceAnalyzeInputSchema>; output: JobSnapshot };
   'agent.tools': { input: void; output: Array<{ name: string; description: string }> };
   'workflow.start': { input: z.input<typeof pipelineInputSchema>; output: JobSnapshot };
   'agent.start': { input: z.input<typeof agentInputSchema>; output: JobSnapshot };

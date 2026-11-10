@@ -66,13 +66,6 @@ export function CutHistoryPanel() {
       <button className={button} onClick={() => state.edl ? state.clearCutError() : location.reload()}>{c.retry}</button>
       <button className={button} onClick={() => void ctx.projects.goHome()}>{c.back}</button>
     </div>}
-    {state.pendingCuts && <div className="mt-2 rounded border border-destructive p-2" data-testid="cut-suggestions">
-      <p>{c.pending} · {state.pendingCuts.ranges.length}</p><p>{c.preview}</p>
-      <button className={button} onClick={() => state.previewPending(true)}>{c.previewCuts}</button>
-      <button className={button} onClick={() => { state.previewPending(false); state.previewHistory(null); }}>{c.current}</button>
-      <button className={button} disabled={state.updatingCuts || !!state.cutError} onClick={state.confirmPending}>{c.apply}</button>
-      <button className={button} onClick={state.cancelPending}>{c.cancel}</button>
-    </div>}
     {open && <section role="dialog" aria-label={c.history} className="mt-2 rounded border border-border bg-background p-3">
       <div className="flex justify-between"><strong>{c.history}</strong><button className={button} disabled={busy} onClick={() => { setOpen(false); state.previewHistory(null); }}>{c.close}</button></div>
       {phase === 'loading' && <p role="status">{c.loading}</p>}

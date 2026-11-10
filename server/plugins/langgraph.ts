@@ -32,9 +32,14 @@ export const langgraphPlugin = { name: 'flycut-langgraph', inject: ['providers',
         for (const step of enabledSteps(input)) {
           signal.throwIfAborted();
           const plugin = ctx.editorPlugins.get(step.capabilityId);
-          const analysis = plugin.analyze({ chunks: state.transcript.chunks, totalDuration: state.transcript.duration }, step.config);
+          const analysis = plugin.analyze({
+            chunks: state.transcript.chunks, wordChunks: state.transcript.wordChunks,
+            hasWordTimestamps: state.transcript.hasWordTimestamps, totalDuration: state.transcript.duration,
+          }, step.config);
           for (const operation of plugin.buildOperations(analysis)) {
-            if (operation.type === 'delete-range') cuts.push({ start: operation.start, end: operation.end, stepId: step.id });
+            if (operation.type === 'delete-range') cuts.push({ start: operation.start, end: operation.end, stepId: step.id,
+              ...(operation.category ? { reason: operation.reason, category: operation.category, label: operation.label,
+                confidence: operation.confidence } : {}) });
           }
         }
         return { cuts };
@@ -127,14 +132,16 @@ export const builtinAgentToolsPlugin = { name: 'flycut-agent-tools', inject: ['a
   ctx.effect(() => ctx.agentTools.register({ name: 'list_edit_analyzers', description: 'List registered edit analyzers usable as workflow steps.', schema: z.object({}),
     async invoke() { return JSON.stringify(ctx.editorPlugins.list().map(({ id, name, description }) => ({ id, name, description }))); } }));
   ctx.effect(() => ctx.agentTools.register({ name: 'transcribe_audio',
-    description: 'Transcribe attached audio, optionally suggest cuts for pauses longer than threshold seconds. Does not apply edits.',
-    schema: z.object({ threshold: z.number().min(0.2).max(10).optional() }),
-    async invoke({ threshold }, { input, signal, report }) {
+    description: 'Transcribe attached audio, optionally suggest cuts for pauses or rule-based fillers. Does not apply edits.',
+    schema: z.object({ threshold: z.number().min(0.2).max(10).optional(), fillers: z.boolean().optional() }),
+    async invoke({ threshold, fillers }, { input, signal, report }) {
       if (!input.asr) throw new Error('No input audio attached');
       // Use the same workflow implementation and cancellation scope as explicit UI commands.
-      const result = await ctx.workflows.run({ asr: input.asr, steps: threshold === undefined ? [] : [
-        { id: 'silence', providerId: 'delete-silence', capabilityId: 'delete-silence', enabled: true, config: { threshold } },
-      ] }, signal, report);
+      const steps = [
+        ...threshold === undefined ? [] : [{ id: 'silence', providerId: 'delete-silence', capabilityId: 'delete-silence', enabled: true, config: { threshold } }],
+        ...fillers ? [{ id: 'fillers', providerId: 'remove-fillers', capabilityId: 'remove-fillers', enabled: true, config: {} }] : [],
+      ];
+      const result = await ctx.workflows.run({ asr: input.asr, steps }, signal, report);
       return JSON.stringify(result);
     } }));
 } };

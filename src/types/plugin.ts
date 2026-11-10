@@ -15,7 +15,10 @@ export interface EditorPluginManifest {
 }
 
 export interface EditorAnalysisInput {
-  chunks: Array<{ timestamp: [number, number]; deleted?: boolean }>;
+  chunks: Array<{ id?: string; text?: string; timestamp: [number, number]; deleted?: boolean;
+    wordIds?: string[]; edlWordProjection?: boolean }>;
+  wordChunks?: Array<{ id: string; text: string; timestamp: [number, number]; sentenceId?: string; deleted?: boolean }>;
+  hasWordTimestamps?: boolean;
   totalDuration?: number;
 }
 
@@ -24,6 +27,8 @@ export interface EditorRange {
   end: number;
   reason: string;
   confidence?: number;
+  category?: string;
+  label?: string;
 }
 
 export interface EditorAnalysisResult {
@@ -37,6 +42,9 @@ export interface EditOperation {
   start: number;
   end: number;
   reason: string;
+  category?: string;
+  label?: string;
+  confidence?: number;
 }
 
 export interface EditorPlugin {

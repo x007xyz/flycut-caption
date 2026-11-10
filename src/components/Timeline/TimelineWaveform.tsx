@@ -1,5 +1,6 @@
 import { useHistoryStore } from '@/stores/historyStore';
 import { edlCopy } from '@/locales/edl';
+import { fillerCopy } from '@/locales/filler';
 // 时间轴：刻度、缩放、字幕片段与音频波形
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AudioWaveform, Eye, EyeOff, Loader2, Maximize2, Scissors, ZoomIn, ZoomOut } from 'lucide-react';
@@ -56,7 +57,9 @@ export function TimelineWaveform({
 }) {
   const { t, language } = useTranslation();
   const pending = useHistoryStore(s => s.pendingCuts);
+  const suggestions = useHistoryStore(s => s.pendingSuggestions);
   const copy = edlCopy(language);
+  const suggestionCopy = fillerCopy(language);
   const resolvedTheme = useThemeStore(state => state.resolvedTheme);
   const viewportRef = useRef<HTMLDivElement>(null);
   const waveformCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -445,9 +448,22 @@ export function TimelineWaveform({
               className="pointer-events-none sticky left-0 top-0 z-0 block h-full"
               aria-hidden="true"
             />
-            {pending?.ranges.map((range, index) => <div key={index} data-testid="pending-cut" className="pointer-events-none absolute top-8 bottom-1 z-20 overflow-hidden bg-red-500/60 border border-red-700 text-[10px] text-foreground"
-              style={{ left: range.start * pixelsPerSecond, width: (range.end - range.start) * pixelsPerSecond }} title={copy.pending}>
-              <span>{copy.pending}</span></div>)}
+            {(suggestions?.items.filter(item => item.selected) ?? pending?.ranges.map((range, index) => ({
+              id: `pending-${index}`, start: range.start, end: range.end, reason: 'silence', category: 'silence', selected: true,
+            })) ?? []).map(item => {
+              const reason = item.category === 'repeated-word' ? suggestionCopy.reasonRepeat
+                : item.category === 'standalone-filler' ? suggestionCopy.reasonStandalone : copy.pending;
+              return <div key={item.id} data-testid="pending-cut" role="img" tabIndex={0}
+                aria-label={`${copy.pending}: ${item.reason} ${reason}`} title={`${copy.pending} · ${reason}`}
+                onClick={event => event.stopPropagation()}
+                className="group pointer-events-auto absolute top-8 bottom-1 z-20 min-w-[2px] overflow-visible border border-red-700 bg-red-500/60 text-[10px] text-foreground outline-none focus:ring-2 focus:ring-amber-400"
+                style={{ left: item.start * pixelsPerSecond, width: Math.max(2, (item.end - item.start) * pixelsPerSecond) }}>
+                <span className="block truncate px-1">{copy.pending}</span>
+                <span className="pointer-events-none absolute left-0 top-full z-30 hidden max-w-64 whitespace-normal rounded border border-border bg-background px-2 py-1 text-[10px] text-foreground shadow-lg group-hover:block group-focus:block">
+                  {reason}
+                </span>
+              </div>;
+            })}
             {duration <= 0 && (
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-aimu-text-muted">
                 {t('components.workstation.emptyTimelineHint')}

@@ -24,6 +24,7 @@ export const cutKindLabel = (kind: string, language: string) => {
   const labels: Record<string, [string, string]> = {
     baseline: ['初始剪辑版本', 'Initial cut version'], delete: ['删除片段', 'Delete segments'], restore: ['恢复片段', 'Restore segments'],
     silence: ['剪除空白', 'Remove silence'], suggestions: ['确认剪辑建议', 'Apply cut suggestions'],
+    filler: ['确认去口癖', 'Apply filler cuts'],
     undo: ['撤销剪辑', 'Undo cuts'], redo: ['重做剪辑', 'Redo cuts'],
     'history-restore': ['回退剪辑版本', 'Restore cut version'], edit: ['编辑剪辑', 'Edit cuts'],
   };

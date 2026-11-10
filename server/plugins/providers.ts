@@ -1,6 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis';
 import { providerPrepareSchema } from '../../shared/protocol';
-import { checkOptions, type ModelInfo, type ProviderModels } from '../../shared/providers';
+import { checkOptions, voiceActivityResultSchema, type ModelInfo, type ProviderModels } from '../../shared/providers';
 import { validateTranscript } from '../../shared/asr/transcript';
 import type { Provider, ProviderRegistry } from '../services';
 
@@ -43,6 +43,14 @@ export const providerRegistryPlugin = { name: 'flycut-provider-registry', inject
       if (info.status === 'ready') return;
       if (info.status === 'unavailable' || !provider.prepare) throw new Error(`${info.name} 不能下载：${info.reason ?? 'Provider 不支持下载'}`);
       await provider.prepare(ref.modelId, signal, report);
+    },
+    async detectVoice(ref, audioPath, signal, report) {
+      const provider = get(ref.providerId);
+      if (!provider.detectVoice) throw new Error(provider.name + ' 不提供人声检测');
+      const info = await model(provider, ref.modelId, signal);
+      if (info.role !== 'vad') throw new Error(info.name + ' 不是 VAD 模型');
+      if (info.status !== 'ready') throw new Error(info.name + ' 不可用：' + (info.reason ?? '模型未就绪'));
+      return voiceActivityResultSchema.parse(await provider.detectVoice(ref.modelId, audioPath, signal, report));
     },
   };
   ctx.provide('providers', registry);

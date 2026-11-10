@@ -41,3 +41,9 @@ pnpm tsc -b --noEmit
 ## F-0028 实施
 
 硬字幕的唯一契约是 `options.subtitleScene`（`version: 1`）+ `subtitleTransport: 'skia-band'`：客户端发投影后的场景、样式和字体 id，Host 不再解析字幕编辑状态。Host 用 `server/subtitle-render.ts` 动态加载 `@napi-rs/canvas`，注册 `shared_assets/subtitle-fonts` 的完整字体，按场景算字幕条带；`server/plugins/export.ts` 以 `-f rawvideo -pix_fmt rgba -s <band> -r <fps> -i pipe:0` 写帧，遵守背压，filter 必须 `overlay=...:format=yuv420`。场景尺寸与探测到的视频不一致、字体缺失或原生模块加载失败都直接报错；ASS 硬烧兼容字段已移除。
+
+## F-0006 / F-0007 实施
+
+shared/editing/suggestions.ts 定义 SuggestionBatch / CutSuggestion，historyStore.pendingSuggestions 是唯一临时建议层；选择、预览、audition、拒绝不写 EDL，确认时才一次提交。pendingCuts 保留为旧 F-0005 调用方的派生视图。
+
+F-0006 的 server/plugins/silence.ts 通过 ProjectStore 读取项目媒体，注册 silence.analyze job；VAD 走 ctx.providers.detectVoice，候选由 shared/editing/silence.ts 生成。F-0007 的 shared/editing/fillerPlugin.ts 注册为 remove-fillers 编辑器插件，Workflow / Agent 与前端共用 shared/editing/fillerRules.ts。

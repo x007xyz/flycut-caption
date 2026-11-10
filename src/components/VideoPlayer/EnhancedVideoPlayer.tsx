@@ -56,12 +56,21 @@ export const EnhancedVideoPlayer = forwardRef<EnhancedVideoPlayerRef, EnhancedVi
   const videoContainerRef = useRef<HTMLDivElement>(null);
   const formalEdl = useHistoryStore(s => s.edl);
   const pending = useHistoryStore(s => s.pendingCuts);
+  const pendingSuggestions = useHistoryStore(s => s.pendingSuggestions);
+  const audition = useHistoryStore(s => s.audition);
   const historyPreview = useHistoryStore(s => s.historyPreview);
   const updating = useHistoryStore(s => s.updatingCuts);
   const cutError = useHistoryStore(s => s.cutError);
   const { language } = useTranslation(); const copy = edlCopy(language);
-  const activeEdl = useMemo(() => historyPreview ?? (formalEdl && pending?.preview
-    ? changeCuts(formalEdl, pending.ranges) : formalEdl), [formalEdl, pending, historyPreview]);
+  const activeEdl = useMemo(() => {
+    if (historyPreview) return historyPreview;
+    const auditionItem = audition ? pendingSuggestions?.items.find(item => item.id === audition.id) : undefined;
+    if (formalEdl && auditionItem && audition?.mode === 'after') {
+      return changeCuts(formalEdl, [{ start: auditionItem.start, end: auditionItem.end }]);
+    }
+    if (formalEdl && pending?.preview) return changeCuts(formalEdl, pending.ranges);
+    return formalEdl;
+  }, [formalEdl, pending, pendingSuggestions, audition, historyPreview]);
 
   // 获取视频容器尺寸
   const containerSize = useSize(videoContainerRef);
@@ -454,7 +463,7 @@ export const EnhancedVideoPlayer = forwardRef<EnhancedVideoPlayerRef, EnhancedVi
         {/* 预览模式指示器 */}
         {previewMode && keptSegments.length > 0 && (
           <div className="absolute top-4 right-4 bg-orange-500 text-white text-xs px-2 py-1 rounded-full">
-            {pending?.preview || historyPreview ? copy.preview : copy.current}
+            {pending?.preview || historyPreview || audition ? copy.preview : copy.current}
           </div>
         )}
       </div>

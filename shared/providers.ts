@@ -46,6 +46,22 @@ export const modelRefSchema = z.object({ providerId: z.string().min(1), modelId:
 export const asrRequestSchema = modelRefSchema.extend({ language: z.string().default('auto'), options: optionValuesSchema.optional() });
 export type AsrRequest = z.infer<typeof asrRequestSchema>;
 
+/** F-0006: VAD output shared by built-in and HTTP Providers. Segments are seconds. */
+export interface VoiceActivityResult { vadType: 'fsmn' | 'silero'; duration: number; segments: Array<[number, number]> }
+export const voiceActivityResultSchema = z.object({
+  vadType: z.enum(['fsmn', 'silero']),
+  duration: z.number().finite().positive(),
+  segments: z.array(z.tuple([z.number().finite().nonnegative(), z.number().finite().positive()])),
+}).superRefine((value, ctx) => {
+  let previous = 0;
+  for (const [start, end] of value.segments) {
+    if (end <= start) ctx.addIssue({ code: 'custom', message: 'Invalid VAD segment' });
+    if (start < previous - 0.05) ctx.addIssue({ code: 'custom', message: 'VAD segments are not ordered' });
+    if (end > value.duration + 0.1) ctx.addIssue({ code: 'custom', message: 'VAD segment exceeds duration' });
+    previous = end;
+  }
+});
+
 /** Model IDs reachable over HTTP headers and URL paths. */
 export const MODEL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,99}$/;
 

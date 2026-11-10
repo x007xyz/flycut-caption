@@ -97,6 +97,16 @@ export const exportPlugin = { name: 'flycut-export', inject: ['hostConfig', 'job
     // Preserve the old request semantics. Every versioned plan is explicitly trimmed, including a tail-only cut.
     const hasCuts = !!input.edl || kept.length !== 1 || kept[0].start > 0.001;
     const outputSeconds = input.edl ? outputDuration(input.edl) : kept.reduce((total, segment) => total + segment.end - segment.start, 0);
+    const joinFadeMs = input.options.joinFadeMs ?? 0;
+    const audioPart = (segment: { start: number; end: number }, index: number) => {
+      const duration = segment.end - segment.start;
+      const fade = joinFadeMs > 0 ? Math.min(joinFadeMs / 1000, duration / 2) : 0;
+      const fades = [
+        ...(fade > 0 && index > 0 ? [`afade=t=in:st=0:d=${fade}`] : []),
+        ...(fade > 0 && index < kept.length - 1 ? [`afade=t=out:st=${Math.max(0, duration - fade)}:d=${fade}`] : []),
+      ];
+      return `[0:a:0]atrim=start=${segment.start}:end=${segment.end},asetpts=PTS-STARTPTS${fades.length ? ',' + fades.join(',') : ''}[a${index}]`;
+    };
 
     let renderer: SubtitleBandRenderer | undefined;
     let subtitleScene: SubtitleGraphicScene | undefined;
@@ -119,7 +129,7 @@ export const exportPlugin = { name: 'flycut-export', inject: ['hostConfig', 'job
         filterParts.push(ffmpegVideoFilter(input.edl));
         videoLabel = '[vout]';
         if (withAudio) {
-          const audioParts = kept.map((segment, index) => `[0:a:0]atrim=start=${segment.start}:end=${segment.end},asetpts=PTS-STARTPTS[a${index}]`).join(';');
+          const audioParts = kept.map(audioPart).join(';');
           const concatInputs = kept.map((_, index) => `[a${index}]`).join('');
           filterParts.push(audioParts, `${concatInputs}concat=n=${kept.length}:v=0:a=1[aout]`);
           audioLabel = '[aout]';
@@ -127,7 +137,7 @@ export const exportPlugin = { name: 'flycut-export', inject: ['hostConfig', 'job
         args.push('-t', String(outputSeconds), '-fps_mode', 'cfr');
       } else {
         const videoParts = kept.map((segment, index) => `[0:v:0]trim=start=${segment.start}:end=${segment.end},setpts=PTS-STARTPTS[v${index}]`).join(';');
-        const audioParts = withAudio ? kept.map((segment, index) => `[0:a:0]atrim=start=${segment.start}:end=${segment.end},asetpts=PTS-STARTPTS[a${index}]`).join(';') : '';
+        const audioParts = withAudio ? kept.map(audioPart).join(';') : '';
         const concatInputs = withAudio ? kept.flatMap((_, index) => `[v${index}][a${index}]`).join('') : kept.map((_, index) => `[v${index}]`).join('');
         filterParts.push(videoParts);
         if (withAudio) filterParts.push(audioParts);

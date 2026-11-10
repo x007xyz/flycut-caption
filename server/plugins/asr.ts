@@ -52,6 +52,11 @@ export const sherpaAsrPlugin = { name: 'flycut-asr-sherpa', inject: ['providers'
       if (await exists(join(dir, 'model.onnx'))) return dir;
     }
   }
+  async function sileroVadPath() {
+    for (const file of [join(dirname(sidecar), '../shared_assets/silero-vad/silero_vad.onnx'), join(root, 'src-tauri/shared_assets/silero-vad/silero_vad.onnx')]) {
+      if (await exists(file)) return file;
+    }
+  }
   const find = async (modelId: string) => {
     const model = (await entries()).find(item => item.id === modelId);
     if (!model) throw new Error(`Unknown sherpa-onnx model: ${modelId}`);
@@ -59,8 +64,8 @@ export const sherpaAsrPlugin = { name: 'flycut-asr-sherpa', inject: ['providers'
   };
   const provider: Provider = { id: 'sherpa-onnx', name: 'sherpa-onnx（本地）', kind: 'builtin',
     async models() {
-      const binary = await exists(sidecar); const vad = !!await vadDir();
-      return Promise.all((await entries()).map(async (model): Promise<ModelInfo> => {
+      const binary = await exists(sidecar); const vad = !!await vadDir(); const silero = !!await sileroVadPath();
+      const models = await Promise.all((await entries()).map(async (model): Promise<ModelInfo> => {
         const options: Record<string, OptionField> = {};
         if (vad) options.vad = { type: 'select', label: 'VAD 分段', default: 'fsmn',
           description: '长音频建议开启：先按语音活动切分再识别', options: [{ value: 'fsmn', label: 'FSMN-VAD' }, { value: 'none', label: '不使用' }] };
@@ -72,8 +77,31 @@ export const sherpaAsrPlugin = { name: 'flycut-asr-sherpa', inject: ['providers'
           ...!binary ? { status: 'unavailable', reason: `找不到 funasr-asr 识别程序，请运行 pnpm build:funasr-sidecar（${sidecar}）` }
             : { status: await ctx.models.locate(model) ? 'ready' : 'download' } };
       }));
+      return [...models,
+        { id: 'fsmn-vad', name: 'FSMN-VAD', role: 'vad', description: '中文口播优先的离线人声检测', languages: ['zh'], recommended: true,
+          status: binary && vad ? 'ready' : 'unavailable', ...!binary ? { reason: '找不到 funasr-asr 识别程序，请运行 pnpm build:funasr-sidecar' }
+            : !vad ? { reason: '找不到 FSMN VAD 资源，请运行 pnpm fetch:shared-assets' } : {} },
+        { id: 'silero-vad', name: 'Silero VAD', role: 'vad', description: '多语言离线人声检测', languages: ['auto'],
+          status: binary && silero ? 'ready' : 'unavailable', ...!binary ? { reason: '找不到 funasr-asr 识别程序，请运行 pnpm build:funasr-sidecar' }
+            : !silero ? { reason: '找不到 Silero VAD 资源，请运行 pnpm fetch:shared-assets' } : {} },
+      ];
     },
     async prepare(modelId, signal, report) { await ctx.models.download(await find(modelId), signal, report); },
+    async detectVoice(modelId, audioPath, signal, report) {
+      if (modelId !== 'fsmn-vad' && modelId !== 'silero-vad') throw new Error('Unknown VAD model: ' + modelId);
+      report({ status: 'running', data: '人声检测中：' + modelId });
+      const args = ['--input', audioPath, '--vad-type', modelId === 'fsmn-vad' ? 'fsmn' : 'silero', '--vad-dump-json'];
+      if (modelId === 'fsmn-vad') {
+        const dir = await vadDir(); if (!dir) throw new Error('找不到 FSMN VAD 资源');
+        args.push('--vad-dir', dir);
+      } else {
+        const file = await sileroVadPath(); if (!file) throw new Error('找不到 Silero VAD 资源');
+        args.push('--vad-model', file);
+      }
+      const dump = await runJson(sidecar, args, signal) as { vadType: string; duration: number; segments: Array<[number, number]> };
+      return { vadType: modelId === 'fsmn-vad' ? 'fsmn' : 'silero', duration: dump.duration,
+        segments: dump.segments.map(([start, end]) => [start / 1000, end / 1000]) };
+    },
     async transcribe(request, audioPath, signal, report) {
       const model = await find(request.modelId);
       const dir = await ctx.models.locate(model); if (!dir) throw new Error(`模型未下载：${model.name}`);
