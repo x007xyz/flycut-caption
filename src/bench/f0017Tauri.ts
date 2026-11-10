@@ -82,9 +82,11 @@ function inputAndRestore(input: HTMLTextAreaElement): void {
 
 async function runOnce(state: Extract<TauriBenchState, { phase: 'ready' }>): Promise<TauriOpenSample> {
   location.hash = '#/projects';
-  const card = await waitFor(() => visibleButtonContaining(state.projectName!), 20_000,
+  await waitFor(() => visibleButtonContaining(state.projectName!), 20_000,
     `project card "${state.projectName}" was not rendered`);
-  await sleep(100);
+  await sleep(300);
+  const card = await waitFor(() => visibleButtonContaining(state.projectName!), 2_000,
+    `project card "${state.projectName}" disappeared before it could be opened`);
   resetMeasurement();
   card.click();
   let input: HTMLTextAreaElement;
@@ -96,6 +98,7 @@ async function runOnce(state: Extract<TauriBenchState, { phase: 'ready' }>): Pro
   } catch (error) {
     const detail = {
       hash: location.hash,
+      card: { connected: card.isConnected, disabled: card.disabled, busy: card.getAttribute('aria-busy'), text: card.innerText.slice(0, 200) },
       textareaCount: document.querySelectorAll('textarea').length,
       firstValues: [...document.querySelectorAll<HTMLTextAreaElement>('textarea')].slice(0, 3).map(input => input.value),
       body: document.body.innerText.slice(0, 800),

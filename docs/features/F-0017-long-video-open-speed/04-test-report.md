@@ -27,13 +27,13 @@ approved_at:
 | 共享性能数据 | Web 与 Tauri 基准共用 `tests/e2e/lib/longTranscript.ts` 中的真实 COSCUP 拼接函数 | 避免一边用合成数据、一边用真实素材却都声称同一门槛 | AC-1、AC-2、AC-3 |
 | E2E 长列表数据 | 保留确定性 1,173 行作为 UI/交互夹具 | 回归可重复且不依赖大文件；报告不把它声称为真实数据集 | AC-3–AC-11 |
 | Tauri Node 运行库 | 只在本机被忽略的 `src-tauri/binaries` 临时提供 `libnode` | 当前打包 Node 通过 `@rpath` 查找动态库；该资源不提交 | AC-1 |
-| 桌面缺口处理 | 应用和 Host 启动后，自动驱动不能从卡片进入编辑器，因此不再改底层，桌面计时标 Not run | 避免以 Web 数字冒充桌面通过；请维护者确认是否接受该剩余条件 | AC-1 |
+| 桌面基准驱动竞态 | 点击前等待 300 ms 并重新查询当前项目卡片 | 项目列表重渲染后旧按钮节点已卸载，脚本点击不会进入编辑器；产品 UI 本身正常 | AC-1 |
 
 ## 验收标准逐条结果
 
 | AC | 验证方式 | 证据 | 结果 |
 |---|---|---|---|
-| AC-1 打开项目 | 真实使用：前台 Chrome 5 次；真实 Tauri 启动 | Web：`pnpm bench:f0017`，1,173 句 / 15,014 字词 / 3,599.107 秒，打开 2,673 / 349 / 311 / 301 / 343 ms，全部不超过 3 秒，可编辑后 1 秒最大 long task 均为 0 ms。Tauri：应用与 Host 启动、首页显示“已连接”和真实项目，但自动点击项目卡片后仍停在 `#/projects`，textarea 数为 0，未得到 5 次桌面样本 | Web ✅；桌面 ⏸ Not run |
+| AC-1 打开项目 | 真实使用：前台 Chrome 5 次；真实 Tauri 5 次 | Web：`pnpm bench:f0017`，1,173 句 / 15,014 字词 / 3,599.107 秒，打开 2,673 / 349 / 311 / 301 / 343 ms，全部不超过 3 秒，可编辑后 1 秒最大 long task 均为 0 ms。Tauri：`pnpm bench:f0017:tauri` 在同一 59:59 真实项目上 5/5 次原生卡片点击，到首句可编辑 541 / 245 / 254 / 308 / 266 ms，可编辑后 1 秒最大 long task 均为 0 ms；每次只挂载 9 行、18 个 textarea。证据见 `tauri-after.json` / `tauri-after.md` | ✅ |
 | AC-2 切换视频 | Web 真实使用 5 次 | 切到长视频 419 / 376 / 393 / 407 / 389 ms；切回短视频 496 / 371 / 299 / 322 / 388 ms；所有可编辑后 long task 为 0 ms | ✅ |
 | AC-3 转写完成后载入 | E2E 经真实前端作业链路注入固定长转写 | `F-0017/AC-3 AC-10 AC-11 provider job completion injects a long transcript into the bounded editor`，明暗主题 2/2；从 `workflow.start`、`jobs.get` 完成、`saveTranscript` 到首句可编辑少于 3 秒，可编辑后 long task 不超过 200 ms，只挂载少于 30 行 / 60 个 textarea | ✅ |
 | AC-4 滚动 | E2E + Web 基准 | 连续 30 次滚轮和拖到底部通过，最大 long task 0 ms；滚动到底可挂载最后一行，统计保持“总计 1173 / 有效 1173”；截图 `long-bottom-{light,dark}.png` | ✅ |
@@ -63,14 +63,14 @@ Red check：临时把 `findVirtualRange()` 改为返回全部 1,173 行后，定
 - `pnpm build`：通过；只有既有的 bundle size 警告。
 - F-0017 E2E：10/10；F-0002/F-0003 E2E：80/80。
 - Web/Chrome 基准：前台 Chrome、5173、10 核 Apple Silicon；测量时 load average 约 25.4。真实数据 1,173 句 / 15,014 字词 / 3,599.107 秒；5 次打开 2,673 / 349 / 311 / 301 / 343 ms。
-- Tauri：`pnpm bench:f0017:tauri` 校验真实数据并启动应用和 Host；尚未生成桌面计时文件。
+- Tauri：`pnpm bench:f0017:tauri` 校验真实 1,173 句 / 15,014 字词数据，在真实 Tauri WebView 完成 5 次原生点击，生成 `tauri-after.json` / `tauri-after.md`；最慢 541 ms，全部满足 3 秒门槛，可编辑后 1 秒 long task 均为 0 ms。
 
 ## 发现的问题
 
-- **Tauri AC-1 Not run**：真实 Tauri 应用和 Host 都已启动，首页显示“已连接 · This computer”、59:59 的 `Tauri 六十分钟口播`，但开发态 WebView 自动驱动执行项目卡片点击后仍为 `#/projects`，20 秒内 page body 保持首页、textarea 数为 0。此前 `flycut-node` 的 `libnode.147.dylib` 缺失已通过本机被忽略运行库解决；剩余阻塞是自动驱动无法进入编辑器。没有桌面耗时样本，不能用 Web 结果替代。
+- **F-0017 Tauri 基准驱动修正**：首次自动驱动在项目列表重渲染前取得了旧按钮节点，随后对该已卸载节点调用脚本点击，页面因此停在 `#/projects`；真实窗口的人工/原生点击不受影响。驱动现在等待 300 ms 后重新查询当前项目卡片，再执行原生 `.click()`。修正后 5 次均为原生点击，没有使用绕过 UI 的回退调用。产品代码未为此改动。
 - 原语言视图切换 869 ms，但出现 464 ms long task。按需求说明该视图不在本次门槛内；建议在 E-02 后续评估。
 - Web 首次打开为 2,673 ms，满足 3 秒门槛但余量较小；暖路径稳定在 301–349 ms。
 
 ## 结论
 
-自动化、Web/Chrome、构建和编辑行为验收通过；桌面 AC-1 为 `⏸ Not run`。本报告可提交维护者评审，但在维护者接受该剩余条件或补跑真实桌面 5 次之前，不建议发布。
+自动化、Web/Chrome、真实 Tauri 桌面五次打开、构建和编辑行为验收通过。桌面打开最慢 541 ms，长任务为 0 ms，AC-1 的剩余空档已补齐。本报告可提交维护者评审；仍不自行批准或发布。
