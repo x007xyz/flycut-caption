@@ -65,7 +65,7 @@ approved_at:
 - `pnpm tsc -b --noEmit` ✅
 - `pnpm check:host` ✅
 - `cargo check --manifest-path src-tauri/Cargo.toml` ✅
-- `pnpm test`：94 通过、4 跳过、0 失败；跳过为 3 个未下载模型和 Silero VAD。真实 FunASR、FSMN VAD 和其余可运行集成测试已执行。
+- `pnpm test`：95 通过、3 跳过、0 失败；跳过仅为 3 个未下载模型。真实 FunASR、FSMN + Silero VAD 和其余可运行集成测试已执行。
 - `pnpm test:architecture`：97/97 ✅；中途发现既有 WebSocket snapshot 测试在 `host/ready` 后立即断开，偶发丢 `jobs/snapshot`，已让测试等两帧后再断并重跑全绿。
 - `node --import tsx --test tests/architecture/jianying-f0011.test.ts`：6/6 ✅，含丢回包、Host 重启幂等和 server linked-media 暗开拒绝。
 - `cargo test --manifest-path src-tauri/Cargo.toml jianying_output`：2/2 ✅。

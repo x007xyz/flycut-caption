@@ -103,7 +103,7 @@ approved_at: 2026-11-10
 - `node --import tsx --test tests/architecture/jianying-f0011.test.ts`：6/6 通过，覆盖默认 fail-closed、内部写路径、shell-only/CORS、一次性 grant、server linked-media 硬拒绝、丢回包/重启幂等、独立时间、SHA、重叠拒绝、取消和 staging 清理。
 - `cargo test --manifest-path src-tauri/Cargo.toml jianying_output`：2/2 通过，覆盖真实目录、文件拒绝和符号链接拒绝。
 - `pnpm test:architecture`：97/97 通过。主 agent 提示的既有 WebSocket snapshot 竞态已改为等两帧发完再断开；重跑全绿。
-- `pnpm test`：94 通过、4 跳过、0 失败。跳过是 3 个未下载模型和缺少 Silero VAD；真实 FunASR/demo、FSMN VAD 与其它可运行集成测试已执行。
+- `pnpm test`：95 通过、3 跳过、0 失败。跳过是 3 个未下载模型；真实 FunASR/demo、FSMN + Silero VAD 与其它可运行集成测试已执行。
 - `PW_PORT=5181 pnpm e2e:evidence F-0011`：20/20 通过；32 张截图在 `screenshots/`，20 段录屏和摘要在本机忽略目录。5173 被其他 worktree 占用，本轮统一使用维护者指定 5181；`playwright.config.ts` 增加 `PW_PORT` 覆盖，避免复用错误分支。
 - 只读复用的本地资源仅来自原分支：`tests/media`、FFmpeg/FunASR sidecar 和 FSMN VAD 权重。链接均在忽略位置，不进入提交；完成后清理。
 
