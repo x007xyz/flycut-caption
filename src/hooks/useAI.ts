@@ -4,7 +4,6 @@ import { useAppStore } from '@/stores/appStore'
 import { useHistoryStore } from '@/stores/historyStore'
 import { useShowSuccess, useShowError, useShowWarning } from '@/stores/messageStore'
 import type { AIProgress, AISubtitleItem } from '@/types/ai'
-import type { AIModelConfig } from '@/types/ai'
 import { useClientRuntime } from '@/runtime/context';
 
 export interface UseAIReturn {
@@ -13,7 +12,7 @@ export interface UseAIReturn {
   hasModels: boolean
   selectedModelId: string | null
   /** AI correction returns model output for a review layer; it never writes formal subtitles. */
-  requestCorrection: (items: AISubtitleItem[], model: AIModelConfig, signal?: AbortSignal) => Promise<AISubtitleItem[]>
+  requestCorrection: (items: AISubtitleItem[], configId: string, signal?: AbortSignal) => Promise<AISubtitleItem[]>
   runTranslation: (targetLang: string) => Promise<void>
 }
 
@@ -45,7 +44,7 @@ export function useAI(): UseAIReturn {
   }, [aiModels, selectedAIModelId])
 
   const requestCorrection = useCallback(
-    (items: AISubtitleItem[], model: AIModelConfig, signal?: AbortSignal) => aiService.correct(items, model, signal),
+    (items: AISubtitleItem[], configId: string, signal?: AbortSignal) => aiService.correct(items, configId, signal),
     [aiService],
   )
 
@@ -79,7 +78,7 @@ export function useAI(): UseAIReturn {
       })
 
       try {
-        const results = await aiService.translate(activeItems, model, targetLang)
+        const results = await aiService.translate(activeItems, model.id, targetLang)
         batchUpdateText(results.map((r) => ({ id: r.id, secondText: r.text })))
 
         setAIProgress({ status: 'complete', progress: 100, data: '完成' })

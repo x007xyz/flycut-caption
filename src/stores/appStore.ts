@@ -9,7 +9,9 @@ import type {
 } from '@/types/video'
 import type { ASRProgress } from '@/types/subtitle'
 import type { ModelRef, OptionValue } from '../../shared/providers'
-import type { AIModelConfig, AIProgress } from '@/types/ai'
+import type { AIModelView, AIProgress } from '@/types/ai'
+import type { AISettingsSnapshot } from '../../shared/aiSettings'
+import { stashLegacyAISettings } from '@/services/aiMigration'
 import { hasWebGPU } from '@/utils/audioUtils'
 import { defaultSubtitleStylePair, type SubtitleStylePair } from '@/subtitle'
 
@@ -57,8 +59,10 @@ export interface AppState {
   display: 'Bilingual' | 'Main' | 'Second'
 
   // AI 模型设置（字幕纠错 / 翻译）
-  aiModels: AIModelConfig[]
+  aiModels: AIModelView[]
   selectedAIModelId: string | null
+  aiSettingsHostId: string | null
+  aiSettingsRevision: number
   aiProgress: AIProgress | null
   aiTask: 'correction' | 'translation' | null
 
@@ -106,9 +110,8 @@ export interface AppActions {
   setDisplay: (display: AppState['display']) => void
 
   // AI 模型管理
-  addAIModel: (model: Omit<AIModelConfig, 'id'>) => string
-  updateAIModel: (id: string, patch: Partial<Omit<AIModelConfig, 'id'>>) => void
-  removeAIModel: (id: string) => void
+  applyAISettings: (snapshot: AISettingsSnapshot) => void
+  clearAISettings: () => void
   setSelectedAIModelId: (id: string | null) => void
   setAIProgress: (progress: AIProgress) => void
   clearAIProgress: () => void
@@ -156,6 +159,8 @@ const initialState: AppState = {
 
   aiModels: [],
   selectedAIModelId: null,
+  aiSettingsHostId: null,
+  aiSettingsRevision: 0,
   aiProgress: null,
   aiTask: null,
 
@@ -294,34 +299,24 @@ export const createAppStore = () => createStore<AppState & AppActions>()(
           display
         })),
 
-      // AI 模型管理
-      addAIModel: (model) => {
-        const id = (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
-          ? crypto.randomUUID()
-          : `ai_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
+      // Host AI settings are a non-persistent projection; Host storage is the source of truth.
+      applyAISettings: (snapshot) =>
         set((state) => ({
           ...state,
-          aiModels: [...state.aiModels, { ...model, id }],
-          selectedAIModelId: state.selectedAIModelId ?? id,
-        }))
-        return id
-      },
-
-      updateAIModel: (id, patch) =>
-        set((state) => ({
-          ...state,
-          aiModels: state.aiModels.map((m) => (m.id === id ? { ...m, ...patch } : m)),
+          aiModels: snapshot.configs,
+          selectedAIModelId: snapshot.selectedId,
+          aiSettingsHostId: snapshot.hostId,
+          aiSettingsRevision: snapshot.revision,
         })),
 
-      removeAIModel: (id) =>
-        set((state) => {
-          const aiModels = state.aiModels.filter((m) => m.id !== id)
-          const selectedAIModelId =
-            state.selectedAIModelId === id
-              ? (aiModels[0]?.id ?? null)
-              : state.selectedAIModelId
-          return { ...state, aiModels, selectedAIModelId }
-        }),
+      clearAISettings: () =>
+        set((state) => ({
+          ...state,
+          aiModels: [],
+          selectedAIModelId: null,
+          aiSettingsHostId: null,
+          aiSettingsRevision: 0,
+        })),
 
       setSelectedAIModelId: (id) =>
         set((state) => ({
@@ -394,14 +389,23 @@ export const createAppStore = () => createStore<AppState & AppActions>()(
         asrOptions: state.asrOptions,
         shadow: state.shadow,
         display: state.display,
-        aiModels: state.aiModels,
-        selectedAIModelId: state.selectedAIModelId,
         smartCutSilenceThreshold: state.smartCutSilenceThreshold,
         joinFadeMs: state.joinFadeMs,
       }),
-      version: 1,
+      version: 2,
       migrate: (persisted, version) => {
         const state = (persisted ?? {}) as Record<string, unknown>
+        if (version < 2) {
+          stashLegacyAISettings(state.aiModels, state.selectedAIModelId)
+          const next = { ...state }
+          delete next.aiModels; delete next.selectedAIModelId
+          if (version < 1) {
+            const { asrEngineType, asrModelId, webModelId, ...rest } = next as Record<string, string | undefined>
+            return { ...rest, aiModels: [], selectedAIModelId: null,
+              asrModel: migrateLegacyModel({ asrEngineType, asrModelId, webModelId }), asrOptions: {} }
+          }
+          return { ...next, aiModels: [], selectedAIModelId: null }
+        }
         if (version < 1) {
           const { asrEngineType, asrModelId, webModelId, ...rest } = state as Record<string, string | undefined>
           return { ...rest, asrModel: migrateLegacyModel({ asrEngineType, asrModelId, webModelId }), asrOptions: {} }
