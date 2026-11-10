@@ -20,6 +20,7 @@ import { projectsPlugin } from './plugins/projects';
 import { builtinAgentToolsPlugin, langgraphPlugin } from './plugins/langgraph';
 import { gatewayPlugin } from './plugins/gateway';
 import { silencePlugin } from './plugins/silence';
+import { jianyingPlugin } from './plugins/jianying';
 
 /** A built-in or external plugin row. `provides` lets the resolver reject a profile with unmet `inject`s before boot. */
 export interface PluginRow { id: string; plugin: Plugin; provides: string[]; config?: unknown; source: 'builtin' | 'external'; module?: string }
@@ -41,6 +42,7 @@ export const BUILTINS: Record<string, Builtin> = {
   text: { plugin: textPlugin, provides: ['text'] },
   export: { plugin: exportPlugin, provides: ['export'] },
   projects: { plugin: projectsPlugin, provides: [] },
+  jianying: { plugin: jianyingPlugin, provides: [] },
   langgraph: { plugin: langgraphPlugin, provides: ['workflows', 'agents', 'agentTools'] },
   'agent-tools': { plugin: builtinAgentToolsPlugin, provides: [] },
   gateway: { plugin: gatewayPlugin, provides: ['httpServer'] },
