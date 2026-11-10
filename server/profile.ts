@@ -61,7 +61,9 @@ export const PROFILES: Record<string, string[]> = {
 };
 /** Per-profile default plugin configs. A patch's `config.<id>` replaces the whole default for that row. */
 export const PROFILE_CONFIG: Record<string, Record<string, unknown>> = {
-  server: { gateway: { shutdown: false }, endpoints: { privateNetwork: false }, projects: { linkedMedia: false } },
+  desktop: { jianying: { allowLinkedMedia: true } },
+  server: { gateway: { shutdown: false }, endpoints: { privateNetwork: false }, projects: { linkedMedia: false },
+    jianying: { allowLinkedMedia: false } },
 };
 
 export const profilePatchSchema = z.object({

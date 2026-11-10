@@ -630,6 +630,7 @@ export function FlyCutCaptionContent(props: FlyCutCaptionProps) {
           defaultExportMode={display}
           onExportSubtitles={(format, mode) => handleExportSubtitles(format, mode)}
           onExportVideo={handleVideoExport}
+          videoMeta={videoMeta}
         />
 
         {/* 设置对话框（模型下载） */}

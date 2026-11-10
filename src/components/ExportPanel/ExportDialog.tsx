@@ -40,6 +40,7 @@ interface ExportDialogProps {
   onExportSubtitles: (format: 'srt' | 'json' | 'vtt' | 'ass', exportMode: SubtitleDisplayMode) => void | Promise<void>;
   onExportVideo: (options: VideoExportOptions) => void;
   defaultExportMode?: SubtitleDisplayMode;
+  videoMeta: { width: number; height: number };
 }
 
 interface ExportEnvironment {
@@ -56,6 +57,7 @@ export function ExportDialog({
   onExportSubtitles,
   onExportVideo,
   defaultExportMode,
+  videoMeta,
 }: ExportDialogProps) {
   const { connection } = useClientRuntime();
   const { t } = useTranslation();
@@ -214,7 +216,7 @@ export function ExportDialog({
 
         <DialogBody>
           {exportType === 'jianying' ? (
-            <JianyingDraftInfoPanel active={open} />
+            <JianyingDraftInfoPanel active={open} videoMeta={videoMeta} />
           ) : exportType === 'subtitles' ? (
             <div className="space-y-4">
               {renderExportContentSelector()}

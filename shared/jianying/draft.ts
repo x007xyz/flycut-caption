@@ -2,7 +2,10 @@ import { z } from 'zod';
 import { deriveKept, edlSchema, projectCues, toUs, type Cue } from '../editing/edl';
 
 export const JIANYING_WINDOWS_TARGET = 'jianying-windows-5.9.0' as const;
+export const JIANYING_MAC_TARGET = 'jianying-macos-11.7.0' as const;
 export const JIANYING_RESEARCH_DATE = '2026-11-09' as const;
+export const JIANYING_DIRECTORY_TTL_MS = 15 * 60_000;
+export const JIANYING_PREFLIGHT_TTL_MS = 10 * 60_000;
 
 const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
 
@@ -57,6 +60,48 @@ export const jianyingSnapshotSchema = z.strictObject({
   }
 });
 export type JianyingSnapshot = z.infer<typeof jianyingSnapshotSchema>;
+
+/** Only opaque Host-issued identifiers cross ordinary RPC; local paths travel through the desktop shell route. */
+export const jianyingDirectoryGrantSchema = z.uuid();
+export const jianyingSourceSchema = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('asset'), assetId: z.uuid() }),
+  z.strictObject({ kind: z.literal('project'), projectId: z.uuid(), videoId: z.uuid() }),
+]);
+export type JianyingSource = z.infer<typeof jianyingSourceSchema>;
+
+export const jianyingPreflightInputSchema = z.strictObject({
+  directoryGrant: jianyingDirectoryGrantSchema,
+  draftName: jianyingDraftNameSchema,
+  source: jianyingSourceSchema,
+  snapshot: jianyingSnapshotSchema,
+});
+export type JianyingPreflightInput = z.infer<typeof jianyingPreflightInputSchema>;
+export const jianyingStartInputSchema = z.strictObject({ preflightId: z.uuid() });
+export type JianyingStartInput = z.infer<typeof jianyingStartInputSchema>;
+
+export interface JianyingPreflightResult {
+  preflightId: string;
+  expiresAt: string;
+  draftName: string;
+  mediaStrategy: 'copy';
+  sourceBytes: number;
+  estimatedBytes: number;
+  availableBytes: number;
+  videoSegmentCount: number;
+  textSegmentCount: number;
+  degradationKeys: JianyingDegradation[];
+}
+
+export interface JianyingJobResult {
+  draftName: string;
+  draftPath: string;
+  createdAt: string;
+  sourceBytes: number;
+  copiedBytes: number;
+  videoSegmentCount: number;
+  textSegmentCount: number;
+  degradationKeys: JianyingDegradation[];
+}
 
 export interface JianyingSourceMedia {
   path: string;
@@ -146,28 +191,106 @@ export function jianyingDegradations(snapshot: JianyingSnapshot): JianyingDegrad
   return result;
 }
 
-/** Product gate: local and remote clients cannot turn a candidate into a supported export. */
-export const JIANYING_CAPABILITIES = {
-  research: 'F-0010' as const,
-  checkedAt: JIANYING_RESEARCH_DATE,
-  verifiedByImport: false as const,
-  exportEnabled: false as const,
-  reason: 'Windows 5.9.0 明文格式只有只读结构证据，尚未完成真实剪映导入验证。',
-  targets: [
-    { id: JIANYING_WINDOWS_TARGET, platform: 'windows', version: '5.9.0', status: 'unverified' as const,
-      labelZh: '候选格式，尚未完成真实导入验证', labelEn: 'Candidate format; real import is not verified',
-      capabilities: { timeline: 'single', videoTracks: 1, subtitleTracks: 1, subtitleModes: ['Main'], mediaStrategy: 'copy',
-        rootIndexUpdate: false, bilingual: false, fontMapping: false, exactPosition: false } },
-    { id: 'jianying-macos-11.7.0', platform: 'macos', version: '11.7.0', status: 'unsupported' as const,
-      reason: 'Native projects use a private Timelines container; F-0010 did not decode or generate it.' },
-    { id: 'jianying-windows-other-builds', platform: 'windows', version: 'other', status: 'unsupported' as const,
-      reason: 'Only the inspected 5.9.0 plaintext draft is a candidate.' },
-    { id: 'capcut', platform: 'cross-platform', version: 'any', status: 'unsupported' as const,
-      reason: 'CapCut compatibility was not researched.' },
-    { id: 'jianying-web', platform: 'web', version: 'any', status: 'unsupported' as const,
-      reason: 'Jianying candidate generation requires the desktop Host; Windows 5.9.0 import is still unverified.' },
-  ],
+/** Cues on one Jianying text track must not overlap; importing overlapping cues can reorder them silently. */
+export function projectedJianyingCues(snapshot: JianyingSnapshot): Cue[] {
+  return projectCues(snapshot.edl, snapshot.cues as Cue[]).filter(cue => cue.text.length > 0);
+}
+
+export function assertNonOverlappingJianyingCues(snapshot: JianyingSnapshot): Cue[] {
+  const cues = projectedJianyingCues(snapshot);
+  for (let index = 1; index < cues.length; index++) {
+    if (toUs(cues[index].timestamp[0]) < toUs(cues[index - 1].timestamp[1])) {
+      throw new Error(`Jianying text segments overlap at cue ${index}; resolve them before export`);
+    }
+  }
+  return cues;
+}
+
+export type JianyingTargetStatus = 'unverified' | 'observed-unverified' | 'internal-validation' | 'unsupported';
+export interface JianyingTarget {
+  id: string;
+  platform: 'windows' | 'macos' | 'cross-platform' | 'web';
+  version: string;
+  status: JianyingTargetStatus;
+  labelZh?: string;
+  labelEn?: string;
+  reason?: string;
+  capabilities?: {
+    timeline: 'single';
+    videoTracks: 1;
+    subtitleTracks: 1;
+    subtitleModes: Array<'Main'>;
+    mediaStrategy: 'copy';
+    rootIndexUpdate: false;
+    bilingual: false;
+    fontMapping: false;
+    exactPosition: false;
+  };
+}
+
+export interface JianyingCapabilities {
+  research: 'F-0010';
+  checkedAt: string;
+  verifiedByImport: boolean;
+  exportEnabled: boolean;
+  exportMode: 'disabled' | 'internal-validation';
+  activeTargetId?: string;
+  reason: string;
+  evidence: {
+    macCandidateImported: boolean;
+    macPlaybackObserved: boolean;
+    subtitleTimingVerified: boolean;
+    subtitleEditingVerified: boolean;
+    savedReopenVerified: boolean;
+    relocationVerified: boolean;
+  };
+  targets: JianyingTarget[];
+}
+
+const CANDIDATE_CAPABILITIES: NonNullable<JianyingTarget['capabilities']> = {
+  timeline: 'single', videoTracks: 1, subtitleTracks: 1, subtitleModes: ['Main'], mediaStrategy: 'copy',
+  rootIndexUpdate: false, bilingual: false, fontMapping: false, exactPosition: false,
 };
+
+/**
+ * Product gate. The normal build never turns a candidate into a supported export. An explicit developer-only
+ * validation mode can exercise the complete flow, but it remains labelled as internal and cannot claim support.
+ */
+export function buildJianyingCapabilities(internalValidation = false): JianyingCapabilities {
+  return {
+    research: 'F-0010', checkedAt: JIANYING_RESEARCH_DATE,
+    verifiedByImport: false,
+    exportEnabled: internalValidation,
+    exportMode: internalValidation ? 'internal-validation' : 'disabled',
+    ...(internalValidation ? { activeTargetId: JIANYING_MAC_TARGET } : {}),
+    reason: internalValidation
+      ? 'Internal validation only: one Mac 11.7.0 candidate passed observed subtitle timing checks, but subtitle editing, save/reopen, two-source and relocation evidence is incomplete.'
+      : 'The format has structural and limited Mac import evidence, but the target has not passed the required editing, two-source and reopen gate.',
+    evidence: {
+      macCandidateImported: true, macPlaybackObserved: true, subtitleTimingVerified: true,
+      subtitleEditingVerified: false, savedReopenVerified: false, relocationVerified: false,
+    },
+    targets: [
+      { id: JIANYING_WINDOWS_TARGET, platform: 'windows', version: '5.9.0', status: 'unverified',
+        labelZh: '候选格式，尚未完成真实导入验证', labelEn: 'Candidate format; real import is not verified',
+        capabilities: CANDIDATE_CAPABILITIES },
+      { id: JIANYING_MAC_TARGET, platform: 'macos', version: '11.7.0',
+        status: internalValidation ? 'internal-validation' : 'observed-unverified',
+        labelZh: internalValidation ? '仅供实机内部验证' : '可导入观察，但时序和编辑未验证',
+        labelEn: internalValidation ? 'Internal device validation only' : 'Import observed; timing and editing unverified',
+        reason: 'One candidate was imported and played on Mac 11.7.0; AX currentProgress observed the expected 20–22 second subtitle. Subtitle editing, reopen, relocation and two-source evidence remain unverified.',
+        capabilities: CANDIDATE_CAPABILITIES },
+      { id: 'jianying-windows-other-builds', platform: 'windows', version: 'other', status: 'unsupported',
+        reason: 'Only the inspected 5.9.0 plaintext draft is a candidate.' },
+      { id: 'capcut', platform: 'cross-platform', version: 'any', status: 'unsupported',
+        reason: 'CapCut compatibility was not researched.' },
+      { id: 'jianying-web', platform: 'web', version: 'any', status: 'unsupported',
+        reason: 'Jianying draft directory writes require the desktop shell and Host.' },
+    ],
+  };
+}
+
+export const JIANYING_CAPABILITIES = buildJianyingCapabilities(false);
 
 function id32(next: () => string): string { return next().replace(/-/g, '').toLowerCase(); }
 function uuidUpper(next: () => string): string { return next().toUpperCase(); }
@@ -220,7 +343,7 @@ export function buildJianyingDraft(options: JianyingBuildOptions): JianyingDraft
   jianyingDraftNameSchema.parse(options.location.draftName);
   const kept = deriveKept(snapshot.edl);
   if (!kept.length) throw new Error('No retained video ranges');
-  const projected = projectCues(snapshot.edl, snapshot.cues as Cue[]).filter(cue => cue.text.length > 0);
+  const projected = assertNonOverlappingJianyingCues(snapshot);
   const videoMaterialId = id32(options.id);
   const speeds: Record<string, unknown>[] = [];
   const videoSegments = kept.map(range => {

@@ -98,11 +98,14 @@ export const storagePlugin = { name: 'flycut-storage', inject: ['hostConfig', 'r
   const service: JobService = {
     get(id) { const job = records.get(id); if (!job) throw new Error('Unknown job'); return structuredClone(job); },
     list() { return [...records.values()].map(job => structuredClone(job)); },
-    create(run) {
+    create(run, id) {
       if (stopping) throw new Error('Host is stopping');
+      if (id !== undefined && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))
+        throw new Error('Invalid job ID');
       const controller = new AbortController();
       const now = new Date().toISOString();
-      const job: JobSnapshot = { id: randomUUID(), status: 'queued', createdAt: now, updatedAt: now };
+      const job: JobSnapshot = { id: id ?? randomUUID(), status: 'queued', createdAt: now, updatedAt: now };
+      if (records.has(job.id)) throw new Error('Job ID already exists');
       records.set(job.id, job); controllers.set(job.id, controller);
       const task = (async () => {
         try {

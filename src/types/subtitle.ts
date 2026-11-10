@@ -33,7 +33,7 @@ export interface SubtitleTranscript {
 }
 
 /** Worker / 引擎进度用途：用于区分「仅下载模型」与真正的识别流程 */
-export type ASRProgressPurpose = 'download' | 'load' | 'transcribe';
+export type ASRProgressPurpose = 'download' | 'load' | 'transcribe' | 'export';
 
 export interface ASRProgress {
   status: 'loading' | 'initiate' | 'progress' | 'done' | 'ready' | 'downloaded' | 'loaded' | 'running' | 'complete' | 'error' | 'reset';

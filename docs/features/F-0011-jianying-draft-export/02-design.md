@@ -1,135 +1,140 @@
 ---
 id: F-0011
 stage: 02-design
-status: draft
-approved_by:
-approved_at:
+status: approved
+approved_by: auto
+approved_at: 2026-11-10
 ---
 
 # F-0011 剪映草稿导出：设计
 
 ## UI / UX
 
-顶部「导出」菜单增加「剪映草稿 / Jianying draft」入口，打开后显示只读的兼容矩阵和研究状态。**本轮不提供可点击的草稿导出流程**：F-0010 没有真实 Windows 5.9.0 导入证据，AC-1 要求未知或不支持的目标禁用。
+顶部「导出」菜单中的「剪映草稿 / Jianying draft」打开真实导出面板。面板先读取 `jianying.capabilities`，再按四种能力状态显示：加载、读取失败可重试、默认禁用矩阵、显式内部验证。所有文案有中英文，全部状态在明暗主题下跑 E2E。
 
-| 目标 | 展示 | 产品行为 |
+| 状态 | 界面 | 可执行动作 |
 |---|---|---|
-| 剪映 Windows 5.9.0 明文草稿 | `候选格式，尚未完成真实导入验证 / Candidate format; real import is not verified` | 仅展示能力与缺口，导出按钮禁用 |
-| 其他 Windows 5.9.0 build | `不支持此草稿版本 / Unsupported draft version` | 禁用 |
-| macOS 11.7.0（Timelines/私有封装） | `不支持此草稿版本 / Unsupported draft version` | 禁用，不尝试解密或伪生成 |
-| CapCut | `不支持此草稿版本 / Unsupported draft version` | 禁用 |
-| Web | `剪映草稿目前仅支持桌面 Host；Windows 5.9.0 仍在验证 / Desktop Host only; Windows 5.9.0 is still being verified` | 禁用 |
+| 加载 | “正在检查剪映草稿支持信息…” | 无，按钮不出现 |
+| 读取失败 | “无法读取剪映草稿支持信息”，显示重试 | 重试只重新读取能力，不创建任务 |
+| 正常发行版 | Windows 候选、Mac 有界导入证据、其他版本/CapCut/Web 不支持；固定显示产品导出门禁未过 | 无目录选择、无 preflight、无 start |
+| 显式内部验证 | 明确写“仅内部验证”，展示 Mac 20–22 秒字幕已核对、编辑/重开/搬迁/两段素材未验证 | 选目录、冻结快照、生成、进度、取消 |
+| 无法冻结 | 无视频、EDL 未就绪、无字幕、画面尺寸未知或字幕重叠 | 说明原因，不创建任务 |
+| 目录未选/已选 | Host 只收到 opaque grant；不向 WebView 返回路径 | 已选后可准备 |
+| 准备成功 | 显示项目、视频、冻结时间、视频段/不重叠字幕段、复制大小、可用空间、明确降级清单 | 开始生成或放弃 |
+| 生成中 | “正在生成剪映草稿…”，Host 进度百分比和阶段；开始键禁用 | 取消 |
+| 取消 | “已取消生成”，说明临时目录已清理、既有目录和原媒体未改 | 重新选目录再开始 |
+| 失败 | 区分媒体缺失、空间不足、权限、字幕重叠、同名冲突、目录授权失效和格式失败 | 重试要求重新选择目录 |
+| 成功 | “草稿已生成”，显示项目、视频、冻结时间、输出路径和导入说明 | 用户到剪映本地找回/导入 |
+| Web | 明确不支持本地目录写；即使远端错误返回启用能力也不显示写入流程 | 无 |
 
-候选卡片列出：单时间线、单视频轨、单主字幕轨、媒体复制、不更新 `root_meta_info.json`；副字幕/双语、字体、精确定位、搬迁重开均未证实。界面显示 `真实导入验证：未完成 / Real import verification: not run`，不出现「草稿已生成」或「支持剪映」的普通用户成功态。
-
-界面只实现：
-
-1. 检查中：`正在检查剪映草稿支持信息… / Checking Jianying draft support…`。
-2. 检查失败：`无法读取剪映草稿支持信息 / Could not read Jianying draft support`，可重试。
-3. 未验证/不支持：固定文案、研究来源 F-0010、缺失证据、禁用按钮；不选择目录、不上传媒体、不创建任务。
-4. 详情展开：显示媒体与字幕降级清单和真实导入测试要求。
-
-覆盖明暗主题和中英文。E2E 用 Host 路由 mock 构造加载/失败/候选未验证/明确不支持，断言文案、禁用按钮和 `jianying.start` 调用次数为 0。
+冻结快照在“准备导出”点击时生成。面板从正式 `history.edl`、非删除字幕、主样式、画面尺寸和项目身份取值；待确认建议不属于正式 EDL/字幕状态，因此不进入快照。准备后编辑输入被锁定；Host 保存快照副本，后续本地编辑不会改变草稿。
 
 ## 技术方案
 
-### 涉及的子系统
+### 涉及子系统
 
-- [cordis-host](../../subsystems/cordis-host.md)、[architecture-current](../../architecture-current.md)：只注册只读能力 RPC，不注册启用型导出 RPC。
-- [frontend](../../subsystems/frontend.md)：导出菜单和只读矩阵面板。
-- [funasr-tauri](../../subsystems/funasr-tauri.md)：本轮无 Tauri 改动。
-- [F-0005 设计](../F-0005-unified-edit-decisions/02-design.md)：EDL、`deriveKept`、`projectCues` 为唯一时间映射。
-- [F-0010 研究](../archive/F-0010-jianying-draft-research/02-research.md)：Windows 5.9.0 明文结构、字段及 Not run 项。
+- [cordis-host](../../subsystems/cordis-host.md)、[architecture-current](../../architecture-current.md)：RPC、job、asset、shell-only route 和 Host 业务。
+- [frontend](../../subsystems/frontend.md)：导出菜单、面板状态机、正式 store 和 E2E。
+- [funasr-tauri](../../subsystems/funasr-tauri.md)：只新增原生目录选择外壳命令；不新增业务 Tauri command。
+- [F-0005 设计](../F-0005-unified-edit-decisions/02-design.md)：正式 EDL 与字幕投影。
+- [ADR-0009](../../20-architecture/adr/0009-jianying-draft-export.md)：门禁、授权和原子写入。
 
-### 方案
+### 契约
 
-分两层实现：
+`shared/protocol.ts` 声明：
 
-1. **可审阅的离线候选生成器。** 纯 Host 模块接收已冻结的 EDL、句子字幕、主样式、媒体信息和输出元数据，生成 Windows 5.9.0 草稿目录。它不注册为普通 RPC，不接产品按钮；本轮通过测试 harness 和本地验证脚本生成候选产物，供以后真实剪映验证。
-2. **产品硬门禁。** `jianying.capabilities` 只读 RPC 从构建常量返回 `verifiedByImport: false`、`exportEnabled: false`。即使平台是 Windows/Tauri，UI 仍禁用。没有 `jianying.preflight`、`jianying.start` 或其他可触发生成/目录写入的普通 RPC。以后真实导入验收通过后才增加启用通道。
+- `jianying.capabilities: void -> JianyingCapabilities`，始终存在且默认 `exportEnabled:false`、`exportMode:'disabled'`。
+- `jianying.preflight: {directoryGrant,draftName,source,snapshot} -> {preflightId,expiresAt,...}`，只在内部验证 Host 注册。
+- `jianying.start: {preflightId} -> JobSnapshot`，只在内部验证 Host 注册。
 
-**时间映射。** 快照 EDL 使用整数微秒。每个 `deriveKept` 区间生成一个视频 segment：target 从 `outputStartUs` 开始，source 从 `startUs` 开始，时长都取 `endUs-startUs`。`projectCues(edl, sentenceChunks)` 结果生成文本 material/segment；跨切点字幕由 F-0005 拆段，生成器不另算。为保证字幕可回读，快照带每个 cue 的原始 `[start,end]`，回读器按同一 EDL 重新投影并逐条比较，不能只检查“文本存在”。
+`source` 是严格判别联合：`{kind:'asset',assetId}` 或 `{kind:'project',projectId,videoId}`。任何 path、mediaRef、outputParent 额外字段都被 Zod 拒绝。`snapshot` 只含冻结 EDL、字幕、映射后的主样式、尺寸和项目/视频元数据。
 
-**字幕范围。** 只写主字幕。样式只映射 F-0010 有字段证据的颜色/透明度、粗体/斜体/下划线、描边颜色/宽度、字号和间距候选值；字体 family、精确定位、背景 padding、副字幕和双语不写入。`buildJianyingDegradations(snapshot)` 返回稳定 key，测试和报告逐项断言。
+### 目录与媒体授权
 
-**媒体策略与目录。** 候选生成器只接受测试/CLI harness 给出的源媒体路径和最终输出目录，固定复制媒体到 `<draft>/materials/`，JSON 写最终绝对路径，原媒体只读。生成到同父目录 staging，回读验证后原子 rename；目标存在即失败，不覆盖。取消/失败只删 staging。因为是本轮离线 harness、不是产品导出，不新增 shell route、Tauri command 或目录 grant。
+1. Tauri `pick_jianying_output_directory` 选择文件夹，检查真实目录和符号链接，canonicalize 后通过 shell secret POST `/shell/jianying/directories`；命令只返回 `{grant,expiresAt}`。
+2. Host 再次执行路径检查，把 canonical parent、15 分钟 TTL 和 consumed/绑定 preflight 状态保存在内存。没有 shell token 或带 Origin 的请求由 Gateway 拒绝。
+3. preflight 校验 grant 未用、目标名安全且不存在、媒体存在、probe 时长/尺寸与快照一致、字幕投影不重叠、空间足够；成功后绑定 grant 并生成 10 分钟 TTL 的 preflight。
+4. start 只接受 preflight ID，创建 job 前原子消费 grant/preflight。preflight ID 同时作为确定性 job ID，`operation→job` 关联持久化；并发、回包丢失、重复调用或 Host 重启后用同一 preflight 都返回同一 `JobSnapshot`，不创建第二任务。Host 重启后未消费授权失效，但已启动任务可查回。
+5. 项目来源由 `ProjectStore` 解析 saved/linked media；资产来源由 `assets.path` 解析。任何路径都不经过普通 RPC。desktop 默认允许 linked 项目媒体，server profile 固定拒绝；即使 profile patch/env 把配置写成允许，resolved profile 检查仍会关闭。
+6. source 保存 size/mtime/指纹；start 前再次核对，复制结束后再核对。源文件变化则失败并删除 staging。
 
-以后启用产品导出时，仍必须按下列安全前提设计：目录只能来自原生选择器；shell-only、无 Origin、绑定本次选择和资产、15 分钟 TTL、一次性消费、撤销/重启失效；realpath + `lstat` 拒绝符号链接和穿越；普通 RPC 只收 opaque grant；Host 单写并原子清理。实现前需重新审阅，不能因本调研生成器存在而跳过。
+### 生成与任务
 
-**回读校验器。** 重新解析 `draft_content.json`、`draft_info.json`、`draft_meta_info.json` 和封面，检查：两份 content 字节一致；版本/platform；轨道/material/speed 引用；视频 source/target 与 EDL 一致；字幕文本和时间与项目后的 cue 一致；媒体路径在最终 `materials/` 下、大小/SHA-256 与源一致；封面是 JPEG；无悬空引用。失败时不产生最终目标。
+- `buildJianyingDraft` 校验冻结快照，按 F-0005 `deriveKept/projectCues` 生成三段视频轨道模型和单主字幕轨；字幕目标区间必须严格不重叠。
+- `generateJianyingDraft` 在同父目录写 staging：复制媒体、双端 SHA-256、生成 JPEG 封面、写三份 JSON、回读验证，最后 `rename`。signal 贯穿 FFmpeg、复制、哈希和每个阶段。
+- Job 把复制字节进度映射到 10–55%，后续哈希/封面/写入/回读/提交到 100%。取消由通用 `jobs.cancel` 中断 signal，`finally` 删除 staging。
+- 成功结果含项目/视频身份、冻结时间、输出路径、复制字节、段数/字幕数和降级 key。UI 在准备和成功状态都展示身份与时间。
+- 不写 `root_meta_info.json`，不自动打开剪映。
 
-**候选格式。** 只写 Windows 5.9.0 明文布局：`draft_content.json`、字节相同的 `draft_info.json`、`draft_meta_info.json`、`draft_cover.jpg`、`materials/`。不写 `root_meta_info.json`，不生成 macOS Timelines 封装，不修改现有草稿。
+### 格式与回读
 
-### 接口与数据
+只写 Windows 5.9.0 候选：`draft_content.json`、字节一致的 `draft_info.json`、`draft_meta_info.json`、`draft_cover.jpg`、`materials/`。回读检查两份 content 字节一致、版本/platform、轨道/material/speed 引用、视频源与目标区间、字幕时间/文本、最终媒体路径、大小/SHA-256 和 JPEG。
 
-`shared/protocol.ts` 只增加：
-
-- `jianying.capabilities`：input `void`；输出 `{ research:'F-0010', verifiedByImport:false, exportEnabled:false, targets:[...], reason, checkedAt }`。
-
-不存在可调用生成器、preflight、start、路径或 grant 的普通 RPC。生成器 API 位于 `server/jianying/`，仅供架构测试、真实产物脚本和以后 Host 层复用。不修改 `PROJECT_FORMAT_VERSION`、项目 store、上传实现、模型配置或字幕列表。
-
-新增共享纯模块：目标/能力、草稿名安全校验、快照 schema、EDL→Windows 草稿内容、回读验证和降级清单。新增 `JianyingDraftInfoPanel` 与 `src/locales/jianying.ts`（中英文），接入现有导出对话框，默认只显示矩阵和禁用按钮。
+测试用文本本身带时间标识的非重叠字幕，并在测试中写独立期望数组；生成器内部回读只证明结构与冻结输入一致，不能替代目标应用时序。Mac 11.7.0 的支持状态记录：一个候选导入并播放；AX `currentProgress` 在 20:00/21:16/22:16 核对 20–22 秒字幕；第一条约 1.4 秒、跨切点约 5.08 秒显示且前条消失。字幕编辑、保存后重开、搬迁和两段真实口播仍未验证。
 
 ### 备选方案与取舍
 
-| 方案 | 优点 | 缺点 | 结论 |
-|---|---|---|---|
-| 纯生成器 + 产品禁用 + 真实候选产物 | 不违反 AC-1；研究产物可继续推进真实导入 | 用户暂时不能用 | 采用 |
-| 未验证即启用实验按钮 | 可提前体验 | 把“实验性”当发布开关，违背 AC-1 | 拒绝 |
-| 直接接普通目录路径 RPC | 实现短 | 推翻 RPC 无任意路径安全边界 | 拒绝 |
-| 生成 macOS 私有封装 | 覆盖本机 | 无格式证据且不在批准范围 | 拒绝 |
+| 方案 | 取舍 |
+|---|---|
+| shell-only 目录 grant + Host 任务 | 采用；符合 Host 业务和普通 RPC 无路径 |
+| 普通 RPC 接目录 | 拒绝；推翻既有安全边界 |
+| zip 后由 Tauri/Rust 改 JSON | 拒绝；格式业务离开 Host，失败清理和回读分散 |
+| 默认启用“实验”按钮 | 拒绝；真实门禁未完全通过，AC-1/8 不允许伪可用 |
+| 引用源媒体 | 拒绝；源文件移动即失联，当前也未证明可搬迁 |
 
 ## 架构决策
 
-新增 [ADR-0009](../../20-architecture/adr/0009-jianying-draft-export.md)，状态 `proposed`：Windows 5.9.0 候选、真实导入前产品禁用、Host 纯生成器、复制媒体、未来 shell-only grant 的安全前提、失败关闭。ADR-0002/0005 不变。
+更新 [ADR-0009](../../20-architecture/adr/0009-jianying-draft-export.md)，保持 `proposed`：Host 完整链路、内部验证门禁、shell-only opaque grant、一次性 preflight、原子 staging、媒体复制、非重叠字幕和 Mac 有界证据。维护者验收前不得改 `accepted`。
 
 ## 自行决定的事项
 
-| 事项 | 决定 | 原因 | 影响的 AC |
+| 事项 | 决定 | 原因 | AC |
 |---|---|---|---|
-| 未验证候选的产品可用性 | UI 与普通 RPC 全部禁用 | AC-1 明确未知/不支持目标不得生成并宣称可用 | AC-1、AC-8 |
-| 本轮验证路径 | 仅测试/CLI harness 生成候选产物 | 允许推进真实产物证据，不形成可发布导出入口 | AC-2 到 AC-10 |
-| 字幕范围 | 只写主字幕 | 双语没有真实样本，提前展示降级 | AC-7 |
-| 媒体策略 | 固定复制 | F-0010 推荐，原媒体移动不影响草稿副本 | AC-4、AC-9 |
-| 根索引 | 不写 | 无法证明自动扫描且修改资料库风险高 | AC-3、AC-8 |
-| Tauri grant | 本轮不实现 | 产品导出入口未启用；提前增加未使用写通道只会扩大风险 | AC-3、AC-5 |
-
-## 风险与回退
-
-- **验收阻塞：** 本机没有 Windows 5.9.0 剪映；macOS 11.7.0 不是可生成的目标。AC-1 的“支持”无法成立，AC-2/3/5/6/8 的普通用户流程未启用，AC-7/9/10 的真实导入无法完成。
-- 候选生成器通过格式、文件、字节和时间测试，不证明剪映能打开。报告必须写 `Not run`。
-- 剪映是专有格式；任何字段异常都应失败关闭，不猜其他 build。
-- 如果未来生成器 API 被包装成产品导出，必须重新过安全设计和 AC-1，不在本次自动启用。
+| 默认可用性 | 正常 Host 不注册写 RPC/route | 正式目标仍缺编辑、重开、搬迁、两段素材和平台证据 | AC-1/8 |
+| 内部验证开关 | 环境变量或 Host profile 显式启用 | 允许主 agent 用真实产品链路补设备证据，同时不冒充支持 | AC-1/5/8 |
+| 字幕轨道 | 只写单主字幕轨，并拒绝重叠投影 | Mac 对重叠输入有自动重排风险，不能静默改变时序 | AC-7 |
+| 目录授权/任务恢复 | 15 分钟 grant + 10 分钟 preflight；preflight ID=job ID，operation 关联持久化 | 授权短生命周期；重复 start/丢回包返回同一 job | AC-3/5 |
+| 媒体来源 | 项目来源传 ID，独立编辑器通过既有 asset 上传 | 避免下载再上传，也不接任意本机路径 | AC-3/4 |
+| 错误重试 | 失败后要求重新选目录 | start 已消费 grant，避免同一授权被继续复用 | AC-6 |
+| 搬迁 | 不宣称支持 | 当前绝对媒体路径未通过真机移动验证 | AC-9 |
 
 ## 实现清单
 
-- [x] 共享能力/快照/命名契约、Windows 5.9.0 候选生成器和回读验证器；固定 EDL 含两段以上保留区间和跨切点字幕。
-- [x] 离线候选产物 harness：真实媒体复制、封面、三份 JSON、SHA-256、同名拒绝、取消/失败 staging 清理和原子提交。
-- [x] 只读 `jianying.capabilities` RPC 与无导出 RPC 的安全断言，确保 `verifiedByImport:false` 时任何客户端都不能生成目录。
-- [x] 剪映草稿只读能力面板和导出入口禁用态，中英文明暗主题 E2E，断言普通导出调用次数为 0。
-- [ ] 用真实媒体生成候选产物并回读；记录实机导入、两段口播、搬迁的 Not run 证据，生成 04 报告。
+- [x] 共享能力/preflight/start/source 契约、非重叠校验和默认/内部验证能力对象。
+- [x] Host shell-only 目录 grant、preflight、冻结快照、任务进度/取消、staging 原子提交和失败清理。
+- [x] Tauri 原生目录选择与 shell 登记外壳，只返回 opaque grant。
+- [x] 导出面板完整状态机、中英文文案、冻结快照、进度/取消/重试/成功和 Web 禁用。
+- [x] Host/生成器/回读/安全失败测试，使用非重叠明显时间字幕和独立期望值。
+- [x] 中英明暗 Playwright 覆盖、全量静态/回归检查和证据产物。
 
 ## 验证计划
 
-1. `pnpm test:architecture` 覆盖 `F-0011/AC-1、AC-4、AC-7`：能力字段、生成结构、多保留区间、跨切点字幕、主字幕降级、引用闭合、回读、哈希和同名失败。Red check 去掉一次 source 跳转、字幕投影或媒体哈希后目标测试必须失败。
-2. 真实候选 harness：用 `src/assets/demo.mp4` 生成到 `/private/tmp`，实际复制媒体，解析文件并重算 SHA-256；另用两段同源切段仅验证“多段输入”逻辑，不能冒充 AC-10 两段真实口播。目标目录存在时不覆盖，注入失败/取消时 staging 为空。
-3. Host RPC：断言 `jianying.capabilities` 返回 `verifiedByImport:false/exportEnabled:false`，方法表没有 generation start/preflight，普通 RPC 不接收 path/grant。
-4. UI：`pnpm lint`、`pnpm tsc -b --noEmit`、`pnpm check:host`；Playwright 使用 `/private/tmp` 下 5179 覆盖配置，断言四平台矩阵、两语言两主题、禁用按钮和截图。`cargo check` 记录基线，本轮无 Rust 改动。
-5. 真实使用：真实 Windows 5.9.0 打开/播放/编辑/保存/重开、两段原始口播和搬迁重开全部 `⏸ Not run`，原因写明本机只有 macOS 11.7.0 且其格式不兼容。
-
-全量回归遵循 `docs/code-standards.md` 第 1、2 条；主 agent 已提供原仓库基线，仍在本需求 commit 上重跑可运行项。
+1. `pnpm check:host`、`node --import tsx --test tests/architecture/jianying-f0011.test.ts`：默认 fail-closed、内部写 RPC、shell-only/CORS、grant 一次性、server linked-media 硬拒绝、start 丢回包幂等与 Host 重启查回、项目/资产来源、冻结、非重叠、独立时间、SHA、同级 staging 清理和取消。
+2. `cargo test --manifest-path src-tauri/Cargo.toml jianying_output`：真实目录、文件拒绝和符号链接拒绝。
+3. `PW_PORT=5181 pnpm exec playwright test tests/e2e/features/F-0011.spec.ts`：中英明暗下加载、错误、默认禁用、Web 禁用、目录、准备、进度、取消、错误、成功；断言正式 EDL 生成的冻结字幕和唯一 start。
+4. `pnpm e2e:evidence F-0011` 生成截图和录屏；在 5181 运行，避开其他 worktree 的 5173。
+5. 全量 `pnpm lint`、`pnpm tsc -b --noEmit`、`pnpm check:host`、`cargo check`、`pnpm test`、`pnpm test:architecture`；复用原分支已有且本分支缺失的只读测试资源，链接只在本地忽略位置。
+6. 真实设备：Mac 已有单候选时序证据；内部构建链路和主 agent 后续编辑/重开/搬迁核对；两段真实口播与 Windows 未通过项写 `Not run`。
 
 ## 验收标准覆盖
 
-| AC | 设计中的对应部分 |
+| AC | 设计与验证 |
 |---|---|
-| AC-1 | 只读能力矩阵；`verifiedByImport:false` 时所有平台/形态的 UI 禁用；没有生成 RPC；两语言两主题断言固定不支持文案 |
-| AC-2 | 冻结快照生成器输入；普通导出未启用，因此无可验收用户导出；测试夹具证明快照不读取临时建议 |
-| AC-3 | 产品目录选择/写入未启用；候选 harness 只用于 `/private/tmp`；普通 RPC 无 path；不覆盖既有目录 |
-| AC-4 | 生成器固定复制媒体、显示降级/空间估算契约；真实 harness 校验非空和哈希；产品策略未启用 |
-| AC-5 | 无任务、进度或取消的用户流程；测试验证禁用按钮和 start 调用为 0；离线 harness 失败清理 |
-| AC-6 | harness 覆盖同名、媒体缺失、权限/格式失败和 staging 清理；产品错误态因导出禁用而不适用 |
-| AC-7 | 结构/回读验证多保留区间与主字幕时间；真实剪映可编辑为外部阻塞，副字幕/双语列为不支持 |
-| AC-8 | 产品成功态未实现/未启用；面板只显示候选未验证与真实导入要求，避免伪成功 |
-| AC-9 | 复制媒体与绝对路径风险写入报告；真实移动后打开 `Not run` |
-| AC-10 | 生成真实候选并回读；两段原始口播及 Windows 5.9.0 真实播放/编辑/保存/重开 `Not run` |
+| AC-1 | 默认能力/UI 禁用；Mac 仅显示有界证据；写方法仅在内部构建存在；Host 和 Playwright 断言 |
+| AC-2 | 点击准备冻结 EDL/字幕/样式/身份；Host 保存副本；准备/成功显示项目视频时间；后续 UI 锁定 |
+| AC-3 | 原生目录选择 + shell-only grant；普通 RPC 无 path；同名拒绝；取消选目录不建任务 |
+| AC-4 | preflight 显示 copy 策略、大小/空间；媒体复制并 SHA；原文件只读 |
+| AC-5 | Job 进度、取消和唯一 start；取消中止复制/FFmpeg/哈希，清理 staging |
+| AC-6 | 媒体/空间/权限/重叠/同名/授权/格式分类；失败不留最终半成品；可重选重试 |
+| AC-7 | 非重叠主字幕轨道和 EDL 投影独立回读；Mac 20–22 秒时序已核对；字幕编辑未跑 |
+| AC-8 | 内部成功仅显示“草稿已生成”并标内部；正常产品不显示成功；给出路径和导入说明 |
+| AC-9 | 仍 `Not run`；不因复制媒体宣称移动后可打开 |
+| AC-10 | 单候选 Mac 时序有证据；两段原始口播和编辑/重开仍缺，04 不得因此通过 |
+
+## 风险与回退
+
+- 正常发布仍不能使用剪映导出；内部验证开关不能进入普通用户默认配置。
+- 绝对媒体路径导致搬迁风险；失败关闭，不猜相对路径。
+- Mac 导入可能串排重叠字幕，因此产品快照拒绝重叠；已有单候选的旧重叠事实不能在报告中当作成功。
+- 实机编辑、重开、搬迁、两段口播和 Windows 仍需主 agent/维护者补充；缺证据时 04 结论只能是需要修复/重测。
+- 如果目录命令、shell route 或原子 staging 失败，所有写入通道失败关闭，不退回前端路径或 zip 改写方案。

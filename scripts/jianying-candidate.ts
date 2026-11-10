@@ -16,9 +16,9 @@ const secondCut = Math.min(20, Math.max(firstCut + 2, durationSeconds * 0.3));
 const snapshot: JianyingSnapshot = {
   edl: createEdl(durationSeconds, [{ start: firstCut, end: firstCut + 1 }, { start: secondCut, end: secondCut + 1 }]),
   cues: [
-    { id: 'f0011-a', text: 'F0011 第一段真实字幕', secondText: 'Secondary must stay visible as a downgrade', timestamp: [1, firstCut + 0.5] },
-    { id: 'f0011-b', text: 'F0011 跨切点字幕', timestamp: [firstCut - 0.5, firstCut + 1.5] },
-    { id: 'f0011-c', text: 'F0011 第二段实现', timestamp: [secondCut + 2, secondCut + 4] },
+    { id: 'f0011-a', text: 'F0011 T1 01-04', secondText: 'Secondary must stay visible as a downgrade', timestamp: [1, 4] },
+    { id: 'f0011-b', text: 'F0011 T2 04.5-06.5 CUT', timestamp: [4.5, 6.5] },
+    { id: 'f0011-c', text: `F0011 T3 ${secondCut + 2}-${secondCut + 4}`, timestamp: [secondCut + 2, secondCut + 4] },
   ],
   style: {
     fontId: 'noto-sans-sc', fontSizeRatio: 0.045, bottomOffsetRatio: 60 / 1080, fontWeight: 'bold',

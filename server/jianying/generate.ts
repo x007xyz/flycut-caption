@@ -1,10 +1,17 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { createReadStream } from 'node:fs';
-import { copyFile, lstat, mkdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { createReadStream, createWriteStream } from 'node:fs';
+import type { Stats } from 'node:fs';
+import { lstat, mkdir, readFile, realpath, rename, rm, stat, statfs, writeFile } from 'node:fs/promises';
 import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { spawn } from 'node:child_process';
-import { deriveKept, projectCues, toUs, type Cue } from '../../shared/editing/edl';
-import { buildJianyingDraft, jianyingDraftNameSchema, type JianyingSnapshot } from '../../shared/jianying/draft';
+import { pipeline } from 'node:stream/promises';
+import { Transform } from 'node:stream';
+import { deriveKept, toUs } from '../../shared/editing/edl';
+import { assertNonOverlappingJianyingCues, buildJianyingDraft, jianyingDraftNameSchema, type JianyingSnapshot } from '../../shared/jianying/draft';
+
+export type JianyingGenerationStage = 'validating' | 'copying' | 'hashing' | 'cover' | 'writing' | 'verifying' | 'committing';
+export interface JianyingGenerationProgress { stage: JianyingGenerationStage; progress: number; detail?: string }
+export interface JianyingSourceRevision { size: number }
 
 export interface GenerateJianyingOptions {
   snapshot: JianyingSnapshot;
@@ -14,6 +21,8 @@ export interface GenerateJianyingOptions {
   signal?: AbortSignal;
   now?: () => number;
   ffmpeg?: string;
+  expectedSource?: JianyingSourceRevision;
+  onProgress?: (progress: JianyingGenerationProgress) => void;
 }
 
 export interface GeneratedJianyingDraft {
@@ -40,20 +49,28 @@ async function sha256(path: string, signal?: AbortSignal): Promise<string> {
   return hash.digest('hex');
 }
 
-function ffmpegArguments(ffmpeg: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
+function ffmpegArguments(ffmpeg: string, args: string[], signal?: AbortSignal): Promise<{ stdout: string; stderr: string }> {
+  assertNotAborted(signal);
   return new Promise((resolvePromise, reject) => {
     const child = spawn(ffmpeg, args, { stdio: ['ignore', 'pipe', 'pipe'] });
-    let stdout = ''; let stderr = '';
+    let stdout = ''; let stderr = ''; let settled = false;
+    const finish = (error?: Error, value?: { stdout: string; stderr: string }) => {
+      if (settled) return; settled = true; signal?.removeEventListener('abort', abort);
+      if (error) reject(error); else resolvePromise(value!);
+    };
+    const abort = () => { child.kill('SIGTERM'); finish(new Error('Jianying draft generation cancelled')); };
+    signal?.addEventListener('abort', abort, { once: true });
     child.stdout.on('data', data => { stdout += String(data); });
     child.stderr.on('data', data => { if (stderr.length < 128 * 1024) stderr += String(data); });
-    child.once('error', reject);
-    child.once('close', code => code === 0 ? resolvePromise({ stdout, stderr })
-      : reject(new Error(`FFmpeg failed (${code ?? 'unknown'}): ${stderr.slice(-800)}`)));
+    child.once('error', error => finish(error));
+    child.once('close', code => code === 0 ? finish(undefined, { stdout, stderr })
+      : finish(signal?.aborted ? new Error('Jianying draft generation cancelled')
+        : new Error(`FFmpeg failed (${code ?? 'unknown'}): ${stderr.slice(-800)}`)));
   });
 }
 
-export async function probeJianyingMedia(sourcePath: string, ffmpeg = process.env.FFMPEG_PATH || 'ffmpeg'): Promise<ProbeResult> {
-  const { stderr } = await ffmpegArguments(ffmpeg, ['-hide_banner', '-i', sourcePath, '-t', '0', '-f', 'null', '-']);
+export async function probeJianyingMedia(sourcePath: string, ffmpeg = process.env.FFMPEG_PATH || 'ffmpeg', signal?: AbortSignal): Promise<ProbeResult> {
+  const { stderr } = await ffmpegArguments(ffmpeg, ['-hide_banner', '-i', sourcePath, '-t', '0', '-f', 'null', '-'], signal);
   const duration = /Duration:\s*(\d+):(\d+):([\d.]+)/.exec(stderr);
   const size = /Video:.*?,\s*(\d{2,5})x(\d{2,5})[\s,]/.exec(stderr);
   const fps = /(\d+(?:\.\d+)?)\s*fps/.exec(stderr);
@@ -71,10 +88,42 @@ async function ensureAbsent(path: string) {
   }
 }
 
+export async function jianyingAvailableBytes(path: string): Promise<number> {
+  const value = await statfs(path);
+  return Number(value.bavail) * Number(value.bsize);
+}
+
+function assertSourceRevision(info: Stats, expected?: JianyingSourceRevision) {
+  if (!expected) return;
+  // Asset reads renew their Host TTL by touching mtime; content identity is checked with size + head/tail
+  // fingerprint before start and a full SHA-256 copy comparison during generation.
+  if (info.size !== expected.size)
+    throw new Error('Source media changed after export was prepared');
+}
+
+async function copySource(source: string, target: string, size: number, signal: AbortSignal | undefined,
+  report: (progress: JianyingGenerationProgress) => void) {
+  let copied = 0;
+  const meter = new Transform({ transform(chunk: Buffer, _encoding, done) {
+    copied += chunk.length;
+    const fraction = size ? copied / size : 1;
+    report({ stage: 'copying', progress: Math.min(55, 10 + Math.round(fraction * 45)), detail: `${copied}/${size}` });
+    done(null, chunk);
+  } });
+  try {
+    await pipeline(createReadStream(source), meter, createWriteStream(target, { mode: 0o600 }), { signal });
+  } catch (error) {
+    if (signal?.aborted) throw new Error('Jianying draft generation cancelled');
+    throw error;
+  }
+}
+
 function safeLeaf(value: string) { return value.replace(/[^a-zA-Z0-9._-]/g, '_'); }
 
 export async function generateJianyingDraft(options: GenerateJianyingOptions): Promise<GeneratedJianyingDraft> {
+  const report = (progress: JianyingGenerationProgress) => options.onProgress?.(progress);
   assertNotAborted(options.signal);
+  report({ stage: 'validating', progress: 2 });
   const draftName = jianyingDraftNameSchema.parse(options.draftName);
   if (!isAbsolute(options.outputParent)) throw new Error('Output parent must be absolute');
   const parentInfo = await stat(options.outputParent).catch(() => undefined);
@@ -89,10 +138,13 @@ export async function generateJianyingDraft(options: GenerateJianyingOptions): P
     throw error;
   });
   if (!sourceInfo.isFile() || sourceInfo.size <= 0) throw new Error('Source media is missing or empty');
+  assertSourceRevision(sourceInfo, options.expectedSource);
   assertNotAborted(options.signal);
-  const probe = await probeJianyingMedia(options.sourcePath, options.ffmpeg);
+  const probe = await probeJianyingMedia(options.sourcePath, options.ffmpeg, options.signal);
   if (Math.abs(probe.durationUs - options.snapshot.edl.sourceDurationUs) > 50_000) throw new Error('EDL duration does not match source media');
   if (probe.width !== options.snapshot.videoWidth || probe.height !== options.snapshot.videoHeight) throw new Error('Snapshot dimensions do not match source media');
+  const cues = assertNonOverlappingJianyingCues(options.snapshot);
+  report({ stage: 'validating', progress: 8 });
 
   const staging = join(parentPath, `.${draftName}.flycut-${randomUUID()}.tmp`);
   const materials = join(staging, 'materials');
@@ -104,19 +156,24 @@ export async function generateJianyingDraft(options: GenerateJianyingOptions): P
   try {
     await mkdir(materials, { recursive: true, mode: 0o700 });
     assertNotAborted(options.signal);
-    await copyFile(options.sourcePath, stagingMedia);
+    await copySource(options.sourcePath, stagingMedia, sourceInfo.size, options.signal, report);
     assertNotAborted(options.signal);
+    report({ stage: 'hashing', progress: 57 });
     const sourceHash = await sha256(options.sourcePath, options.signal);
+    report({ stage: 'hashing', progress: 64 });
     const copiedHash = await sha256(stagingMedia, options.signal);
     if (sourceHash !== copiedHash) throw new Error('Copied media hash does not match source media');
+    const sourceAfterCopy = await stat(options.sourcePath); assertSourceRevision(sourceAfterCopy, options.expectedSource);
 
+    report({ stage: 'cover', progress: 70 });
     const ffmpeg = options.ffmpeg || process.env.FFMPEG_PATH || 'ffmpeg';
     await ffmpegArguments(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-y', '-ss', '0', '-i', options.sourcePath,
-      '-frames:v', '1', '-q:v', '4', join(staging, 'draft_cover.jpg')]);
+      '-frames:v', '1', '-q:v', '4', join(staging, 'draft_cover.jpg')], options.signal);
     assertNotAborted(options.signal);
     const cover = await readFile(join(staging, 'draft_cover.jpg'));
     if (cover.length < 4 || cover[0] !== 0xff || cover[1] !== 0xd8 || cover[2] !== 0xff) throw new Error('Cover generation did not produce a JPEG');
 
+    report({ stage: 'writing', progress: 80 });
     const timestampUs = (options.now ?? Date.now)() * 1000;
     const bundle = buildJianyingDraft({
       snapshot: options.snapshot, timestampUs, id: randomUUID,
@@ -129,15 +186,19 @@ export async function generateJianyingDraft(options: GenerateJianyingOptions): P
     await writeFile(join(staging, 'draft_meta_info.json'), bundle.metaText, 'utf8');
     assertNotAborted(options.signal);
 
+    report({ stage: 'verifying', progress: 87 });
     await verifyJianyingDirectory({ directory: staging, finalPath, snapshot: options.snapshot, sourcePath: options.sourcePath,
       expectedMediaName: mediaName, expectedMediaSha256: copiedHash, expectedMediaBytes: sourceInfo.size, signal: options.signal });
+    assertSourceRevision(await stat(options.sourcePath), options.expectedSource);
     await ensureAbsent(finalPath);
     assertNotAborted(options.signal);
+    report({ stage: 'committing', progress: 98 });
     await rename(staging, finalPath);
     committed = true;
+    report({ stage: 'committing', progress: 100 });
     return { draftName, draftPath: finalPath, contentPath: join(finalPath, 'draft_content.json'), mediaPath: finalMedia,
       mediaSha256: copiedHash, mediaBytes: sourceInfo.size, videoSegmentCount: deriveKept(options.snapshot.edl).length,
-      textSegmentCount: projectCues(options.snapshot.edl, options.snapshot.cues as Cue[]).filter(cue => cue.text.length > 0).length };
+      textSegmentCount: cues.length };
   } finally {
     if (!committed) await rm(staging, { recursive: true, force: true });
   }
@@ -193,7 +254,7 @@ export async function verifyJianyingDirectory(options: VerifyJianyingOptions): P
       || segment.target_timerange?.start !== range.outputStartUs || segment.target_timerange?.duration !== expectedDuration)
       throw new Error(`Video segment ${index} does not match the EDL`);
   }
-  const cues = projectCues(snapshot.edl, snapshot.cues as Cue[]).filter(cue => cue.text.length > 0);
+  const cues = assertNonOverlappingJianyingCues(snapshot);
   if (textTrack.segments.length !== cues.length) throw new Error('Text segment count does not match projected cues');
   const textMaterials = new Map((content.materials?.texts ?? []).map(material => [material.id, material]));
   for (const [index, cue] of cues.entries()) {
