@@ -108,6 +108,24 @@ ID 重试，成功后才清理。所有面板写操作和根快照加载都绑�
 6. 截图写入本需求 `screenshots/`，命令、窗口结果和失败项追加到本报告；外部真实 AI API 仍按
    `⏸ Not run` 记录，除非另有明确授权的产品配置。
 
+### 执行结果（2026-11-10）
+
+- `pnpm tauri:dev` 通过 `package:host`（31 个 Host 依赖及当前平台 Node）、FunASR sidecar
+  release 构建、FFmpeg/shared assets 检查、Vite 启动和 Cargo 编译；Cargo 415/415 完成，
+  进程进入 `Running target/debug/flycut-caption`。
+- 桌面 Host 启动失败：`target/debug/binaries/flycut-node` 加载
+  `@rpath/libnode.147.dylib` 失败，dyld 报 `Library not loaded`；已尝试的 bundle 相对路径
+  `target/debug/binaries/libnode.147.dylib` 与 `target/debug/binaries/../lib/libnode.147.dylib`
+  均不存在。Host 因此无法启动，AI 设置无法从真实桌面 Host 读取、保存、测试或重启复验。
+- UI 自动化随后遇到 `ScreenCaptureKit` 错误 `SCStreamErrorDomain Code=-3811`
+  （`Failed to start stream due to audio/video capture failure`）。按 bundle id 选择窗口时，
+  系统同时存在 debug 与旧安装包两个 `com.flycut.caption` 进程；无法证明绑定的是本次新启动的
+  debug 窗口。期间只打开并关闭了设置面板，没有保存、删除或修改任何配置，也不将该窗口计入通过。
+- 按“运行时因打包 Node/libnode 或自动驱动阻塞时保留错误并标注 Not run”的约束，没有继续修改
+  dyld 搜索路径、替换 Node/打包资源或绕过自动驱动。完整 Tauri 桌面流程仍为 `⏸ Not run`。
+- 验证结束后已停止本轮启动的 5173 Tauri/Vite、5179 Vite、5191 Host 和 5207 fixture；未触碰其他
+  worktree 或旧安装包进程。
+
 ## 结论
 
 本地实现、Host 架构、UI 矩阵和 macOS 凭据后端均已通过，未发现需要修复的代码问题。
