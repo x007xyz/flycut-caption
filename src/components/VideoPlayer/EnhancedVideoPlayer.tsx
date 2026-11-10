@@ -361,6 +361,7 @@ export const EnhancedVideoPlayer = forwardRef<EnhancedVideoPlayerRef, EnhancedVi
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target !== document.body) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
 
       switch (e.code) {
         case 'Space':

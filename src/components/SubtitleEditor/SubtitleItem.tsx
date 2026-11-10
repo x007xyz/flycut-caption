@@ -1,16 +1,20 @@
 // 字幕项组件 - Aimu 风格
 
-import { useCallback, useState, useEffect, useRef } from 'react';
+import { useCallback, useState, useEffect, useRef, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import type { SubtitleChunk } from '@/types/subtitle';
 import { Trash2, RotateCcw, Plus, SplitSquareHorizontal } from 'lucide-react';
 import { useUpdate, useDelete } from '@/stores/historyStore';
 import { useAppStore } from '@/stores/appStore';
 import { useTranslation } from '@/contexts/LocaleProvider';
+import { findCopy } from '@/locales/findReplace';
+import type { FindMatch } from '../../../shared/text/findReplace';
 
 interface SubtitleItemProps {
   chunk: SubtitleChunk;
   index: number;
+  findMatches?: FindMatch[];
+  findActive?: boolean;
   isSelected: boolean;
   isCurrent: boolean;
   isActive: boolean;
@@ -40,10 +44,13 @@ export function SubtitleItem(props: SubtitleItemProps) {
     onSeekTo,
     className,
     isSelected,
-    onToggleSelection
+    onToggleSelection,
+    findMatches,
+    findActive,
   } = props;
   
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
+  const findText = findCopy(language);
   const update = useUpdate();
   const deleteChunk = useDelete();
   const displayMode = useAppStore(state => state.display);
@@ -114,6 +121,7 @@ export function SubtitleItem(props: SubtitleItemProps) {
   }, [chunk.id, secondText, chunk.secondText, update]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.nativeEvent.isComposing) return;
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       (e.target as HTMLTextAreaElement).blur(); // 触发 blur 保存
@@ -121,6 +129,28 @@ export function SubtitleItem(props: SubtitleItemProps) {
   }, []);
 
   const duration = (chunk.timestamp[1] - chunk.timestamp[0]).toFixed(1);
+
+  const findSnippet = findMatches?.length ? (
+    <div className="mb-1 rounded border border-amber-400/40 bg-amber-400/10 px-2 py-1" data-testid="find-snippet">
+      <span className="mr-1 text-[10px] font-medium text-aimu-text-muted">{findText.snippet}</span>
+      <span className="text-xs text-aimu-text-secondary">
+        {findMatches.reduce<ReactNode[]>((parts, match, index) => {
+          const cursor = index === 0 ? 0 : findMatches[index - 1].end;
+          parts.push(chunk.text.slice(cursor, match.start));
+          parts.push(
+            <mark
+              key={`${match.start}-${match.end}`}
+              aria-label={findText.matchLabel.replace('{text}', match.text)}
+              className="rounded-sm bg-amber-300/70 px-0.5 text-aimu-text-primary"
+            >
+              {chunk.text.slice(match.start, match.end)}
+            </mark>,
+          );
+          return parts;
+        }, []).concat(chunk.text.slice(findMatches.at(-1)?.end ?? 0))}
+      </span>
+    </div>
+  ) : null;
 
   // 空白占位段：紧凑渲染
   if (chunk.isBlankSpacer) {
@@ -167,11 +197,14 @@ export function SubtitleItem(props: SubtitleItemProps) {
 
   return (
     <div
+      data-chunk-id={chunk.id}
+      aria-current={findActive ? 'true' : undefined}
       className={cn(
         'group flex items-stretch border-b border-aimu-border-light hover:bg-aimu-hover transition-colors bg-transparent min-h-[104px] cursor-pointer',
         isCurrent && 'aimu-row-active',
         !isActive && 'opacity-60',
         isSelected && 'bg-aimu-hover/50',
+        findActive && 'ring-1 ring-inset ring-amber-400/70 bg-amber-400/5',
         className
       )}
       onClick={handleChunkClick}
@@ -223,6 +256,7 @@ export function SubtitleItem(props: SubtitleItemProps) {
       {/* 右侧：双语文本编辑列 (flex-1) */}
       <div className="flex-1 flex flex-col justify-center py-2 px-4">
         {chunk.speaker && <span className="text-[11px] text-aimu-text-muted">{chunk.speaker}</span>}
+        {findSnippet}
         {/* 主字幕输入框 */}
         {(displayMode === 'Bilingual' || displayMode === 'Main') && (
           <div className={cn('flex-1 flex', isExpanded ? 'items-start' : 'items-center')}>

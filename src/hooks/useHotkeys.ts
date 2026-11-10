@@ -33,6 +33,7 @@ export function useHotkeys(options: UseHotkeysOptions = {}) {
 
     // 撤销操作 - Ctrl+Z (Windows) / Cmd+Z (Mac)
     hotkeys('ctrl+z,cmd+z', { scope }, (event) => {
+      if (isTextEditing(event)) return;
       event.preventDefault();
       if (canUndo) {
         undo();
@@ -44,6 +45,7 @@ export function useHotkeys(options: UseHotkeysOptions = {}) {
 
     // 重做操作 - Ctrl+Y (Windows) / Cmd+Shift+Z (Mac) / Ctrl+Shift+Z (Windows)
     hotkeys('ctrl+y,cmd+shift+z,ctrl+shift+z', { scope }, (event) => {
+      if (isTextEditing(event)) return;
       event.preventDefault();
       if (canRedo) {
         redo();
@@ -75,6 +77,13 @@ export function useHotkeys(options: UseHotkeysOptions = {}) {
       },
     },
   };
+}
+
+/** Native text undo and IME composition must win while an editor has focus. */
+function isTextEditing(event: KeyboardEvent) {
+  if (event.isComposing) return true;
+  const target = event.target as HTMLElement | null;
+  return !!target?.closest('input, textarea, [contenteditable="true"]');
 }
 
 // 格式化快捷键显示

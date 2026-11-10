@@ -6,8 +6,10 @@ import { CutHistoryPanel } from './CutHistoryPanel';
 import { cn } from '@/lib/utils';
 import { SubtitleList } from './SubtitleList';
 import { OriginalEditor } from './OriginalEditor';
+import { FindReplaceBar } from './FindReplaceBar';
+import { useFindReplace } from '@/hooks/useFindReplace';
 import { useTranslation } from '@/contexts/LocaleProvider';
-import { useState, type RefObject } from 'react';
+import { useEffect, useState, type RefObject } from 'react';
 import type { EnhancedVideoPlayerRef } from '@/components/VideoPlayer/EnhancedVideoPlayer';
 import type { ASRProgress } from '@/types/subtitle';
 import { Scissors, Languages, AlertCircle } from 'lucide-react';
@@ -31,10 +33,24 @@ export function SubtitleEditorPanel({
 }: SubtitleEditorPanelProps) {
   const { t } = useTranslation();
   const [view, setView] = useState<SubtitleEditorView>('processed');
+  const find = useFindReplace();
+  const openFind = find.openFind;
   const wordChunks = useWordChunks();
   const updating = useHistoryStore(s => s.updatingCuts);
   const hasWordTimestamps = useHasWordTimestamps();
   const originalModeAvailable = canDeleteByWordAtRuntime({ hasWordTimestamps, wordChunks });
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== 'f' || event.shiftKey || event.altKey) return;
+      if (!(event.metaKey || event.ctrlKey) || event.isComposing) return;
+      event.preventDefault();
+      if (view === 'original') setView('processed');
+      openFind();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [openFind, view]);
 
   return (
     <div className={cn('flex flex-col h-full', className)}>
@@ -73,9 +89,11 @@ export function SubtitleEditorPanel({
       </div>
 
       <CutHistoryPanel />
+      <FindReplaceBar find={find} />
       <div className="flex-1 overflow-hidden" inert={updating}>
         {view === 'processed' ? (
           <SubtitleList
+            find={find}
             videoPlayerRef={videoPlayerRef}
             isASRLoading={isASRLoading}
             asrProgress={asrProgress}

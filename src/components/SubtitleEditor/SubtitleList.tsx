@@ -1,7 +1,7 @@
 import { edlCopy } from '@/locales/edl';
 // 字幕列表组件
 
-import { useCallback, useMemo, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useMemo, useState, type RefObject } from 'react';
 import { cn } from '@/lib/utils';
 import { useHistoryStore, useChunks, useHistoryText, useHistoryLanguage, useHistoryDuration, useCanUndo, useCanRedo, useUndo, useRedo } from '@/stores/historyStore';
 import { useAppStore } from '@/stores/appStore';
@@ -22,9 +22,12 @@ import {
 } from '@/components/ui/select';
 import { COMMON_LANGUAGES } from '@/constants/languages';
 import { useAI } from '@/hooks/useAI';
+import type { FindReplaceActions, FindReplaceState } from '@/hooks/useFindReplace';
+import type { FindMatch } from '../../../shared/text/findReplace';
 
 interface SubtitleListProps {
   className?: string;
+  find?: FindReplaceState & FindReplaceActions;
   currentTime?: number;
   isPlaying?: boolean;
   onSeek?: (time: number) => void;
@@ -38,6 +41,7 @@ interface SubtitleListProps {
 
 export function SubtitleList({
   className,
+  find,
   videoPlayerRef,
   isASRLoading,
   asrProgress,
@@ -84,6 +88,23 @@ export function SubtitleList({
   const videoDuration = useAppStore(state => state.videoPlayerState.duration);
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const findMatchesByChunk = useMemo(() => {
+    const byChunk = new Map<string, FindMatch[]>();
+    for (const match of find?.matches ?? []) {
+      const list = byChunk.get(match.chunkId) ?? [];
+      list.push(match);
+      byChunk.set(match.chunkId, list);
+    }
+    return byChunk;
+  }, [find?.matches]);
+
+  const activeFindChunkId = find?.matches[find.current]?.chunkId;
+  useEffect(() => {
+    if (!activeFindChunkId) return;
+    const row = document.querySelector(`[data-chunk-id="${activeFindChunkId}"]`);
+    row?.scrollIntoView({ block: 'center' });
+  }, [activeFindChunkId]);
 
   const seekTo = useCallback((time: number) => {
     setCurrentTime(time);
@@ -374,6 +395,8 @@ export function SubtitleList({
                 key={chunk.id}
                 chunk={chunk}
                 index={index}
+                findMatches={findMatchesByChunk.get(chunk.id)}
+                findActive={activeFindChunkId === chunk.id}
                 isActive={isActive}
                 isCurrent={isCurrent}
                 isSelected={isSelected}
