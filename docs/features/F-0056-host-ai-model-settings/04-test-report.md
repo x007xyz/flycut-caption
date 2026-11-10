@@ -78,6 +78,36 @@ ID 重试，成功后才清理。所有面板写操作和根快照加载都绑�
 - `cargo check` 首次因 `src-tauri/host/**/*` 未生成而失败；运行 `pnpm package:host` 后通过。
 - 未发现明文 Key 出现在 RPC、job、普通元数据或加密文件的可读内容中。
 
+## 完整 Tauri 补测准备（2026-11-10）
+
+按协调要求，F-0017 正在占用前台完成 Tauri 五次基准；本需求没有并行启动 Tauri 窗口，也没有把
+构建中断前的阶段计入通过。补测以 `a9b3ba2`（本报告更新前 HEAD）的代码为准。
+
+本地前置检查：
+
+- `127.0.0.1:5179` 为当前 worktree 的 Vite 服务，`/__flycut/connection` 返回 HTTP 200。
+- `127.0.0.1:5191` 为当前 worktree 的 Host；无凭据访问根路由返回预期的 HTTP 401，发现文件与
+  RPC 使用 Host 生成的 token，报告和日志不记录 token。
+- 原桌面 WebKit 数据的三个 origin 中，旧 `app-settings.aiModels` 均为空；Tauri 应用数据中也没有
+  旧 AI 配置元数据，因此首次进入应验证真实空态，而不伪造迁移卡片。
+- `pnpm tauri:dev` 已完成 `package:host`（31 个 Host 依赖及当前平台 Node）、
+  `build:funasr-sidecar` release 构建和 FFmpeg/shared assets 前置检查；开发 Vite 已启动，Cargo
+  在窗口启动前按前台协调中止。此项只记为 `⏸ Not run`，不是构建通过。
+- 已准备仅监听 `127.0.0.1:5207` 的 OpenAI 兼容 fixture，使用独立本地测试 Key；fixture 位于
+  `/private/tmp/f0056-ai-fixture.mjs`，不进入仓库，也不读取 Codex/OpenCode 或其他产品凭据。
+
+前台释放后的完整桌面步骤：
+
+1. 重新运行 `pnpm tauri:dev` 并确认构建完成、桌面窗口实际打开。
+2. 记录 AI 设置的真实空态与当前 Host identity；确认页面、已有项目入口和字幕编辑仍可用。
+3. 通过窗口新增本地 fixture 配置，保存后确认列表只显示“已配置 Key”，RPC 和页面均不回显 Key。
+4. 点击测试连接，确认本地 fixture 的 `/v1/models` 返回 200；随后只检查 macOS Keychain 条目
+   的元信息，不读取或输出密钥。
+5. 关闭并重新打开 Tauri，确认同一配置、模型和遮罩状态仍由 Host 读取；再删除测试配置并确认
+   列表恢复空态。
+6. 截图写入本需求 `screenshots/`，命令、窗口结果和失败项追加到本报告；外部真实 AI API 仍按
+   `⏸ Not run` 记录，除非另有明确授权的产品配置。
+
 ## 结论
 
 本地实现、Host 架构、UI 矩阵和 macOS 凭据后端均已通过，未发现需要修复的代码问题。
