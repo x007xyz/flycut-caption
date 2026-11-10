@@ -4,8 +4,10 @@ import { ChevronDown, Download, FileText, Github, Keyboard, Link2, Loader2, Play
 import { useTranslation, useLocale } from '@/contexts/LocaleProvider';
 import { useAppStore } from '@/stores/appStore';
 import { useChunks, useHistoryStore } from '@/stores/historyStore';
+import { useHostReady } from '@/runtime/connectionHooks';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { MessageCenterButton } from '@/components/MessageCenter';
+import { ConnectionStatus } from '@/components/Connection';
 import { LanguageSelector } from '@/components/LanguageSelector';
 import { BrandLogo } from '@/components/BrandLogo';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
@@ -36,6 +38,7 @@ export function WorkstationHeader({ media, mergedConfig, onLanguageChange, onOpe
   const videoFile = useAppStore(state => state.videoFile);
   const chunks = useChunks();
   const cutsBlocked = useHistoryStore(s => !!s.cutError || s.updatingCuts || (!!s.edl && s.duration === 0));
+  const hostReady = useHostReady();
   const { uploadInputRef, urlInput, setUrlInput, isUrlLoading, urlLoadProgress, isFileLoading, fileLoadProgress, isSampleLoading, sampleLoadProgress, isMediaLoading, handleLoadSampleVideo, handleNativeFileSelect, handleUploadClick, handleUrlLoad } = media;
 
   return (
@@ -72,7 +75,7 @@ export function WorkstationHeader({ media, mergedConfig, onLanguageChange, onOpe
             />
             <button
               onClick={handleUploadClick}
-              disabled={isMediaLoading}
+              disabled={isMediaLoading || !hostReady}
               className="flex w-full flex-col items-center justify-center rounded border border-dashed border-aimu-border bg-aimu-input px-3 py-4 text-center transition-colors hover:bg-aimu-hover disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isFileLoading ? (
@@ -119,7 +122,7 @@ export function WorkstationHeader({ media, mergedConfig, onLanguageChange, onOpe
                 type="button"
                 data-testid="create-url-load"
                 onClick={() => void handleUrlLoad()}
-                disabled={!urlInput.trim() || isUrlLoading}
+                disabled={!urlInput.trim() || isUrlLoading || !hostReady}
                 className="flex h-8 shrink-0 items-center justify-center gap-1.5 rounded border border-aimu-coral/35 bg-aimu-red-bg px-3 text-xs font-medium text-aimu-coral transition-colors hover:bg-aimu-coral/15 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isUrlLoading ? (
@@ -139,7 +142,7 @@ export function WorkstationHeader({ media, mergedConfig, onLanguageChange, onOpe
               type="button"
               data-testid="create-sample-load"
               onClick={() => void handleLoadSampleVideo()}
-              disabled={isSampleLoading || isUrlLoading}
+              disabled={isSampleLoading || isUrlLoading || !hostReady}
               className="mt-3 flex w-full items-center justify-center gap-2 rounded border border-aimu-coral/35 bg-aimu-red-bg px-3 py-2 text-xs font-medium text-aimu-coral transition-colors hover:bg-aimu-coral/15 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isSampleLoading ? (
@@ -171,7 +174,7 @@ export function WorkstationHeader({ media, mergedConfig, onLanguageChange, onOpe
           <DropdownMenuContent align="end">
             <DropdownMenuItem
               onClick={onOpenVideoExport}
-              disabled={!videoFile || cutsBlocked}
+              disabled={!videoFile || cutsBlocked || !hostReady}
               className="flex items-center gap-2"
             >
               <Video className="w-4 h-4" />
@@ -179,7 +182,7 @@ export function WorkstationHeader({ media, mergedConfig, onLanguageChange, onOpe
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={onOpenSubtitleExport}
-              disabled={chunks.length === 0 || cutsBlocked}
+              disabled={chunks.length === 0 || cutsBlocked || !hostReady}
               className="flex items-center gap-2"
             >
               <FileText className="w-4 h-4" />
@@ -190,7 +193,7 @@ export function WorkstationHeader({ media, mergedConfig, onLanguageChange, onOpe
 
         <button
           onClick={onSmartCutBlank}
-          disabled={chunks.length === 0 || cutsBlocked}
+          disabled={chunks.length === 0 || cutsBlocked || !hostReady}
           className="flex items-center space-x-1.5 text-sm font-medium hover:text-primary transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
           title={t('components.workstation.smartCutBlankTitle')}
         >
@@ -234,6 +237,7 @@ export function WorkstationHeader({ media, mergedConfig, onLanguageChange, onOpe
           <ThemeToggle variant="button" />
         )}
 
+        <ConnectionStatus />
         <MessageCenterButton />
         <button
           onClick={() => onOpenSettings()}

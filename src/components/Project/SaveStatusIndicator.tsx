@@ -1,6 +1,6 @@
 // 顶栏的保存状态（F-0002 AC-3、AC-4、AC-9）。只负责展示。
 import { useEffect, useState } from 'react';
-import { AlertTriangle, Check, CircleDot, Loader2, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Check, CircleDot, Loader2, RefreshCw, WifiOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { SaveStatus } from './types';
 import { fill, formatRelativeTime } from './format';
@@ -33,6 +33,13 @@ export function SaveStatusIndicator({ status, savedAt, now, shortcut = '⌘S', o
   const hidden = status === 'saved' && fadeAfterMs !== undefined && faded === (savedAt ?? '');
   const base = 'inline-flex h-7 flex-shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-2 text-xs transition-colors';
 
+  if (status === 'offline') {
+    return (
+      <span className={cn(base, 'bg-amber-500/10 text-amber-700 dark:text-amber-400', className)} role="status" title={tp('saveOfflineHint')}>
+        <WifiOff className="h-3.5 w-3.5" />{tp('saveOffline')}
+      </span>
+    );
+  }
   if (status === 'failed') {
     return (
       <button type="button" onClick={onRetry} className={cn(base, 'bg-aimu-red-bg text-aimu-coral hover:opacity-90', className)} role="status">

@@ -5,6 +5,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { SaveStatusIndicator, type SaveStatusIndicatorProps } from './SaveStatusIndicator';
 import type { VideoTranscriptStatus } from './types';
 import { useProjectText } from './useProjectText';
+import { useHostReady } from '@/runtime/connectionHooks';
 
 export interface BreadcrumbVideo { id: string; name: string; status: VideoTranscriptStatus; mediaMissing?: boolean }
 
@@ -27,6 +28,7 @@ export interface ProjectBreadcrumbProps extends SaveStatusIndicatorProps {
 
 export function ProjectBreadcrumb({ projectName, videoName, onBack, onOpenProject, videos = [], currentVideoId, switchingVideoId, transcribing, onSwitchVideo, ...save }: ProjectBreadcrumbProps) {
   const { tp } = useProjectText();
+  const hostReady = useHostReady();
   const current = videos.find(video => video.id === currentVideoId);
   const multi = videos.length > 1;
   const statusText = (video: BreadcrumbVideo) => video.mediaMissing ? tp('mediaMissing')
@@ -55,14 +57,14 @@ export function ProjectBreadcrumb({ projectName, videoName, onBack, onOpenProjec
                 <DropdownMenuContent align="start" className="min-w-64">
                   {videos.map(video => {
                     const selected = video.id === currentVideoId;
-                    const blocked = !selected && !!transcribing;
+                    const blocked = !selected && (!!transcribing || !hostReady);
                     return (
                       <DropdownMenuItem key={video.id} disabled={blocked} title={blocked ? tp('switchBlocked') : undefined}
                         onSelect={() => { if (!selected && !blocked) onSwitchVideo(video.id); }} className="flex items-start gap-2 data-[disabled]:pointer-events-auto">
                         <Check className={`mt-0.5 h-3.5 w-3.5 flex-shrink-0 ${selected ? 'opacity-100' : 'opacity-0'}`} aria-hidden={!selected} />
                         <span className="min-w-0 flex-1">
                           <span className="block truncate">{video.name}</span>
-                          <span className="block text-xs text-muted-foreground">{blocked ? tp('switchBlocked') : statusText(video)}</span>
+                          <span className="block text-xs text-muted-foreground">{blocked ? (hostReady ? tp('switchBlocked') : tp('offlineAction')) : statusText(video)}</span>
                         </span>
                       </DropdownMenuItem>
                     );

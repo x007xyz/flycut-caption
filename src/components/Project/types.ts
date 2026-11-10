@@ -44,5 +44,6 @@ export type ProjectsSort = 'updated' | 'created' | 'name';
  * - saving：正在写入
  * - failed：写入失败，自动重试中
  * - conflict：版本冲突，自动保存已暂停
+ * - offline：连接断开，修改只在本机
  */
-export type SaveStatus = 'saved' | 'pending' | 'saving' | 'failed' | 'conflict';
+export type SaveStatus = 'saved' | 'pending' | 'saving' | 'failed' | 'conflict' | 'offline';

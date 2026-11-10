@@ -1,7 +1,8 @@
 import { Context } from '@deepseek-ai/cordis';
 import type { ComponentType } from 'react';
 import type { FlyCutCaptionProps } from '../types';
-import { connectionPlugin, type HostConnectionOptions } from './connection';
+import { connectionPlugin, type RemoteConnection } from './connection';
+import type { HostConnectionOptions, HostSessionService } from './connectionModel';
 import { EnhancedVideoPlayer } from '../components/VideoPlayer/EnhancedVideoPlayer';
 import { SubtitleEditorPanel } from '../components/SubtitleEditor/SubtitleEditorPanel';
 import { ASRSettingsPanel } from '../components/ProcessingPanel/ASRSettingsPanel';
@@ -13,6 +14,8 @@ import { VideoEngineRegistry } from '../services/videoEngines/VideoEngineFactory
 import { createAppStore } from '../stores/appStore';
 import { createHistoryStore } from '../stores/historyStore';
 import { createProjectStore } from '../stores/projectStore';
+import { createConnectionStore, type ConnectionState } from '../stores/connectionStore';
+import type { StoreApi } from 'zustand/vanilla';
 
 /**
  * Typed UI extension points. `shell`, `player` and `subtitle-editor` are exclusive slots;
@@ -70,12 +73,12 @@ export function uiPlugin<K extends keyof UISlots>(name: string, slot: K, compone
 }
 
 /** Business state lives in the Context: two FlyCut instances on one page do not share a timeline or history. */
-export const storesPlugin = { name: 'flycut-stores', apply(ctx: Context) {
+export function storesPlugin(connection: StoreApi<ConnectionState> = createConnectionStore()) { return { name: 'flycut-stores', apply(ctx: Context) {
   const app = createAppStore();
-  ctx.provide('stores', { app, history: createHistoryStore(), project: createProjectStore() });
+  ctx.provide('stores', { app, history: createHistoryStore(), project: createProjectStore(), connection });
   // Per-instance migration and device detection (formerly a root-level StoreInitializer).
   void app.getState().initialize();
-} };
+} }; }
 
 /** Client services are scoped to one Context and its connection; nothing is a module singleton. */
 export const asrClientPlugin = { name: 'flycut-asr-client', inject: ['connection'], apply(ctx: Context) {
@@ -93,10 +96,35 @@ export const hostExportEnginePlugin = { name: 'flycut-host-export-engine', injec
   const connection = ctx.connection;
   ctx.effect(() => ctx.videoEngines.register('host', () => new HostExportEngine(connection)));
 } };
-export async function createClientRuntime(options: HostConnectionOptions, shell: UISlots['shell'], plugins: object[] = []) {
+export interface EstablishedRuntime { connection: RemoteConnection; session?: HostSessionService }
+
+/**
+ * The session controller owns an established connection. A runtime may unmount (React StrictMode, host remount)
+ * without closing the transport that other runtimes and the reconnect state machine still use.
+ */
+function borrowedConnection(connection: RemoteConnection): RemoteConnection {
+  return new Proxy(connection, {
+    get(target, property) {
+      if (property === 'close') return () => undefined;
+      const value = Reflect.get(target, property, target) as unknown;
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+}
+
+export async function createClientRuntime(options: HostConnectionOptions | EstablishedRuntime, shell: UISlots['shell'], plugins: object[] = []) {
   const ctx = new Context();
+  const established = 'connection' in options ? options : undefined;
+  const connectionStore = createConnectionStore(established?.session?.snapshot());
+  const updateConnection = () => { if (established?.session) connectionStore.setState(established.session.snapshot(), true); };
+  const connectionStorePlugin = { name: 'flycut-connection-store', apply(inner: Context) {
+    if (!established?.session) return;
+    inner.effect(() => { updateConnection(); return established.session!.subscribe(updateConnection); });
+  } };
+  const connectionInput = established ? borrowedConnection(established.connection) : options as HostConnectionOptions;
   try {
-    for (const plugin of [uiRegistryPlugin, storesPlugin, connectionPlugin(options), asrClientPlugin, aiClientPlugin,
+    for (const plugin of [uiRegistryPlugin, storesPlugin(connectionStore), connectionStorePlugin,
+      connectionPlugin(connectionInput, { session: established?.session }), asrClientPlugin, aiClientPlugin,
       videoEngineRegistryPlugin, hostExportEnginePlugin,
       uiPlugin('flycut-editor-shell', 'shell', shell),
       uiPlugin('flycut-player-ui', 'player', EnhancedVideoPlayer),

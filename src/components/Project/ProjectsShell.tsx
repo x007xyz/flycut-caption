@@ -1,6 +1,7 @@
 // 项目页面的外框：左侧导航 + 内容区。编辑器页面不用这个外框（编辑器自带顶栏）。
 import { FolderKanban, HelpCircle, Settings, Trash2 } from 'lucide-react';
 import { BrandLogo } from '@/components/BrandLogo';
+import { ConnectionStatus } from '@/components/Connection';
 import { cn } from '@/lib/utils';
 import { useProjectText } from './useProjectText';
 
@@ -36,6 +37,7 @@ export function ProjectsShell({ version, toolbar, onOpenSettings, onOpenHelp, ac
           )}
         </nav>
         <div className="space-y-0.5 border-t border-border px-2 py-2">
+          <div className="px-1 pb-2"><ConnectionStatus /></div>
           {onOpenHelp && <button type="button" className={item(false)} onClick={onOpenHelp}><HelpCircle className="h-4 w-4" />{tp('navHelp')}</button>}
           <button type="button" className={item(false)} onClick={onOpenSettings}><Settings className="h-4 w-4" />{tp('navSettings')}</button>
         </div>

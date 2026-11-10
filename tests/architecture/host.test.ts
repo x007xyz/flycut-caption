@@ -51,7 +51,7 @@ async function setup(providers: Plugin[] = [mockProvider]) {
 test('HTTP authentication and WebSocket snapshots; LangGraph executes ASR and pause analysis', async () => {
   const host = await setup();
   const events: any[] = [];
-  const ws = new WebSocket(`${host.base.replace('http', 'ws')}/events?token=test-credential`);
+  const ws = new WebSocket(`${host.base.replace('http', 'ws')}/events`, { headers: { Authorization: 'Bearer test-credential' } });
   ws.on('message', data => events.push(JSON.parse(String(data))));
   try {
     assert.equal((await fetch(`${host.base}/rpc`, { method: 'POST' })).status, 401);
@@ -198,7 +198,7 @@ test('Export plugin runs FFmpeg as a cancellable Host job and returns an asset',
 test('plugins register RPC methods, expose events and contribute capabilities without touching the Gateway', async () => {
   const host = await setup();
   const frames: any[] = [];
-  const ws = new WebSocket(`${host.base.replace('http', 'ws')}/events?token=test-credential`);
+  const ws = new WebSocket(`${host.base.replace('http', 'ws')}/events`, { headers: { Authorization: 'Bearer test-credential' } });
   ws.on('message', data => frames.push(JSON.parse(String(data))));
   await new Promise(resolve => ws.once('open', resolve));
   try {
@@ -218,7 +218,7 @@ test('plugins register RPC methods, expose events and contribute capabilities wi
     assert.ok(!frames.some(frame => frame.name === 'internal/unexposed'));
     await fiber.dispose();
     await assert.rejects(host.call('echo.say', { text: 'hi' }), /Unknown RPC method/);
-    assert.deepEqual((await host.call('host.info')).capabilities, { export: true, projects: true, 'projects.linkedMedia': true });
+    assert.deepEqual((await host.call('host.info')).capabilities, { export: true, projects: true, 'projects.linkedMedia': true, browserSession: true, cookieMedia: true });
     assert.ok(!(await host.call('host.info')).events.includes('vendor/ping'));
   } finally { ws.terminate(); await host.close(); }
 });
@@ -268,7 +268,7 @@ test('Agent streams messages as remote events and policy plugins can intercept t
   await new Promise<void>(resolve => model.listen(0, '127.0.0.1', resolve));
   const host = await setup();
   const frames: any[] = [];
-  const ws = new WebSocket(`${host.base.replace('http', 'ws')}/events?token=test-credential`);
+  const ws = new WebSocket(`${host.base.replace('http', 'ws')}/events`, { headers: { Authorization: 'Bearer test-credential' } });
   ws.on('message', data => frames.push(JSON.parse(String(data))));
   await new Promise(resolve => ws.once('open', resolve));
   try {
@@ -513,7 +513,10 @@ test('Host serves the built frontend, a same-origin bootstrap and configured ori
     assert.equal((await rawGet(`${url}/assets/${crypto.randomUUID()}`)).status, 401);
 
     const bootstrap = await rawGet(`${url}/__flycut/connection`);
-    assert.equal(bootstrap.status, 200); assert.deepEqual(JSON.parse(bootstrap.body), { token: 'web-token' });
+    assert.equal(bootstrap.status, 200);
+    const bootstrapBody = JSON.parse(bootstrap.body);
+    assert.equal(bootstrapBody.auth, 'session'); assert.equal(typeof bootstrapBody.csrf, 'string'); assert.equal(bootstrapBody.token, undefined);
+    assert.match(String(bootstrap.headers['set-cookie']), /flycut_session=/); assert.match(String(bootstrap.headers['set-cookie']), /HttpOnly/);
     assert.equal((await rawGet(`${url}/__flycut/connection`, { host: `evil.example:${port}` })).status, 403, 'DNS rebinding Host header');
     assert.equal((await rawGet(`${url}/__flycut/connection`, { origin: 'https://evil.example' })).status, 403);
     assert.equal((await rawGet(`${url}/__flycut/connection`, { host: 'flycut.example.com', origin: 'https://flycut.example.com' })).status, 200);

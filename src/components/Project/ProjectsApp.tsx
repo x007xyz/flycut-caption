@@ -419,6 +419,7 @@ function EditorGuards() {
         onDiscard={() => { void projects.resolveDeleted('discard', ''); }} />
       <UnsavedChangesDialog open={!!unsavedDialog} retrying={unsavedDialog?.retrying}
         onRetry={() => { void projects.resolveUnsaved('retry'); }} onDiscard={() => { void projects.resolveUnsaved('discard'); }}
+        keepLabel={unsavedDialog?.keep ? tp('unsavedKeep') : undefined} onKeep={unsavedDialog?.keep ? () => { void projects.resolveUnsaved('keep'); } : undefined}
         onCancel={() => { void projects.resolveUnsaved('cancel'); }} />
     </>
   );

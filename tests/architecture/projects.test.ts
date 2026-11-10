@@ -79,7 +79,13 @@ test('F-0002/AC-5 AC-6: reopening after a Host restart returns the saved transcr
 
     const media = `${url()}${opened.media.playback.path}`;
     assert.equal((await fetch(media)).status, 401, 'media needs the client token');
-    const full = await fetch(`${media}?token=${TOKEN}`);
+    // F-0014 desktop/dev local-bearer exception: <video src> can only carry the token in the URL.
+    const viaQuery = await fetch(`${media}?token=${TOKEN}`, { headers: { Range: 'bytes=2-5' } });
+    assert.equal(viaQuery.status, 206);
+    assert.equal(viaQuery.headers.get('content-range'), 'bytes 2-5/10');
+    assert.equal(await viaQuery.text(), '2345');
+    assert.equal((await fetch(`${media}?token=wrong`)).status, 401, 'wrong query token is rejected');
+    const full = await fetch(media, { headers: { Authorization: `Bearer ${TOKEN}` } });
     assert.equal(full.headers.get('accept-ranges'), 'bytes'); assert.equal(await full.text(), '0123456789');
     const part = await fetch(media, { headers: { Authorization: `Bearer ${TOKEN}`, Range: 'bytes=2-5' } });
     assert.equal(part.status, 206); assert.equal(part.headers.get('content-range'), 'bytes 2-5/10'); assert.equal(await part.text(), '2345');

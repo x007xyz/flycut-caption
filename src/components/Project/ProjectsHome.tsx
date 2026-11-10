@@ -11,6 +11,7 @@ import { ProjectActionsMenu } from './ProjectActionsMenu';
 import { Thumbnail } from './Thumbnail';
 import { formatDuration, formatRelativeTime } from './format';
 import { useProjectText } from './useProjectText';
+import { useHostReady } from '@/runtime/connectionHooks';
 
 export interface ProjectsHomeProps {
   status: LoadStatus;
@@ -45,6 +46,7 @@ export function ProjectsHome(props: ProjectsHomeProps) {
   const { status, projects, totalCount, query, onQueryChange, view, onViewChange, sort, onSortChange, openingId, creating, now, onOpen, onFilesDropped, onChooseFile, onUseSample, onCreateEmpty, onRetry, onRename, onDelete, dragActive } = props;
   const { t, tp } = useProjectText();
   const [dragging, setDragging] = useState(false);
+  const hostReady = useHostReady();
   const depth = useRef(0);
 
   return (
@@ -66,9 +68,9 @@ export function ProjectsHome(props: ProjectsHomeProps) {
             <p className="mt-1 text-xs text-muted-foreground">{tp('dropHint')}</p>
           </div>
           <div className="flex flex-shrink-0 items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={onUseSample} disabled={creating}><Play className="h-3.5 w-3.5" />{tp('useSample')}</Button>
-            {onCreateEmpty && <Button variant="outline" size="sm" onClick={onCreateEmpty} disabled={creating}><FolderPlus className="h-3.5 w-3.5" />{tp('newEmpty')}</Button>}
-            <Button size="sm" onClick={onChooseFile} disabled={creating}><Upload className="h-3.5 w-3.5" />{tp('chooseFile')}</Button>
+            <Button variant="ghost" size="sm" onClick={onUseSample} disabled={creating || !hostReady}><Play className="h-3.5 w-3.5" />{tp('useSample')}</Button>
+            {onCreateEmpty && <Button variant="outline" size="sm" onClick={onCreateEmpty} disabled={creating || !hostReady}><FolderPlus className="h-3.5 w-3.5" />{tp('newEmpty')}</Button>}
+            <Button size="sm" onClick={onChooseFile} disabled={creating || !hostReady}><Upload className="h-3.5 w-3.5" />{tp('chooseFile')}</Button>
           </div>
         </section>
 

@@ -14,6 +14,11 @@ export interface HttpRoute {
   method: 'GET' | 'POST';
   pattern: RegExp;
   auth: 'client' | 'shell';
+  /**
+   * Desktop/dev local-bearer exception: `<video src>` cannot set an Authorization header, so this
+   * read-only route may also accept `?token=`. Keep it off for writes and generic RPC.
+   */
+  queryToken?: boolean;
   handle(req: IncomingMessage, res: ServerResponse, match: RegExpMatchArray): Promise<void>;
 }
 

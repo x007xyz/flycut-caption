@@ -94,7 +94,7 @@ export interface ProjectState {
   /** 版本冲突对话框是否打开（AC-25） */
   conflictDialog: boolean;
   /** 未保存离开的对话框（AC-24）；`retrying` 时三个按钮都不可点 */
-  unsavedDialog: { retrying: boolean } | null;
+  unsavedDialog: { retrying: boolean; keep?: boolean } | null;
   /** 首页排序（F-0003 AC-6），界面偏好，存在本机 */
   sort: ProjectsSort;
   detail: ProjectDetailState | null;

@@ -1,8 +1,10 @@
 // 端到端测试用的假 Host：拦截连接引导、RPC 和事件流，按方法名返回测试给的结果。
 // 只用来构造界面状态（加载中、出错、冲突……）；Host 自身的行为由 tests/architecture 覆盖。
-import type { Page, Route } from '@playwright/test';
+import type { Page, Route, WebSocketRoute } from '@playwright/test';
 
 export const MOCK_HOST = 'http://127.0.0.1:8799';
+export const MOCK_HOST_2 = 'http://127.0.0.1:8798';
+export const E2E_CSRF = 'e2e-csrf';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 测试里按方法直接解构参数
 type Handler = (payload: any) => unknown | Promise<unknown>;
@@ -12,6 +14,8 @@ export interface MockHost {
   /** 每个方法被调用时收到的参数，按调用顺序 */
   calls: { method: string; payload: Record<string, unknown> }[];
   set(method: string, handler: Handler): void;
+  /** 模拟 Host 重启 / 网络断开：关闭当前事件流，客户端应进入重连。 */
+  disconnect(): Promise<void>;
 }
 
 /** 模拟一个永不返回的请求（加载中状态）。 */
@@ -21,7 +25,8 @@ export const pending = () => new Promise<never>(() => undefined);
 export class RpcError extends Error {}
 
 const defaults: MockHandlers = {
-  'host.info': () => ({ protocolVersion: 2, generation: 'e2e', methods: [], events: [], providers: [], capabilities: { projects: true } }),
+  'host.info': () => ({ protocolVersion: 2, generation: 'e2e', methods: [], events: [], providers: [],
+    capabilities: { projects: true, browserSession: true, cookieMedia: true } }),
   'providers.models': () => [],
   'cloud.status': () => ({ available: false }),
   'endpoints.list': () => [],
@@ -29,20 +34,44 @@ const defaults: MockHandlers = {
   'projects.identity': () => ({ hostId: E2E_HOST_ID, recovery: 1 }),
 };
 
-export async function mockHost(page: Page, handlers: MockHandlers = {}): Promise<MockHost> {
-  const table: MockHandlers = { ...defaults, ...handlers };
-  const host: MockHost = { calls: [], set: (method, handler) => { table[method] = handler; } };
+export interface MockHostOptions {
+  /** 覆盖同源 /__flycut/connection 的响应；'none' 模拟没有可发现的 Host。 */
+  connection?: unknown | 'none';
+  csrf?: string;
+}
 
-  await page.route('**/__flycut/connection', route => route.fulfill({ json: { url: MOCK_HOST, token: 'e2e-token' } }));
-  await page.routeWebSocket(`${MOCK_HOST.replace('http', 'ws')}/events**`, () => { /* 连上即可，不推送事件 */ });
+export async function mockHost(page: Page, handlers: MockHandlers = {}, options: MockHostOptions = {}): Promise<MockHost> {
+  const table: MockHandlers = { ...defaults, ...handlers };
+  const sockets = new Set<WebSocketRoute>();
+  const host: MockHost = { calls: [], set: (method, handler) => { table[method] = handler; },
+    disconnect: async () => { await Promise.all([...sockets].map(socket => socket.close({ code: 1011, reason: 'test disconnect' }).catch(() => undefined))); } };
+  const csrf = options.csrf ?? E2E_CSRF;
+  const sessionConnection = { url: MOCK_HOST, auth: 'session', csrf };
+
+  await page.route('**/__flycut/connection', route => {
+    if (options.connection === 'none') { void route.fulfill({ status: 503, json: { error: 'no host' } }); return; }
+    void route.fulfill({ json: options.connection ?? sessionConnection });
+  });
+  await page.routeWebSocket(`${MOCK_HOST.replace('http', 'ws')}/events**`, ws => {
+    sockets.add(ws);
+    // The F-0014 connection waits for host/ready before any RPC. Snapshot frames keep job recovery quiet.
+    ws.send(JSON.stringify({ type: 'host/ready', generation: 'e2e', protocolVersion: 2, cursor: 0, events: [] }));
+    ws.send(JSON.stringify({ type: 'jobs/snapshot', jobs: [] }));
+    ws.onClose(() => sockets.delete(ws));
+  });
   await page.route(`${MOCK_HOST}/**`, async (route: Route) => {
     const request = route.request();
-    const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' };
+    const origin = request.headers().origin;
+    const headers = { 'Access-Control-Allow-Origin': origin ?? '*', 'Access-Control-Allow-Credentials': 'true',
+      'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' };
     if (request.method() === 'OPTIONS') { await route.fulfill({ status: 204, headers }); return; }
     const url = new URL(request.url());
+    if (url.pathname === '/session' && request.method() === 'DELETE') { await route.fulfill({ status: 204, headers }); return; }
+    if (url.pathname === '/__flycut/connection') { await route.fulfill({ headers, json: options.connection === 'none' ? { error: 'no host' } : options.connection ?? sessionConnection }); return; }
     // 上传媒体（Web 端新建项目）
     if (url.pathname === '/assets' && request.method() === 'POST') { await route.fulfill({ headers, json: { assetId: UPLOADED_ASSET } }); return; }
     if (url.pathname !== '/rpc') { await route.fulfill({ status: 404, headers }); return; }
+    if (request.headers()['x-flycut-csrf'] !== csrf) { await route.fulfill({ status: 401, headers, json: { error: 'Unauthorized' } }); return; }
     const body = request.postDataJSON() as { rpcId: string; method: string; payload: Record<string, unknown> };
     host.calls.push({ method: body.method, payload: body.payload });
     const handler = table[body.method];

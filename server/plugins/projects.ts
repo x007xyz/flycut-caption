@@ -434,7 +434,7 @@ export const projectsPlugin = { name: 'flycut-projects', inject: ['hostConfig', 
   }));
 
   // Project media for players: Range requests, same token as RPC.
-  ctx.effect(() => ctx.rpc.route({ method: 'GET', pattern: MEDIA_ROUTE, auth: 'client', async handle(req, res, match) {
+  ctx.effect(() => ctx.rpc.route({ method: 'GET', pattern: MEDIA_ROUTE, auth: 'client', queryToken: true, async handle(req, res, match) {
     const [, projectId, videoId] = match;
     const project = await store.read(projectId).catch(() => undefined);
     const video = project?.deletedAt ? undefined : project?.videos.find(item => item.id === videoId);

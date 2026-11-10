@@ -17,7 +17,9 @@ export interface HostConfig { home: string; port: number; token: string; resourc
   /** Built frontend (`dist/`) served by the Host together with the connection bootstrap. */
   webRoot?: string;
   /** Secret only the desktop shell holds; authorizes `shell` routes. Unset: those routes reject every request. */
-  shellToken?: string }
+  shellToken?: string;
+  /** Browser session lifetime in milliseconds (default 12 hours). Sessions live in Host memory. */
+  sessionTtlMs?: number }
 export type ProgressReporter = (progress: ASRProgress) => void;
 /**
  * One inference backend. Capabilities are optional methods: implement only what the backend does.

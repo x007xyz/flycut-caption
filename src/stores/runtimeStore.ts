@@ -4,11 +4,13 @@ import { useClientRuntime } from '@/runtime/context';
 import type { AppState, AppActions } from './appStore';
 import type { HistoryState, HistoryActions } from './historyStore';
 import type { ProjectState, ProjectActions } from './projectStore';
+import type { ConnectionState } from './connectionStore';
 
 export interface RuntimeStores {
   app: StoreApi<AppState & AppActions>;
   history: StoreApi<HistoryState & HistoryActions>;
   project: StoreApi<ProjectState & ProjectActions>;
+  connection: StoreApi<ConnectionState>;
 }
 declare module '@deepseek-ai/cordis' { interface Context { stores: RuntimeStores } }
 

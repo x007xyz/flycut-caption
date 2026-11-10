@@ -155,6 +155,8 @@ export class ProjectService {
   private hostId: string | null = null;
   private identity: Promise<string> | null = null;
   private connected = false;
+  /** 每次断线递增：迟到的重连恢复结果不能覆盖新的连接状态 */
+  private disconnectEpoch = 0;
   /** 打开项目的代次：返回首页或打开别的项目后，旧的打开和检查结果作废 */
   private openGeneration = 0;
   /** 本次检查找到的副本内容，按 key */
@@ -522,7 +524,7 @@ export class ProjectService {
   hasUnsavedChanges() {
     const current = this.state.current;
     if (this.pendingTranscript && this.ownerOf(this.pendingTranscript.videoFile)?.projectId === current?.projectId) return true;
-    return !!current?.hasTranscript && (this.isDirty() || this.state.save.status === 'failed' || this.state.save.status === 'conflict');
+    return !!current?.hasTranscript && (this.isDirty() || this.state.save.status === 'failed' || this.state.save.status === 'conflict' || this.state.save.status === 'offline');
   }
 
   /** 字幕或样式变化时调用（store 订阅）。 */
@@ -534,6 +536,8 @@ export class ProjectService {
     if (current?.hasTranscript) this.session?.recorder.changed();
     // 转写结果还没写进项目时没有可以叠加的修改：等转写保存完再看（saveTranscript 之后会再检查一次）
     if (!current?.hasTranscript || !this.isDirty()) return;
+    // F-0014 AC-6：断线时不发保存，也不安排重试；修改继续留在内存和恢复副本里。
+    if (!this.connection.isReady()) { this.state.setSave({ status: 'offline', error: undefined }); return; }
     const status = this.state.save.status;
     if (status === 'conflict') return;
     if (status !== 'failed' && status !== 'saving') this.state.setSave({ status: 'pending' });
@@ -550,6 +554,11 @@ export class ProjectService {
    */
   async flush(force = false): Promise<boolean> {
     clearTimeout(this.timer);
+    if (!this.connection.isReady()) {
+      if (this.state.current?.hasTranscript) this.state.setSave({ status: 'offline', error: undefined });
+      clearTimeout(this.retryTimer);
+      return false;
+    }
     if (this.inFlight) { await this.inFlight; return this.flush(force); }
     if (this.pendingTranscript && !(await this.retryTranscript())) return false;
     const current = this.state.current;
@@ -650,6 +659,7 @@ export class ProjectService {
   /** 退避重试：2、4、8、16、30 秒，之后每 30 秒一次，直到成功。 */
   private scheduleRetry() {
     clearTimeout(this.retryTimer);
+    if (!this.connection.isReady()) return;
     const delay = RETRY_DELAYS_MS[Math.min(this.failures, RETRY_DELAYS_MS.length - 1)];
     this.failures += 1;
     this.retryTimer = setTimeout(() => { if (this.state.save.status === 'failed') void this.flush(); }, delay);
@@ -741,18 +751,24 @@ export class ProjectService {
    * 离开编辑器之前调用：先尝试保存；还有没写入的修改就弹对话框，等用户选择。
    * 返回 true 表示可以离开（已保存或用户选择放弃修改）。
    */
-  async confirmLeave(): Promise<boolean> {
+  async confirmLeave(options: { keep?: boolean } = {}): Promise<boolean> {
     if (!this.state.current || !this.hasUnsavedChanges()) return true;
     if (this.state.save.status !== 'conflict' && await this.flush()) return true;
     if (!this.hasUnsavedChanges()) return true;
-    this.state.set({ unsavedDialog: { retrying: false } });
+    this.state.set({ unsavedDialog: { retrying: false, keep: options.keep } });
     return new Promise<boolean>(resolve => { this.leaveResolver = resolve; });
   }
 
   /** AC-24 对话框的按钮。 */
-  async resolveUnsaved(choice: 'retry' | 'discard' | 'cancel') {
+  async resolveUnsaved(choice: 'retry' | 'discard' | 'cancel' | 'keep') {
     const finish = (leave: boolean) => { this.state.set({ unsavedDialog: null }); const resolve = this.leaveResolver; this.leaveResolver = null; resolve?.(leave); };
     if (choice === 'cancel') { finish(false); return; }
+    if (choice === 'keep') {
+      clearTimeout(this.timer); clearTimeout(this.retryTimer);
+      await this.session?.recorder.record();
+      this.state.setSave({ status: 'offline', error: undefined });
+      finish(true); return;
+    }
     if (choice === 'discard') {
       this.pendingTranscript = null; this.baseline = this.baselineOf(this.snapshot(), this.state.current?.projectStyle ?? defaultSubtitleStylePair);
       clearTimeout(this.retryTimer); this.state.setSave({ status: 'saved' }); finish(true); return;
@@ -849,10 +865,111 @@ export class ProjectService {
     return this.identity;
   }
 
-  /** 连接状态变化：断开后重连的可能已经是另一个 Host（同一个地址），重新读取身份。 */
+  /** 连接状态变化：断开立即暂停保存；重连成功后的身份核验和内容比较由 resumeAfterReconnect 完成。 */
   connectionChanged(status: 'connecting' | 'connected' | 'disconnected') {
-    if (this.connected && status !== 'connected') this.identity = null;
-    this.connected = status === 'connected';
+    if (status === 'connected') { this.connected = true; return; }
+    if (!this.connected) return;
+    this.connected = false;
+    this.identity = null;
+    this.disconnectEpoch += 1;
+    clearTimeout(this.timer); clearTimeout(this.retryTimer); this.failures = 0;
+    if (this.state.current?.hasTranscript) this.state.setSave({ status: 'offline', error: undefined, conflictAt: undefined });
+  }
+
+  /**
+   * 重连成功且 host.info / projects.identity 已通过后调用：先验证身份，再读取 Host 内容比较。
+   * 只有内容一致才恢复 saved；否则保留 pending/conflict，不凭“重连成功”显示已保存。
+   */
+  async resumeAfterReconnect() {
+    const epoch = this.disconnectEpoch;
+    const current = this.state.current;
+    this.connected = true;
+    if (!current) {
+      if (this.state.route.name === 'home') void this.refresh();
+      return;
+    }
+    const previousHostId = this.hostId;
+    this.identity = null;
+    try {
+      const hostId = await this.hostIdentity();
+      if (epoch !== this.disconnectEpoch) return;
+      if (previousHostId && hostId !== previousHostId) { this.resetForIdentityChange(); return; }
+      if (!current.hasTranscript) {
+        this.state.setSave({ status: this.isDirty() ? 'pending' : 'saved', error: undefined });
+        if (this.isDirty()) this.onEdit();
+        return;
+      }
+      const opened = await this.connection.call('projects.open', { projectId: current.projectId, videoId: current.videoId });
+      if (epoch !== this.disconnectEpoch || this.state.current !== current) return;
+      if (opened.status !== 'ok') {
+        this.state.setSave({ status: 'failed', error: '项目已不可用' });
+        return;
+      }
+      const snap = this.snapshot();
+      const content: RecoveryContent = { editing: snap.editing, chunks: snap.chunks as unknown as RecoveryContent['chunks'],
+        deletedWordIds: snap.wordChunks.filter(word => word.deleted).map(word => word.id), styleSource: snap.styleSource,
+        stylePair: snap.style as unknown as RecoveryContent['stylePair'] };
+      const diff = diffWithHost(content, this.hostContent(opened));
+      const projectStyle = fromProjectStyle(opened.projectStyle) ?? current.projectStyle;
+      this.state.set({ current: { ...current, revision: opened.project.revision, videoRevision: opened.video.revision,
+        styleRevision: opened.project.styleRevision, projectStyle } });
+      if (diff.same) {
+        this.baseline = this.baselineOf(snap, projectStyle);
+        this.state.setSave({ status: 'saved', error: undefined, conflictAt: undefined });
+      } else {
+        // Host 内容与本地不同：保留修改并走既有冲突流程，绝不静默覆盖。
+        this.state.setSave({ status: 'conflict', conflictAt: opened.video.updatedAt ?? opened.project.updatedAt, error: undefined });
+      }
+    } catch (error) {
+      if (epoch !== this.disconnectEpoch) return;
+      this.state.setSave({ status: 'offline', error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  /**
+   * F-0014 AC-6、AC-7：切换 Host / 登出前沿用离开保护，并始终 endSession(false) 保留未处理副本。
+   * 返回 false 表示用户取消。
+   */
+  async prepareHostChange(): Promise<boolean> {
+    if (this.state.current && this.hasUnsavedChanges()) {
+      const leaving = await this.confirmLeave({ keep: true });
+      if (!leaving) return false;
+    }
+    clearTimeout(this.timer); clearTimeout(this.retryTimer);
+    this.endSession(false);
+    return true;
+  }
+
+  /** 同一地址重连后 hostId 变化：清空旧身份的项目视图，回到项目首页；旧恢复副本保留。 */
+  resetForIdentityChange() {
+    this.endSession(false);
+    this.disconnectEpoch += 1;
+    clearTimeout(this.timer); clearTimeout(this.retryTimer); this.failures = 0;
+    this.baseline = null; this.transcriptRecord = undefined; this.pendingTranscript = null;
+    this.recoveryCopies.clear();
+    this.hostId = null; this.identity = null; this.connected = true;
+    this.openGeneration += 1;
+    this.state.set({ current: null, save: { status: 'saved' }, conflictDialog: false, unsavedDialog: null, projectDeleted: null,
+      detail: null, trash: { status: 'loading', items: [], restoringId: null }, projects: [], listStatus: 'loading',
+      transcribing: null, recovery: { phase: 'idle', candidates: [], selectedKey: null }, recoveryHealth: 'ok' });
+    this.stores.history.getState().reset(); this.stores.app.getState().setVideoFile(null);
+    this.navigate({ name: 'home' });
+    void this.refresh();
+  }
+
+  /** 鉴权失败或登出：清空当前身份的项目内容；不删除、不上传任何恢复副本。 */
+  clearForSessionEnd() {
+    this.endSession(false);
+    this.disconnectEpoch += 1;
+    clearTimeout(this.timer); clearTimeout(this.retryTimer); this.failures = 0;
+    this.baseline = null; this.transcriptRecord = undefined; this.pendingTranscript = null;
+    this.recoveryCopies.clear();
+    this.hostId = null; this.identity = null; this.connected = false;
+    this.openGeneration += 1;
+    this.state.set({ current: null, save: { status: 'saved' }, conflictDialog: false, unsavedDialog: null, projectDeleted: null,
+      detail: null, trash: { status: 'loading', items: [], restoringId: null }, projects: [], listStatus: 'loading',
+      transcribing: null, recovery: { phase: 'idle', candidates: [], selectedKey: null }, recoveryHealth: 'ok', route: { name: 'home' } });
+    this.stores.history.getState().reset(); this.stores.app.getState().setVideoFile(null);
   }
 
   /** 开始一个编辑会话：新的会话 ID 和记录器，并占住会话锁（其他窗口检查时跳过还开着的会话）。 */

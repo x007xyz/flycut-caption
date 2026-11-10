@@ -2,6 +2,7 @@
 
 import { ModelsPanel } from '@/components/ASR/ModelsPanel';
 import { PluginRegistryPanel } from '@/components/ProcessingPanel/PluginRegistryPanel';
+import { ConnectionDetails } from '@/components/Connection';
 import {
   Dialog,
   DialogBody,
@@ -10,12 +11,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Slider } from '@/components/ui/slider';
-import { Boxes, Package, Puzzle, Wand2 } from 'lucide-react';
+import { Boxes, Package, PlugZap, Puzzle, Wand2 } from 'lucide-react';
 import { useAppStore } from '@/stores/appStore';
 import { useTranslation } from '@/contexts/LocaleProvider';
 import { useState, type ReactNode } from 'react';
 
-type SettingsSection = 'models' | 'plugins';
+type SettingsSection = 'models' | 'plugins' | 'connection';
 
 interface SettingsDialogProps {
   open: boolean;
@@ -47,6 +48,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               <div className="grid grid-cols-2 gap-1 md:grid-cols-1">
                 <SectionButton active={section === 'models'} icon={<Boxes className="h-4 w-4" />} label="模型" onClick={() => setSection('models')} />
                 <SectionButton active={section === 'plugins'} icon={<Puzzle className="h-4 w-4" />} label="编辑插件" onClick={() => setSection('plugins')} />
+                <SectionButton active={section === 'connection'} icon={<PlugZap className="h-4 w-4" />} label="连接" onClick={() => setSection('connection')} />
               </div>
             </nav>
 
@@ -74,6 +76,14 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     <Slider value={[smartCutSilenceThreshold]} min={0.2} max={5} step={0.1} onValueChange={(v) => setSmartCutSilenceThreshold(v[0])} />
                   </div>
                 </div>
+              </>}
+
+              {section === 'connection' && <>
+                <div className="pt-4">
+                  <h2 className="text-sm font-semibold text-aimu-text-primary">连接</h2>
+                  <p className="mt-1 text-xs text-muted-foreground">当前 Host、身份、能力与会话。切换 Host 前会先处理未保存修改。</p>
+                </div>
+                <div className="mt-4"><ConnectionDetails /></div>
               </>}
             </div>
           </div>

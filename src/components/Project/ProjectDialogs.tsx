@@ -11,13 +11,16 @@ import { useProjectText } from './useProjectText';
 export interface UnsavedChangesDialogProps {
   open: boolean;
   retrying?: boolean;
+  /** 切换 Host / 登出时提供「保留副本并离开」 */
+  keepLabel?: string;
   onRetry: () => void;
   onDiscard: () => void;
+  onKeep?: () => void;
   onCancel: () => void;
 }
 
 /** 自动保存失败时关闭窗口或切换项目：重试 / 放弃修改 / 取消 */
-export function UnsavedChangesDialog({ open, retrying, onRetry, onDiscard, onCancel }: UnsavedChangesDialogProps) {
+export function UnsavedChangesDialog({ open, retrying, keepLabel, onRetry, onDiscard, onKeep, onCancel }: UnsavedChangesDialogProps) {
   const { t, tp } = useProjectText();
   return (
     <Dialog open={open} onOpenChange={next => { if (!next && !retrying) onCancel(); }}>
@@ -33,6 +36,7 @@ export function UnsavedChangesDialog({ open, retrying, onRetry, onDiscard, onCan
           {/* AC-24：重试期间三个按钮都不可点 */}
           <Button variant="ghost" onClick={onCancel} disabled={retrying}>{t('common.cancel')}</Button>
           <Button variant="outline" className="text-aimu-coral" onClick={onDiscard} disabled={retrying}>{tp('unsavedDiscard')}</Button>
+          {keepLabel && onKeep && <Button variant="outline" onClick={onKeep} disabled={retrying}>{keepLabel}</Button>}
           <Button onClick={onRetry} disabled={retrying}>
             {retrying && <Loader2 className="h-4 w-4 animate-spin" />}{retrying ? tp('unsavedRetrying') : tp('unsavedRetry')}
           </Button>

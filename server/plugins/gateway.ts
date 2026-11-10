@@ -5,6 +5,7 @@ import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
 import { pipeline } from 'node:stream/promises';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { rpcRequestSchema, PROTOCOL_VERSION, type HostFrame, type RpcResponse } from '../../shared/protocol';
 
 async function body(req: IncomingMessage, limit: number): Promise<Buffer> {
@@ -20,6 +21,53 @@ const MIME: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js
 const LOOPBACK_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
 const ASSET_PATH = /^\/assets\/([0-9a-f-]{36})$/i;
 const LOOPBACK_HOST = /^(localhost|127\.0\.0\.1)(:\d+)?$/;
+const SESSION_COOKIE = 'flycut_session';
+const DEFAULT_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+
+interface BrowserSession { id: string; csrf: string; createdAt: number; expiresAt: number }
+interface AuthResult { ok: boolean; session?: BrowserSession }
+
+function cookieValue(req: IncomingMessage, name: string): string | undefined {
+  const header = req.headers.cookie ?? '';
+  for (const part of header.split(';')) {
+    const index = part.indexOf('=');
+    if (index < 0) continue;
+    if (part.slice(0, index).trim() === name) return part.slice(index + 1).trim();
+  }
+  return undefined;
+}
+
+function safeEqual(a: string, b: string): boolean {
+  const left = Buffer.from(a); const right = Buffer.from(b);
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+
+function headerValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function protocolBearer(req: IncomingMessage): string | undefined {
+  const raw = headerValue(req.headers['sec-websocket-protocol']);
+  if (!raw) return undefined;
+  const entry = raw.split(',').map(item => item.trim()).find(item => item.startsWith('flycut.token.'));
+  if (!entry) return undefined;
+  try {
+    const encoded = entry.slice('flycut.token.'.length).replace(/-/g, '+').replace(/_/g, '/');
+    return Buffer.from(encoded, 'base64').toString('utf8');
+  } catch { return undefined; }
+}
+
+function isHttps(req: IncomingMessage): boolean {
+  return headerValue(req.headers['x-forwarded-proto'])?.split(',')[0]?.trim() === 'https';
+}
+
+function sessionCookie(req: IncomingMessage, id: string, ttlMs: number): string {
+  return `${SESSION_COOKIE}=${id}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${Math.max(0, Math.floor(ttlMs / 1000))}${isHttps(req) ? '; Secure' : ''}`;
+}
+
+function clearSessionCookie(req: IncomingMessage): string {
+  return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${isHttps(req) ? '; Secure' : ''}`;
+}
 
 export interface GatewayConfig {
   /** Registers `host.shutdown`; the `server` profile turns it off so remote clients cannot stop the Host. */
@@ -34,13 +82,54 @@ export const gatewayPlugin = { name: 'flycut-api-gateway', inject: ['hostConfig'
   const origins = new Set(ctx.hostConfig.allowedOrigins ?? []);
   const originHosts = new Set([...origins].map(origin => new URL(origin).host));
   const webRoot = ctx.hostConfig.webRoot ? resolve(ctx.hostConfig.webRoot) : undefined;
+  const sessionTtlMs = Math.max(60_000, ctx.hostConfig.sessionTtlMs ?? DEFAULT_SESSION_TTL_MS);
+  const sessions = new Map<string, BrowserSession>();
   const allowedOrigin = (origin?: string) => !origin || origin === 'tauri://localhost' || origin === 'http://tauri.localhost'
     || LOOPBACK_ORIGIN.test(origin) || origins.has(origin);
-  const authorized = (req: IncomingMessage, url: URL) => allowedOrigin(req.headers.origin)
-    && (req.headers.authorization === `Bearer ${ctx.hostConfig.token}` || url.searchParams.get('token') === ctx.hostConfig.token);
+  const pruneSessions = () => { const now = Date.now(); for (const [id, session] of sessions) if (session.expiresAt <= now) sessions.delete(id); };
+  const issueSession = (req: IncomingMessage, res: ServerResponse) => {
+    pruneSessions();
+    const now = Date.now();
+    const session: BrowserSession = { id: randomBytes(32).toString('base64url'), csrf: randomBytes(32).toString('base64url'), createdAt: now, expiresAt: now + sessionTtlMs };
+    sessions.set(session.id, session);
+    res.setHeader('Set-Cookie', sessionCookie(req, session.id, sessionTtlMs));
+    return session;
+  };
+  const sessionFor = (req: IncomingMessage): BrowserSession | undefined => {
+    const id = cookieValue(req, SESSION_COOKIE);
+    if (!id) return undefined;
+    const session = sessions.get(id);
+    if (!session) return undefined;
+    if (session.expiresAt <= Date.now()) { sessions.delete(id); return undefined; }
+    return session;
+  };
+  /**
+   * Cookie auth is for the browser; bearer remains for CLI/tests/desktop local Host.
+   * Unsafe cookie requests must carry the session CSRF token. Bearer requests never need CSRF because
+   * browsers do not attach them automatically.
+   */
+  const authorize = (req: IncomingMessage, url: URL, options: { csrf?: boolean; queryToken?: boolean } = {}): AuthResult => {
+    if (!allowedOrigin(req.headers.origin)) return { ok: false };
+    const bearer = req.headers.authorization === `Bearer ${ctx.hostConfig.token}` || protocolBearer(req) === ctx.hostConfig.token;
+    if (bearer) return { ok: true };
+    // 本地 bearer 媒体例外：<video src> 不能带 Authorization，只允许只读路由从查询参数取 token。
+    if (options.queryToken && (req.method === 'GET' || req.method === 'HEAD')) {
+      const queryToken = url.searchParams.get('token');
+      if (queryToken && safeEqual(queryToken, ctx.hostConfig.token)) return { ok: true };
+    }
+    const session = sessionFor(req);
+    if (!session) return { ok: false };
+    if (options.csrf !== false && req.method !== 'GET' && req.method !== 'HEAD') {
+      const csrf = headerValue(req.headers['x-flycut-csrf']);
+      if (!csrf || !safeEqual(csrf, session.csrf)) return { ok: false };
+    }
+    return { ok: true, session };
+  };
   if (config.shutdown !== false) {
     ctx.effect(() => ctx.rpc.register('host.shutdown', undefined, () => { setTimeout(() => process.emit('SIGTERM'), 25); return { stopping: true } as const; }));
   }
+  ctx.effect(() => ctx.rpc.capability('browserSession', true));
+  ctx.effect(() => ctx.rpc.capability('cookieMedia', true));
   /** Serves the built frontend with SPA fallback; returns false for paths it does not own. */
   const serveStatic = async (pathname: string, res: ServerResponse) => {
     let decoded: string; try { decoded = decodeURIComponent(pathname); } catch { return false; }
@@ -62,18 +151,32 @@ export const gatewayPlugin = { name: 'flycut-api-gateway', inject: ['hostConfig'
   };
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
-    if (allowedOrigin(req.headers.origin) && req.headers.origin) {
+    if (req.headers.origin && allowedOrigin(req.headers.origin)) {
       res.setHeader('Access-Control-Allow-Origin', req.headers.origin); res.setHeader('Vary', 'Origin');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization'); res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Flycut-CSRF');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
     }
     const json = (status: number, value: unknown) => { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)); };
     if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
     if (url.pathname === '/health' && req.method === 'GET') { json(200, { ok: true, protocolVersion: PROTOCOL_VERSION }); return; }
+    if (url.pathname === '/session' && req.method === 'POST') {
+      if (!allowedOrigin(req.headers.origin) || req.headers.authorization !== `Bearer ${ctx.hostConfig.token}`) { json(401, { error: 'Unauthorized' }); return; }
+      const session = issueSession(req, res);
+      json(201, { auth: 'session', csrf: session.csrf, expiresAt: new Date(session.expiresAt).toISOString() }); return;
+    }
+    if (url.pathname === '/session' && req.method === 'DELETE') {
+      const auth = authorize(req, url);
+      if (!auth.ok) { json(auth.session ? 403 : 401, { error: auth.session ? 'Invalid CSRF token' : 'Unauthorized' }); return; }
+      if (auth.session) sessions.delete(auth.session.id);
+      res.writeHead(204, { 'Set-Cookie': clearSessionCookie(req), 'Cache-Control': 'no-store' }); res.end(); return;
+    }
     if (webRoot && url.pathname === '/__flycut/connection' && req.method === 'GET') {
       // Same-origin bootstrap for the served frontend. The Host header check blocks DNS-rebinding pages.
       const host = req.headers.host ?? '';
       if (!allowedOrigin(req.headers.origin) || !(LOOPBACK_HOST.test(host) || originHosts.has(host))) { json(403, { error: 'Forbidden' }); return; }
-      json(200, { token: ctx.hostConfig.token }); return;
+      const session = issueSession(req, res);
+      json(200, { auth: 'session', csrf: session.csrf, expiresAt: new Date(session.expiresAt).toISOString() }); return;
     }
     // Plugin-owned routes (media streaming, shell-only endpoints). Shell routes come from the desktop shell process,
     // which sends no Origin; a browser page cannot use them even if it learned the frontend token.
@@ -82,7 +185,7 @@ export const gatewayPlugin = { name: 'flycut-api-gateway', inject: ['hostConfig'
       const shellToken = ctx.hostConfig.shellToken;
       const allowed = routed.route.auth === 'shell'
         ? !!shellToken && !req.headers.origin && req.headers.authorization === `Bearer ${shellToken}`
-        : authorized(req, url);
+        : authorize(req, url, { queryToken: routed.route.queryToken }).ok;
       if (!allowed) { json(401, { error: 'Unauthorized' }); return; }
       try { await routed.route.handle(req, res, routed.match); }
       catch (error) {
@@ -96,7 +199,7 @@ export const gatewayPlugin = { name: 'flycut-api-gateway', inject: ['hostConfig'
       if (await serveStatic(url.pathname, res)) return;
       json(404, { error: 'Not found' }); return;
     }
-    if (!authorized(req, url)) { json(401, { error: 'Unauthorized' }); return; }
+    if (!authorize(req, url).ok) { json(401, { error: 'Unauthorized' }); return; }
     try {
       if (url.pathname === '/assets' && req.method === 'POST') {
         const assetId = await ctx.assets.putStream(req, 4 * 1024 * 1024 * 1024); json(201, { assetId }); return;
@@ -122,10 +225,10 @@ export const gatewayPlugin = { name: 'flycut-api-gateway', inject: ['hostConfig'
       json(400, { error: error instanceof Error ? error.message : String(error) });
     }
   });
-  const sockets = new WebSocketServer({ noServer: true });
+  const sockets = new WebSocketServer({ noServer: true, handleProtocols(protocols) { return protocols.has('flycut') ? 'flycut' : false; } });
   server.on('upgrade', (req, socket, head) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
-    if (url.pathname !== '/events' || !authorized(req, url)) { socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n'); socket.destroy(); return; }
+    if (url.pathname !== '/events' || !authorize(req, url, { csrf: false }).ok) { socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n'); socket.destroy(); return; }
     sockets.handleUpgrade(req, socket, head, client => {
       const send = (frame: HostFrame) => { if (client.readyState === WebSocket.OPEN) client.send(JSON.stringify(frame)); };
       send({ type: 'host/ready', protocolVersion: PROTOCOL_VERSION, generation: ctx.rpc.generation, cursor: ctx.rpc.cursor(), events: ctx.rpc.events() });
