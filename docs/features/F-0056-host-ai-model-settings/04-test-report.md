@@ -41,12 +41,12 @@ ID 重试，成功后才清理。所有面板写操作和根快照加载都绑�
 | AC-1 | 架构测试、第二个 HTTP 客户端、真实本地 OpenAI 兼容 fixture | `F-0056/AC-1 AC-3 AC-7 AC-8 config IDs...`：第二客户端读到同一 revision，并用同一 `configId` 完成纠错；RPC/job 中不含明文 Key | ✅ |
 | AC-2 | Playwright、失败重试 | `F-0056/AC-2 AC-6 AC-8 explicit Host-bound migration...`：失败后本地 Key 仍在，第二次请求复用同一 `migrationId`，成功后才清本地副本 | ✅ |
 | AC-3 | Playwright、Red check | CRUD、测试连接、空 Key 保留、显式清除、遮罩和 revision 冲突覆盖 4 个主题/语言组合；撤掉冲突保护后测试以 `saved !== conflict` 失败 | ✅ |
-| AC-4 | 架构测试、真实 macOS Keychain、本地严格回归 | 加密文件 0600/原子写/串行；元数据失败保留旧 ref；`OsAISecretStore` 唯一临时引用写入、读回、删除成功；本地 fixture 错误/job/RPC 不含 Key。付费外部 API 见 AC-9 | ✅（本地真实） |
+| AC-4 | 架构测试、真实 macOS Keychain、DeepSeek 官方 API、本地严格回归 | 加密文件 0600/原子写/串行；元数据失败保留旧 ref；`OsAISecretStore` 唯一临时引用写入、读回、删除成功；DeepSeek 官方 API 真实翻译/纠错成功，RPC、元数据和任务结果不含明文 Key | ✅ |
 | AC-5 | Playwright | 空配置显示添加入口，已有编辑界面可用；中英文与明暗主题全覆盖 | ✅ |
 | AC-6 | Playwright | 加载显示处理中，刷新/添加/编辑/删除在忙碌期间禁用；错误 Host 响应和 identity 切换不写回旧数据 | ✅ |
 | AC-7 | Playwright、Host 重启、第二个客户端 | 只有 Host 返回新 snapshot 才显示完成；重启与第二客户端读回同一 Host 配置 | ✅ |
 | AC-8 | Playwright、架构 Red check | 迁移失败保留来源；revision 冲突保留表单并提示重新检查；错误 Host 响应保留当前列表 | ✅ |
-| AC-9 | 40 张截图、8 段录屏、真实 Host/本地接口 | localhost:5175 UI 8/8；真实本地 Host、本地 OpenAI 兼容接口和 macOS 凭据后端通过。真实付费 AI 和完整 Tauri 窗口人工点击未跑 | ⏸ Not run |
+| AC-9 | 40 张截图、8 段录屏、真实 Host/DeepSeek 官方 API | localhost:5175 UI 8/8；真实本地 Host 和 macOS 凭据后端通过；DeepSeek 官方 `deepseek-flash` 连接、翻译、纠错通过。完整 Tauri 窗口人工点击未跑 | ⏸ Tauri Not run；真实 API ✅ |
 
 ## 界面证据
 
@@ -127,8 +127,16 @@ ID 重试，成功后才清理。所有面板写操作和根快照加载都绑�
 - 复测结束后已停止本轮启动的 Tauri 与 Vite，5173、5179、5191、5207 均无监听；未触碰其他
   worktree 或旧安装包进程。
 
+### DeepSeek 官方 API 实测（2026-11-10）
+
+- 按维护者指示从本机 DSH 配置读取 `DEEPSEEK_API_KEY`；只读入临时 Host 内存，未输出、未写入报告，也未复制到项目文件或长期 Host 配置。
+- `GET https://api.deepseek.com/models` 返回 HTTP 200，模型列表包含 `deepseek-flash` 和 `deepseek-v4-pro`。
+- 用 `deepseek-flash` 保存临时 memory secret backend 配置，`aiSettings.test` 返回 `连接成功 (HTTP 200)`；公开配置只有 `hasApiKey:true`，元数据文件不包含 Key。
+- 真实字幕翻译返回 `Hey everyone, welcome to this episode.` / `Today we're starting from scratch.`；真实中文纠错把「这个功能可以使用把」修正为「这个功能可以使用吧。」，两个任务均 `complete`。
+- 临时 Host 与临时 home 在测试后清理。此项补上此前的“真实付费外部 AI 接口 Not run”；完整 Tauri 窗口仍未完成。
+
 ## 结论
 
 本地实现、Host 架构、UI 矩阵和 macOS 凭据后端均已通过，未发现需要修复的代码问题。
-真实付费外部 AI 与完整 Tauri 窗口人工点击仍是 `Not run`；完成授权后补测前，结论为
+真实 DeepSeek 官方 AI 已验证；完整 Tauri 窗口人工点击仍是 `Not run`；完成桌面补测前，结论为
 **需要补测后由维护者验收**。本报告不自行批准。
