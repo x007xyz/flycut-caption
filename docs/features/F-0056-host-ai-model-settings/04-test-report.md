@@ -8,8 +8,8 @@ approved_at:
 
 # F-0056 AI模型配置与密钥保存到Host：测试与验收
 
-原验收基线为 commit `83059bd`；本轮 Tauri Host Node 打包修复及启动补测在 commit
-`a853ecd` 上进行。
+原验收基线为 commit `83059bd`；Tauri Host Node 打包修复在 `a853ecd`，完整 Tauri 窗口与
+桌面包字体修复在 `2ed0755`。
 
 > 技术设计和开发阶段由 agent 连续推进、自动确认；维护者在这里一并审阅。
 
