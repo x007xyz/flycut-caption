@@ -158,6 +158,18 @@ for (const theme of ['light', 'dark'] as const) for (const lang of ['zh', 'en'] 
       await expect(panel).not.toContainText(E2E_HOST_B);
       await shot(page, 'F-0056', `settings-host-mismatch-${theme}-${lang}`);
 
+      state.host.set('projects.identity', () => ({ hostId: E2E_HOST_B, recovery: 1 }));
+      state.host.set('aiSettings.list', () => ({ hostId: E2E_HOST_B, revision: 8, selectedId: AI_B,
+        configs: [{ id: AI_B, name: 'Second Host', baseUrl: 'https://second.example/v1', model: 'second', hasApiKey: true }] }));
+      await state.host.disconnect();
+      await expect(page.getByTestId('connection-identity-changed')).toBeVisible();
+      await page.evaluate(hash => { window.location.hash = hash; }, `#/projects/${P}/videos/${VIDEO_ID}`);
+      await page.getByRole('button', { name: 'API', exact: true }).click();
+      await expect(panel.getByTestId('ai-config-row')).toContainText('Second Host');
+      await expect(panel).toContainText(E2E_HOST_B);
+      await expect(panel).not.toContainText('Foreign Host');
+      await shot(page, 'F-0056', `settings-host-switched-${theme}-${lang}`);
+
       state.host.set('aiSettings.list', () => pending());
       await panel.getByTestId('ai-settings-refresh').click();
       await expect(panel.getByTestId('ai-processing')).toBeVisible();
