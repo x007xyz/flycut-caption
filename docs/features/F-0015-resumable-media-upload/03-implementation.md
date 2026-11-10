@@ -1,9 +1,9 @@
 ---
 id: F-0015
 stage: 03-implementation
-status: draft
-approved_by:
-approved_at:
+status: approved
+approved_by: auto
+approved_at: 2026-11-10
 ---
 
 # F-0015 大文件断点续传与断线恢复：开发记录
@@ -20,10 +20,11 @@ approved_at:
 
 | 日期 | 清单项 | 提交 | 检查 |
 |---|---|---|---|
-| 2026-11-10 | 1–3 共享契约、持久分片、完整性完成与竞态 | 本次提交 | `uploads-f0015` 13/13；`pnpm check:host` ✅ |
-| 2026-11-10 | 4 项目/任务 operationId | 本次提交 | 项目、结构变更与 Job 幂等包含在 13 项架构测试中 ✅ |
-| 2026-11-10 | 5–6 客户端上传器、恢复定位、项目面板 | 本次提交 | `pnpm tsc -b --noEmit` ✅；F-0015 E2E 22/22 ✅；F-0002 AC-17、F-0003 AC-27 回归 ✅ |
-| 2026-11-10 | 8 真实网络与架构文档（部分） | 本次提交 | 真实 Host/Chrome/TCP 切断、刷新重选与最终 SHA 一致 ✅；架构测试 104/104 ✅；04 尚未创建 |
+| 2026-11-10 | 1–3 共享契约、持久分片、完整性完成与竞态 | `a569f15` | `uploads-f0015` 13/13；`pnpm check:host` ✅ |
+| 2026-11-10 | 4 项目/任务 operationId | `a569f15` | 项目、结构变更与 Job 幂等包含在架构测试中 ✅ |
+| 2026-11-10 | 5–6 客户端上传器、恢复定位、项目面板 | `a569f15` | `pnpm tsc -b --noEmit` ✅；F-0015 E2E 22/22 ✅；F-0002 AC-17、F-0003 AC-27 回归 ✅ |
+| 2026-11-10 | 7 ASR/导出结果核验与客户端任务定位 | `0a2608b` | 任务故障注入 10/10；Host 上传架构 13/13；`pnpm tsc -b --noEmit` ✅ |
+| 2026-11-10 | 8 真实网络与验收证据 | `0a2608b` | 60 分钟素材三次断网与刷新恢复通过；架构 114/114；F-0015 证据 22/22 |
 
 ## 自行决定的事项
 
@@ -38,15 +39,14 @@ approved_at:
 
 <!-- 实现时改变了设计的地方及原因；重大偏差回到 02-design.md 修改，并记进测试报告 -->
 
-- 本轮未完成实现清单 7 的客户端 ASR/导出同一 `operationId` 重试与对应任务核验 UI；Host 端 `workflow.start`/`export.start` 幂等已经实现并有架构测试，但前端服务仍按新调用启动任务。AC-9 的 ASR/导出界面部分因此保留为验收门禁。
-- UI 的检查、哈希、失败和过期状态用受控 Host mock 构造；真实 Host 浏览器验证覆盖 TCP 切断、重连、刷新重选和最终摘要。真实 Cloud 环境的账号/计费不在本仓库，未运行。
+- ASR 与导出都在客户端固定同一操作的 `operationId`。任务定位按 hostId 分隔，并在每次动作重新读取身份；同一地址切到另一 Host 时不会继续旧任务。等待任务期间发生不确定网络错误时保留定位，只有明确的 `error`/`cancelled` 终态或成功交付后才允许清理。
+- ASR 输入键包含当前项目/视频、源内容 SHA-256、模型、语言和选项；导出裸文件包含内容 SHA-256，项目媒体使用受保护资产路径身份。同名同大小但内容变化不会误复用旧任务。
+- ASR 继续通过既有 `flycut/transcribed` 事件通知第三方订阅者，并改为可等待的并行分发。项目监听器只在事件内保存一次；Host 保存失败时不清理任务定位，编辑器仍显示识别结果，用户重试可读取同一完成结果。
+- UI 的检查、哈希、失败和过期状态用受控 Host mock 构造；真实 Host 浏览器验证覆盖三次 TCP 切断、重连、刷新重选和最终摘要。外部 Cloud 账号与计费不在本仓库。
 
 ## 遗留问题
 
-- 实现清单 7：把 ASR/导出客户端的 `operationId` 固定在同一用户操作上，响应不确定时从 `jobs.list`/`jobs.get` 核验并禁用重复启动。
-- Red check 未完成：自动审批拒绝从生产代码临时移除分片 offset 校验，理由是这会持久削弱完整性边界。现有测试与代码审查证据保留，需维护者明确批准后再做生产代码回退验证。
-- 未在真实 Cloud 账号、真实 10–60 分钟源视频和桌面 Tauri 全流程上验证；本轮真实浏览器素材为 5 MiB 多分片 fixture。
-- `04-test-report.md` 尚未创建；03 仍有未完成清单项，不能运行开发阶段自动确认。
+- 未在外部 Cloud 账号、Windows 打包和桌面 Tauri GUI 完整流程上运行；真实网络证据使用维护者认可的本地 Host 契约与真实 Chrome。
 
 ## 验证记录
 
@@ -54,8 +54,10 @@ approved_at:
 - `pnpm tsc -b --noEmit` ✅
 - `pnpm check:host` ✅
 - `pnpm test` ✅：94 passed，4 skipped（缺 moonshine、parakeet、whisper 和双 VAD 资产）
-- `pnpm test:architecture` ✅：104 passed
+- `pnpm test:architecture` ✅：114 passed（从原仓库复用忽略的真实测试媒体后重跑）
 - `pnpm build` ✅
 - `cargo check --manifest-path src-tauri/Cargo.toml` ✅
-- `F0015_REAL=1 UPDATE_SHOTS=1 pnpm exec playwright test tests/e2e/features/F-0015.real.spec.ts --workers=1` ✅
+- `F0015_REAL=1 F0015_REAL_MEDIA=/absolute/path/60min.mp4 pnpm exec playwright test tests/e2e/features/F-0015.real.spec.ts --workers=1` ✅：1 passed；255,668,512 bytes；SHA-256 `f0e38bf3443df40ff8fa127933d98bce8fd17b5b83d4b155f4655d25ddf2a2d6`
+- 真实断网：三次中断时 Host 已确认 8 MiB、16 MiB、24 MiB；刷新前 8 MiB，重新选择后最终 255,668,512 bytes，恢复后新发送 247,279,904 bytes，小于完整文件。
 - `pnpm e2e:evidence F-0015` ✅：22 passed，29 screenshots，22 recordings（录屏不入 git）
+- Red check（隔离副本，不改生产工作区）：移除分片 offset 比较后，`F-0015/AC-3 chunk offsets...` 失败为 `200 !== 409`；移除最终整体 SHA-256 比较后，`F-0015/AC-3/AC-7 final size/digest...` 失败为 `200 !== 422`。
