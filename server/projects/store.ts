@@ -14,6 +14,7 @@ import {
   PROJECT_FORMAT_VERSION, projectEditsSchema, projectFileSchema, transcriptRecordSchema,
   type ProjectEdits, type ProjectFile, type ProjectListItem, type ProjectMedia, type ProjectStyle, type ProjectVideo, type TrashItem,
 } from '../../shared/projects';
+import { trimTextHistory } from '../../shared/text/corrections';
 import { migrateProject, NewerFormatError } from './migrations';
 
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -191,6 +192,7 @@ export class ProjectStore {
     const file = join(this.videoDir(id, videoId), 'edits.json');
     if (!(await exists(file))) return undefined;
     const edits = projectEditsSchema.parse(await readJson(file));
+    if (edits.textHistory?.length) edits.textHistory = trimTextHistory(edits.textHistory);
     if (edits.editing) return edits;
     const transcript = await this.readTranscript(id, videoId);
     if (!transcript?.duration) return edits;
@@ -201,6 +203,8 @@ export class ProjectStore {
   }
   async writeEdits(id: string, videoId: string, edits: ProjectEdits) {
     edits = projectEditsSchema.parse(edits);
+    // F-0013: the format-3 text history is bounded on both sides; an older client cannot grow the file without limit.
+    if (edits.textHistory?.length) edits.textHistory = trimTextHistory(edits.textHistory);
     if (edits.editing) {
       const transcript = await this.readTranscript(id, videoId);
       const project = await this.read(id);

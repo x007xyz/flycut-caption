@@ -4,6 +4,7 @@ import { useAppStore } from '@/stores/appStore'
 import { useHistoryStore } from '@/stores/historyStore'
 import { useShowSuccess, useShowError, useShowWarning } from '@/stores/messageStore'
 import type { AIProgress, AISubtitleItem } from '@/types/ai'
+import type { AIModelConfig } from '@/types/ai'
 import { useClientRuntime } from '@/runtime/context';
 
 export interface UseAIReturn {
@@ -11,7 +12,8 @@ export interface UseAIReturn {
   aiProgress: AIProgress | null
   hasModels: boolean
   selectedModelId: string | null
-  runCorrection: () => Promise<void>
+  /** AI correction returns model output for a review layer; it never writes formal subtitles. */
+  requestCorrection: (items: AISubtitleItem[], model: AIModelConfig, signal?: AbortSignal) => Promise<AISubtitleItem[]>
   runTranslation: (targetLang: string) => Promise<void>
 }
 
@@ -42,8 +44,13 @@ export function useAI(): UseAIReturn {
     return aiModels.find((m) => m.id === selectedAIModelId) ?? null
   }, [aiModels, selectedAIModelId])
 
+  const requestCorrection = useCallback(
+    (items: AISubtitleItem[], model: AIModelConfig, signal?: AbortSignal) => aiService.correct(items, model, signal),
+    [aiService],
+  )
+
   const run = useCallback(
-    async (mode: 'correction' | 'translation', targetLang?: string) => {
+    async (targetLang: string) => {
       const model = getSelectedModel()
       if (!model) {
         showWarning('未选择 AI 模型', '请先在 API 设置中添加并选择一个 AI 模型')
@@ -59,11 +66,11 @@ export function useAI(): UseAIReturn {
         return
       }
 
-      setAITask(mode)
+      setAITask('translation')
       setAIProgress({
         status: 'running',
         progress: 0,
-        data: mode === 'correction' ? '开始纠错...' : `开始翻译为 ${targetLang}...`,
+        data: `开始翻译为 ${targetLang}...`,
       })
 
       // 绑定进度回调
@@ -72,26 +79,15 @@ export function useAI(): UseAIReturn {
       })
 
       try {
-        const results =
-          mode === 'correction'
-            ? await aiService.correct(activeItems, model)
-            : await aiService.translate(activeItems, model, targetLang ?? 'English')
-
-        if (mode === 'correction') {
-          batchUpdateText(results.map((r) => ({ id: r.id, text: r.text })))
-        } else {
-          batchUpdateText(results.map((r) => ({ id: r.id, secondText: r.text })))
-        }
+        const results = await aiService.translate(activeItems, model, targetLang)
+        batchUpdateText(results.map((r) => ({ id: r.id, secondText: r.text })))
 
         setAIProgress({ status: 'complete', progress: 100, data: '完成' })
-        showSuccess(
-          mode === 'correction' ? '字幕纠错完成' : '字幕翻译完成',
-          `共处理 ${results.length} 条`,
-        )
+        showSuccess('字幕翻译完成', `共处理 ${results.length} 条`)
       } catch (error) {
         const msg = error instanceof Error ? error.message : 'AI 处理失败'
         setAIProgress({ status: 'error', error: msg })
-        showError(mode === 'correction' ? '字幕纠错失败' : '字幕翻译失败', msg)
+        showError('字幕翻译失败', msg)
       } finally {
         // 自动清空运行态（保留 toast 错误信息）
         window.setTimeout(() => {
@@ -112,18 +108,14 @@ export function useAI(): UseAIReturn {
     ],
   )
 
-  const runCorrection = useCallback(() => run('correction'), [run])
-  const runTranslation = useCallback(
-    (targetLang: string) => run('translation', targetLang),
-    [run],
-  )
+  const runTranslation = useCallback((targetLang: string) => run(targetLang), [run])
 
   return {
     isAILoading,
     aiProgress,
     hasModels: aiModels.length > 0,
     selectedModelId: selectedAIModelId,
-    runCorrection,
+    requestCorrection,
     runTranslation,
   }
 }

@@ -3,6 +3,7 @@
 // 这个文件只放数据格式和比较，不依赖界面和存储，供 projectService 和测试共用。
 import { z } from 'zod';
 import { editingSchema, type Editing } from '../../shared/editing/edl';
+import { textRecordSchema, type TextRecord } from '../../shared/text/corrections';
 
 export const RECOVERY_SCHEMA_VERSION = 1;
 
@@ -11,6 +12,8 @@ export const recoveryContentSchema = z.object({
   editing: editingSchema.optional(),
   chunks: z.array(z.looseObject({ id: z.string(), text: z.string(), timestamp: z.tuple([z.number(), z.number()]) })),
   deletedWordIds: z.array(z.string()),
+  /** F-0013: confirmed text operations, kept so a recovery write does not erase the project history. */
+  textHistory: z.array(textRecordSchema).optional(),
   styleSource: z.enum(['project', 'custom']),
   /** 当前生效的主、副字幕样式（含画幅）。跟随项目时它就是要写进项目样式的内容 */
   stylePair: z.object({ primary: z.record(z.string(), z.unknown()), secondary: z.record(z.string(), z.unknown()) }),
@@ -62,6 +65,7 @@ export interface HostContent {
   editing?: Editing;
   chunks: unknown[];
   deletedWordIds: string[];
+  textHistory?: TextRecord[];
   styleSource: 'project' | 'custom';
   /** 这个视频打开时生效的样式（含画幅） */
   effectiveStyle: StylePair;
@@ -75,7 +79,8 @@ export interface HostContent {
  */
 export function diffWithHost(content: RecoveryContent, host: HostContent) {
   const sameWords = canonical([...content.deletedWordIds].sort()) === canonical([...host.deletedWordIds].sort());
-  const video = (content.editing !== undefined && canonical(content.editing) !== canonical(host.editing)) || canonical(content.chunks) !== canonical(host.chunks) || !sameWords || content.styleSource !== host.styleSource
+  const text = content.textHistory !== undefined && canonical(content.textHistory) !== canonical(host.textHistory ?? []);
+  const video = (content.editing !== undefined && canonical(content.editing) !== canonical(host.editing)) || canonical(content.chunks) !== canonical(host.chunks) || !sameWords || text || content.styleSource !== host.styleSource
     || aspectOf(content.stylePair) !== aspectOf(host.effectiveStyle)
     || (content.styleSource === 'custom' && styleKey(content.stylePair) !== styleKey(host.effectiveStyle));
   const style = content.styleSource === 'project' && styleKey(content.stylePair) !== styleKey(host.projectStyle);

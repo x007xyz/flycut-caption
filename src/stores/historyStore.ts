@@ -8,11 +8,14 @@ import { joinWordTexts } from '../../shared/text/joinWords';
 import { changeCuts, createEdl, editingSchema, isDeleted, outputDuration, validateEdl,
   type Edl, type Editing, type CutRecord } from '../../shared/editing/edl';
 import { selectPendingRanges, validateSuggestionBatch, type SuggestionBatch } from '../../shared/editing/suggestions';
+import { applyTextSnapshots, createTextRecord, planTextRestore, trimTextHistory, validateTextUpdates,
+  type TextRecord, type TextUpdate } from '../../shared/text/corrections';
 
 type ChunkLayer = 'sentence' | 'word';
 type Chunk = SubtitleChunk;
 interface Snapshot { chunks: Chunk[]; wordChunks: Chunk[]; edl: Edl }
-interface Action { before: Snapshot; after: Snapshot }
+/** `textRecord`: set when this step was a recorded text operation, so undo/redo also append a text record. */
+interface Action { before: Snapshot; after: Snapshot; textRecord?: TextRecord }
 export interface HistoryState {
   chunks: Chunk[]; wordChunks: Chunk[]; hasWordTimestamps: boolean; language: string;
   sourceDuration: number; edl: Edl | null; cutHistory: CutRecord[];
@@ -21,6 +24,11 @@ export interface HistoryState {
   pendingSuggestions: SuggestionBatch | null;
   audition: { id: string; mode: 'before' | 'after' } | null;
   historyPreview: Edl | null;
+  /** F-0013 persisted text operations (AI corrections and restores), oldest first. */
+  textHistory: TextRecord[];
+  /** Preview of a text record selected in the unified history; never persisted. */
+  textHistoryPreview: TextRecord | null;
+  textError: string | null;
   undoStack: Action[]; redoStack: Action[]; lastUpdateTime: number; mergeThreshold: number;
   text: string; duration: number; canUndo: boolean; canRedo: boolean;
 }
@@ -45,10 +53,18 @@ export interface HistoryActions {
   stopAudition: () => void;
   previewPending: (preview: boolean) => void; confirmPending: () => void; cancelPending: () => void;
   previewHistory: (id: string | null) => void; restoreHistory: (id: string) => void;
+  setTextHistory: (records: TextRecord[]) => void;
+  /** One atomic AI-correction confirm; every update is validated before any chunk changes. */
+  applyTextBatch: (updates: TextUpdate[], kind?: TextRecord['kind']) => { ok: boolean; count?: number; error?: 'empty' | 'duplicate' | 'unknown' | 'blank' | 'stale' };
+  /** Restore one persisted text record as a new record; later edits to an affected subtitle are a conflict. */
+  restoreTextHistory: (id: string) => { ok: boolean; count?: number; error?: 'missing' | 'conflict' };
+  previewTextHistory: (id: string | null) => void;
+  clearTextError: () => void;
   clearCutError: () => void; reset: () => void;
 }
 const initialState: HistoryState = { chunks: [], wordChunks: [], hasWordTimestamps: false, language: 'en',
   sourceDuration: 0, edl: null, cutHistory: [], cutError: null, updatingCuts: false, pendingCuts: null, pendingSuggestions: null, audition: null, historyPreview: null,
+  textHistory: [], textHistoryPreview: null, textError: null,
   undoStack: [], redoStack: [], lastUpdateTime: 0, mergeThreshold: 500, text: '', duration: 0, canUndo: false, canRedo: false };
 const plain = (text: string) => text.replace(/[\p{P}\s]/gu, '');
 const keyOf = (state: Pick<HistoryState, 'edl' | 'chunks' | 'wordChunks'>) => JSON.stringify([state.edl, state.chunks, state.wordChunks]);
@@ -80,7 +96,8 @@ export const createHistoryStore = () => createStore<HistoryState & HistoryAction
     if (JSON.stringify(before) === JSON.stringify(next)) return;
     const history = cuts ? [...(state.cutHistory.length ? state.cutHistory : [record(before, 'baseline')]), record(next, kind)] : state.cutHistory;
     set({ ...next, ...derived(next), cutHistory: history, undoStack: [...state.undoStack, { before, after: next }],
-      redoStack: [], canUndo: true, canRedo: false, lastUpdateTime: Date.now(), cutError: null, historyPreview: null, updatingCuts: false });
+      redoStack: [], canUndo: true, canRedo: false, lastUpdateTime: Date.now(), cutError: null, historyPreview: null,
+      textHistoryPreview: null, textError: null, updatingCuts: false });
   };
   /** `spacers: false` cuts the ranges in the EDL only, e.g. fillers inside a sentence whose words are already marked deleted. */
   const cut = (updates: {id: string; deleted: boolean; layer?: ChunkLayer}[], blanks: {start: number; end: number}[] = [], kind = 'edit', spacers = true) => {
@@ -128,11 +145,14 @@ export const createHistoryStore = () => createStore<HistoryState & HistoryAction
       const s = get(); if (s.updatingCuts) return; const action = (redo ? s.redoStack : s.undoStack).at(-1); if (!action) return;
       const next = redo ? action.after : action.before;
       const changed = JSON.stringify(s.edl) !== JSON.stringify(next.edl);
+      // Like cutHistory, undo/redo of a text operation appends a record instead of erasing the original (AC-9).
+      const textStep = action.textRecord ? createTextRecord(redo ? 'redo' : 'undo', s.chunks, next.chunks) : null;
       const undoStack = redo ? [...s.undoStack, action] : s.undoStack.slice(0, -1);
       const redoStack = redo ? s.redoStack.slice(0, -1) : [...s.redoStack, action];
       set({ ...next, ...derived(next), undoStack, redoStack, canUndo: !!undoStack.length, canRedo: !!redoStack.length,
         cutHistory: changed ? [...s.cutHistory, record(next, redo ? 'redo' : 'undo')] : s.cutHistory,
-        historyPreview: null, cutError: null });
+        textHistory: textStep ? trimTextHistory([...s.textHistory, textStep]) : s.textHistory,
+        historyPreview: null, textHistoryPreview: null, cutError: null, textError: null });
     } catch (error) { fail(error); }
   };
   return { ...initialState,
@@ -177,6 +197,55 @@ export const createHistoryStore = () => createStore<HistoryState & HistoryAction
         commit({ ...snapshot(s), chunks: s.chunks.map(c => map.has(c.id) ? { ...c, ...map.get(c.id), edlWordProjection: false } : c) }, 'text', false);
       } catch (error) { fail(error); }
     },
+    setTextHistory: records => set({ textHistory: trimTextHistory(records), textHistoryPreview: null, textError: null }),
+    applyTextBatch: (updates, kind = 'ai-correction') => {
+      try {
+        const s = get(); if (s.updatingCuts) return { ok: false, error: 'stale' };
+        const validation = validateTextUpdates(s.chunks, updates);
+        if ('reason' in validation) {
+          const message = validation.reason === 'stale' ? 'Original subtitles changed. Review again.' :
+            validation.reason === 'empty' ? 'No text changes to apply.' : `Invalid text update (${validation.reason}).`;
+          set({ textError: message });
+          return { ok: false, error: validation.reason };
+        }
+        const nextChunks = applyTextSnapshots(s.chunks, validation.changes);
+        const record = createTextRecord(kind, s.chunks, nextChunks);
+        if (!record) { set({ textError: null }); return { ok: true, count: 0 }; }
+        const before = snapshot(s); const next = { ...before, chunks: nextChunks };
+        set({ ...next, ...derived(next), textHistory: trimTextHistory([...s.textHistory, record]),
+          undoStack: [...s.undoStack, { before, after: next, textRecord: record }], redoStack: [], canUndo: true, canRedo: false,
+          lastUpdateTime: Date.now(), textError: null, textHistoryPreview: null, historyPreview: null });
+        return { ok: true, count: record.after.length };
+      } catch (error) {
+        set({ textError: error instanceof Error ? error.message : String(error) });
+        return { ok: false, error: 'unknown' };
+      }
+    },
+    restoreTextHistory: id => {
+      try {
+        const s = get(); if (s.updatingCuts) return { ok: false, error: 'conflict' };
+        const plan = planTextRestore(s.textHistory, s.chunks, id);
+        if ('reason' in plan) {
+          set({ textError: plan.reason === 'missing' ? 'Text history no longer exists' :
+            `Cannot restore: ${plan.ids.length} subtitle(s) changed after this operation` });
+          return { ok: false, error: plan.reason };
+        }
+        const nextChunks = applyTextSnapshots(s.chunks, plan.changes);
+        const before = snapshot(s); const next = { ...before, chunks: nextChunks };
+        set({ ...next, ...derived(next), textHistory: trimTextHistory([...s.textHistory, plan.record]),
+          undoStack: [...s.undoStack, { before, after: next, textRecord: plan.record }], redoStack: [], canUndo: true, canRedo: false,
+          lastUpdateTime: Date.now(), textError: null, textHistoryPreview: null, historyPreview: null });
+        return { ok: true, count: plan.record.after.length };
+      } catch (error) {
+        set({ textError: error instanceof Error ? error.message : String(error) });
+        return { ok: false, error: 'conflict' };
+      }
+    },
+    previewTextHistory: id => {
+      const record = id ? get().textHistory.find(entry => entry.id === id) ?? null : null;
+      set({ textHistoryPreview: record });
+    },
+    clearTextError: () => set({ textError: null }),
     insertBlankChunks: ranges => cut([], ranges, 'silence'),
     undo: () => travel(false), redo: () => travel(true),
     clearHistory: () => set({ undoStack: [], redoStack: [], canUndo: false, canRedo: false }),

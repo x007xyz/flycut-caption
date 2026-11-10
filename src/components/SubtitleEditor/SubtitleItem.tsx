@@ -8,7 +8,9 @@ import { useUpdate, useDelete } from '@/stores/historyStore';
 import { useAppStore } from '@/stores/appStore';
 import { useTranslation } from '@/contexts/LocaleProvider';
 import { findCopy } from '@/locales/findReplace';
+import { correctionCopy } from '@/locales/correction';
 import type { FindMatch } from '../../../shared/text/findReplace';
+import { markTextDiff, type CorrectionSuggestion } from '../../../shared/text/corrections';
 
 interface SubtitleItemProps {
   chunk: SubtitleChunk;
@@ -18,6 +20,10 @@ interface SubtitleItemProps {
   isSelected: boolean;
   isCurrent: boolean;
   isActive: boolean;
+  /** F-0013 pending AI correction for this row; never written to the formal chunk by itself. */
+  textSuggestion?: CorrectionSuggestion;
+  textPreview?: boolean;
+  onSuggestionChange?: (id: string, text: string) => void;
   onToggleSelection: (chunkId: string) => void;
   onSeekTo: (time: number) => void;
   className?: string;
@@ -47,10 +53,14 @@ export function SubtitleItem(props: SubtitleItemProps) {
     onToggleSelection,
     findMatches,
     findActive,
+    textSuggestion,
+    textPreview = false,
+    onSuggestionChange,
   } = props;
   
   const { t, language } = useTranslation();
   const findText = findCopy(language);
+  const correctionText = correctionCopy(language);
   const update = useUpdate();
   const deleteChunk = useDelete();
   const displayMode = useAppStore(state => state.display);
@@ -69,10 +79,13 @@ export function SubtitleItem(props: SubtitleItemProps) {
     textarea.style.height = `${isExpanded ? textarea.scrollHeight : Math.min(textarea.scrollHeight, COLLAPSED_TEXTAREA_HEIGHT)}px`;
   }, [isExpanded]);
 
+  const suggestionEditable = textPreview && !!textSuggestion?.selected;
+  const displayText = suggestionEditable ? textSuggestion!.after : chunk.text;
+
   // 当 store 中的数据改变时，同步本地状态
   useEffect(() => {
-    setMainText(chunk.text);
-  }, [chunk.text]);
+    setMainText(displayText);
+  }, [displayText]);
 
   useEffect(() => {
     setSecondText(chunk.secondText || '');
@@ -107,10 +120,14 @@ export function SubtitleItem(props: SubtitleItemProps) {
 
   // 保存主字幕
   const handleMainBlur = useCallback(() => {
+    if (textPreview) {
+      if (suggestionEditable && mainText !== textSuggestion?.after) onSuggestionChange?.(chunk.id, mainText);
+      return;
+    }
     if (mainText.trim() !== chunk.text) {
       update(chunk.id, { text: mainText.trim() });
     }
-  }, [chunk.id, mainText, chunk.text, update]);
+  }, [chunk.id, mainText, chunk.text, update, textPreview, suggestionEditable, textSuggestion?.after, onSuggestionChange]);
 
   // 保存副字幕
   const handleSecondBlur = useCallback(() => {
@@ -129,6 +146,8 @@ export function SubtitleItem(props: SubtitleItemProps) {
   }, []);
 
   const duration = (chunk.timestamp[1] - chunk.timestamp[0]).toFixed(1);
+
+  const correctionDiff = textSuggestion && textPreview ? markTextDiff(textSuggestion.before, textSuggestion.selected ? textSuggestion.after : textSuggestion.before) : null;
 
   const findSnippet = findMatches?.length ? (
     <div className="mb-1 rounded border border-amber-400/40 bg-amber-400/10 px-2 py-1" data-testid="find-snippet">
@@ -257,18 +276,40 @@ export function SubtitleItem(props: SubtitleItemProps) {
       <div className="flex-1 flex flex-col justify-center py-2 px-4">
         {chunk.speaker && <span className="text-[11px] text-aimu-text-muted">{chunk.speaker}</span>}
         {findSnippet}
+        {textSuggestion && (
+          <div data-testid="correction-row-badge" className="mb-1 rounded border border-aimu-purple/30 bg-aimu-purple/5 px-2 py-1 text-[10px]">
+            <span className="font-medium text-aimu-purple">
+              {!textSuggestion.selected ? correctionText.keepOriginalBadge
+                : textSuggestion.adjusted ? correctionText.adjusted
+                  : textPreview ? correctionText.aiSuggestion : correctionText.pendingBadge}
+            </span>
+            {correctionDiff && (correctionDiff.before || correctionDiff.after) && (
+              <span className="ml-1 text-aimu-text-muted">
+                {correctionDiff.before && <del className="rounded bg-red-500/10 px-0.5 text-red-700 dark:text-red-300">{correctionDiff.before}</del>}
+                {correctionDiff.after && <ins className="rounded bg-emerald-500/10 px-0.5 text-emerald-700 no-underline dark:text-emerald-300">{correctionDiff.after}</ins>}
+              </span>
+            )}
+          </div>
+        )}
         {/* 主字幕输入框 */}
         {(displayMode === 'Bilingual' || displayMode === 'Main') && (
           <div className={cn('flex-1 flex', isExpanded ? 'items-start' : 'items-center')}>
             <textarea
               ref={mainTextareaRef}
               value={mainText}
-              onChange={(e) => setMainText(e.target.value)}
+              data-testid="subtitle-main-text"
+              readOnly={textPreview && !suggestionEditable}
+              onChange={(e) => {
+                const value = e.target.value;
+                setMainText(value);
+                if (suggestionEditable) onSuggestionChange?.(chunk.id, value);
+              }}
               onBlur={handleMainBlur}
               onKeyDown={handleKeyDown}
               onClick={(e) => e.stopPropagation()}
               className={cn(
                 'w-full bg-transparent border-none focus:outline-none focus:ring-0 text-sm leading-6 p-1 text-aimu-text-primary resize-none overflow-hidden whitespace-pre-wrap break-words cursor-text',
+                textPreview && textSuggestion?.selected && 'bg-aimu-purple/5',
                 !isActive && 'line-through text-aimu-text-muted'
               )}
               placeholder={t('components.workstation.mainSubtitlePlaceholder')}

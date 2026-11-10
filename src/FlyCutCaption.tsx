@@ -158,6 +158,13 @@ export function FlyCutCaptionContent(props: FlyCutCaptionProps) {
   // Tab 状态 (Aimu 风格)
   const [activeTab, setActiveTab] = useState<AimuTab>('style');
 
+  // F-0013: the correction review can send the user to the existing AI model tab without another settings system.
+  useEffect(() => {
+    const openAISettings = () => setActiveTab('api');
+    window.addEventListener('flycut:open-ai-settings', openAISettings);
+    return () => window.removeEventListener('flycut:open-ai-settings', openAISettings);
+  }, []);
+
   // 主题管理
   const { resolvedTheme } = useThemeStore();
   const effectiveTheme = mergedConfig.theme === 'auto' ? resolvedTheme : mergedConfig.theme;

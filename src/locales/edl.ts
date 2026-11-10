@@ -8,6 +8,10 @@ const en = { history: 'Edit history', loading: 'Loading edit history…', noHist
   empty: 'No content to play', emptyHint: 'Undo the last action to restore content.',
   invalid: "Couldn't update cuts", invalidHint: "The cut data or media duration is invalid. This operation hasn't overwritten the original project.",
   updating: 'Updating cuts…', stale: 'Suggestions are outdated. Analyze again.',
+  textChanges: '{count} subtitle changes', previewText: 'Preview text changes', before: 'Before', after: 'After',
+  restoreTextTitle: 'Restore these text changes?', restoreTextHint: 'Affected subtitles return to their earlier text. Timestamps, translations and cuts stay unchanged. This restore is recorded too.',
+  textRestoreFailed: "Couldn't restore text. Current subtitles are unchanged", restoringText: 'Restoring text…',
+  textConflict: 'Some subtitles changed after this operation. Review them before restoring.',
 };
 const zh: typeof en = { history: '操作历史', loading: '正在读取操作历史…', noHistory: '暂无剪辑记录',
   failed: '无法读取操作历史', retry: '重试', back: '返回项目', preview: '预览，尚未应用',
@@ -16,6 +20,10 @@ const zh: typeof en = { history: '操作历史', loading: '正在读取操作历
   restoreHint: '当前剪辑将被所选版本替换，回退操作也会记录到历史中。', restoreFailed: '回退失败，当前剪辑未改变', restoring: '正在回退剪辑…',
   empty: '没有可播放的内容', emptyHint: '撤销上次操作可恢复内容。', invalid: '无法更新剪辑',
   invalidHint: '剪辑数据或媒体时长无效，原项目未被此操作覆盖。', updating: '正在更新剪辑…', stale: '建议已过期，请重新分析',
+  textChanges: '{count} 处字幕修改', previewText: '预览文字修改', before: '修改前', after: '修改后',
+  restoreTextTitle: '回退这次文字修改？', restoreTextHint: '受影响字幕恢复到修改前的文字；时间戳、译文和剪辑保持不变，回退也会记录到历史中。',
+  textRestoreFailed: '回退文字失败，当前字幕未改变', restoringText: '正在回退文字…',
+  textConflict: '此操作后相关字幕又有修改，请先核对再回退。',
 };
 export const edlCopy = (language: string) => language.startsWith('zh') ? zh : en;
 
@@ -29,4 +37,15 @@ export const cutKindLabel = (kind: string, language: string) => {
     'history-restore': ['回退剪辑版本', 'Restore cut version'], edit: ['编辑剪辑', 'Edit cuts'],
   };
   return (labels[kind] ?? labels.edit)[english ? 1 : 0];
+};
+
+export const textKindLabel = (kind: string, language: string) => {
+  const english = !language.startsWith('zh');
+  const labels: Record<string, [string, string]> = {
+    'ai-correction': ['AI 纠错', 'AI correction'],
+    'history-restore': ['回退文字版本', 'Restore text version'],
+    undo: ['撤销文字修改', 'Undo text change'],
+    redo: ['重做文字修改', 'Redo text change'],
+  };
+  return (labels[kind] ?? labels['ai-correction'])[english ? 1 : 0];
 };

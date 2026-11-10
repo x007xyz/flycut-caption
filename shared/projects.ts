@@ -5,6 +5,7 @@
 import { z } from 'zod';
 import { editingSchema } from './editing/edl';
 import { modelRefSchema } from './providers';
+import { textRecordSchema } from './text/corrections';
 
 /** Bump together with a migration in `server/projects/migrations.ts` and a note in ADR-0001. */
 export const PROJECT_FORMAT_VERSION = 3;
@@ -45,6 +46,11 @@ export const projectEditsSchema = z.object({
   stylePair: z.record(z.string(), z.unknown()).optional(),
   /** Format 2: the video's aspect preset. Always per video, whatever the style source (F-0003 AC-13). */
   aspectPreset: z.string().optional(),
+  /**
+   * F-0013: append-only text operations. Format 3 additive extension: old edits have no field and read as none;
+   * the project format version stays 3. At most 100 records are kept (newest first when read back).
+   */
+  textHistory: z.array(textRecordSchema).optional(),
 });
 export type ProjectEdits = z.infer<typeof projectEditsSchema>;
 

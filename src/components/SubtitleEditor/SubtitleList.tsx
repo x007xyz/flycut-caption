@@ -22,6 +22,8 @@ import {
 } from '@/components/ui/select';
 import { COMMON_LANGUAGES } from '@/constants/languages';
 import { useAI } from '@/hooks/useAI';
+import { useCorrectionReview } from '@/hooks/useCorrectionReview';
+import { CorrectionReviewPanel } from './CorrectionReviewPanel';
 import type { FindReplaceActions, FindReplaceState } from '@/hooks/useFindReplace';
 import type { FindMatch } from '../../../shared/text/findReplace';
 
@@ -78,7 +80,8 @@ export function SubtitleList({
   const selectedAIModelId = useAppStore(state => state.selectedAIModelId);
   const setSelectedAIModelId = useAppStore(state => state.setSelectedAIModelId);
 
-  const { isAILoading, aiProgress, hasModels, runCorrection, runTranslation } = useAI();
+  const { isAILoading, aiProgress, hasModels, runTranslation } = useAI();
+  const review = useCorrectionReview();
   const [targetLang, setTargetLang] = useState<string>('en');
 
   const deleteSelected = useHistoryStore(state => state.deleteSelected);
@@ -341,8 +344,9 @@ export function SubtitleList({
 
           {/* 纠错 */}
           <button
-            onClick={runCorrection}
-            disabled={isAILoading || !selectedAIModelId}
+            data-testid="correction-open"
+            onClick={review.openPanel}
+            disabled={isAILoading && review.phase !== 'running'}
             className={cn(
               'flex items-center gap-1 px-2 py-0.5 text-xs rounded font-medium transition-colors',
               isAILoading
@@ -351,12 +355,12 @@ export function SubtitleList({
             )}
             title={t('components.workstation.correctSubtitle')}
           >
-            {isAILoading && aiProgress?.data ? (
+            {review.phase === 'running' && aiProgress?.data ? (
               <Loader2 className="w-3 h-3 animate-spin" />
             ) : (
               <Wand2 className="w-3 h-3" />
             )}
-            <span>{isAILoading ? t('components.workstation.correcting') : t('components.workstation.correctStart')}</span>
+            <span>{review.phase === 'running' ? t('components.workstation.correcting') : t('components.workstation.correctStart')}</span>
           </button>
 
           {/* 翻译 */}
@@ -381,6 +385,8 @@ export function SubtitleList({
         </div>
       </div>
 
+      <CorrectionReviewPanel review={review} />
+
       {/* Subtitle List (scrollable) */}
       <div className="flex-1 overflow-y-auto">
         {transcript.chunks
@@ -400,6 +406,9 @@ export function SubtitleList({
                 isActive={isActive}
                 isCurrent={isCurrent}
                 isSelected={isSelected}
+                textSuggestion={review.suggestionsById.get(chunk.id)}
+                textPreview={review.preview && (review.phase === 'review' || review.phase === 'partial' || review.phase === 'applying')}
+                onSuggestionChange={review.updateSuggestion}
                 onToggleSelection={handleToggleSelection}
                 onSeekTo={seekTo}
               />
