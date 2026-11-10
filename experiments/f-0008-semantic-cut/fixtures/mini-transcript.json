@@ -1,0 +1,25 @@
+{
+  "text": "呃我们先开始。这个这个方案可以。我们下周再讨论。",
+  "language": "zh",
+  "duration": 6,
+  "hasWordTimestamps": true,
+  "chunks": [
+    { "id": "s1", "text": "呃我们先开始。", "timestamp": [0, 1.7], "wordIds": ["w1", "w2", "w3", "w4"] },
+    { "id": "s2", "text": "这个这个方案可以。", "timestamp": [2, 3.6], "wordIds": ["w5", "w6", "w7", "w8"] },
+    { "id": "s3", "text": "我们下周再讨论。", "timestamp": [4, 5.6], "wordIds": ["w9", "w10", "w11", "w12"] }
+  ],
+  "wordChunks": [
+    { "id": "w1", "text": "呃", "timestamp": [0, 0.35], "sentenceId": "s1" },
+    { "id": "w2", "text": "我们", "timestamp": [0.35, 0.75], "sentenceId": "s1" },
+    { "id": "w3", "text": "先", "timestamp": [0.75, 0.95], "sentenceId": "s1" },
+    { "id": "w4", "text": "开始。", "timestamp": [0.95, 1.7], "sentenceId": "s1" },
+    { "id": "w5", "text": "这个", "timestamp": [2, 2.3], "sentenceId": "s2" },
+    { "id": "w6", "text": "这个", "timestamp": [2.3, 2.6], "sentenceId": "s2" },
+    { "id": "w7", "text": "方案", "timestamp": [2.6, 3], "sentenceId": "s2" },
+    { "id": "w8", "text": "可以。", "timestamp": [3, 3.6], "sentenceId": "s2" },
+    { "id": "w9", "text": "我们", "timestamp": [4, 4.3], "sentenceId": "s3" },
+    { "id": "w10", "text": "下周", "timestamp": [4.3, 4.7], "sentenceId": "s3" },
+    { "id": "w11", "text": "再", "timestamp": [4.7, 4.9], "sentenceId": "s3" },
+    { "id": "w12", "text": "讨论。", "timestamp": [4.9, 5.6], "sentenceId": "s3" }
+  ]
+}

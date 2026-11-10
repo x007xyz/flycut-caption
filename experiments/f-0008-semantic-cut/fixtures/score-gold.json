@@ -1,0 +1,4 @@
+{
+  "goldSpans": [{ "startWordId": "w5", "endWordId": "w6", "category": "repetition" }],
+  "protectedSpans": [{ "startWordId": "w2", "endWordId": "w2", "reason": "synthetic contract fixture" }]
+}

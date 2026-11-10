@@ -1,0 +1,12 @@
+{
+  "clip": "coscup-BWgFrY91F_I",
+  "range": [48.5, 1432.5],
+  "annotator": "",
+  "reviewedAt": "",
+  "goldSpans": [
+    { "startWordId": "word-1", "endWordId": "word-1", "category": "contextual-filler", "note": "example only; replace with reviewed annotation" }
+  ],
+  "protectedSpans": [
+    { "startWordId": "word-1", "endWordId": "word-1", "reason": "example only; negation, name, number, or intent-bearing content" }
+  ]
+}

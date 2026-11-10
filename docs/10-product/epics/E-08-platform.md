@@ -41,15 +41,15 @@ FlyCut Cloud 服务端、账号和计费（不在本仓库）；本仓库内的�
 
 | 候选 | 需求 | 类型 | 依赖 | 需求编号 |
 |---|---|---|---|---|
-| E-08/1 | CLI：通过 Host 操作项目，转写、获取建议、导出 | feature | E-02/1、E-08/7 | |
-| E-08/2 | MCP Server：复用 CLI 的应用服务，发布到 MCP / Skills 市场；建议需用户确认，破坏性操作需客户端二次确认 | feature | E-08/1 | |
-| E-08/3 | TTS Provider 能力：协议、能力声明（含声音克隆）、HTTP Provider 支持 TTS | feature | E-05/1 | |
-| E-08/4 | 桌面端自动更新：Tauri updater、更新包签名密钥的保管、更新通道 | feature | E-08/8 | |
-| E-08/5 | 崩溃收集与匿名使用统计：是否做、收集什么、如何征得同意 | spike | — | |
+| E-08/1 | CLI：通过 Host 操作项目，转写、获取建议、导出 | feature | E-02/1、E-08/7 | F-0051 |
+| E-08/2 | MCP Server：复用 CLI 的应用服务，发布到 MCP / Skills 市场；建议需用户确认，破坏性操作需客户端二次确认 | feature | E-08/1 | F-0052 |
+| E-08/3 | TTS Provider 能力：协议、能力声明（含声音克隆）、HTTP Provider 支持 TTS | feature | E-05/1 | F-0053 |
+| E-08/4 | 桌面端自动更新：Tauri updater、更新包签名密钥的保管、更新通道 | feature | E-08/8 | F-0054 |
+| E-08/5 | 崩溃收集与匿名使用统计：是否做、收集什么、如何征得同意 | spike | — | F-0055 |
 | E-08/6 | Web 端连接 FlyCut Cloud 托管的 Host：连接配置、Cloud 鉴权与会话接入、状态及重连；附单用户自部署说明，不含大文件续传 | feature | — | F-0014 |
 | E-08/9 | 大文件断点续传与断线恢复：分片完整性、上传恢复、任务状态核验与重复操作保护 | feature | F-0014 | F-0015 |
-| E-08/7 | AI 模型设置存到 Host：配置和 API Key 由 Host 保存，前端、CLI、MCP 共用；从浏览器本地存储迁移 | feature | — | |
-| E-08/8 | 安装包签名与公证：macOS 签名 + 公证、Windows 代码签名，接入发版流程 | feature | — | |
+| E-08/7 | AI 模型设置存到 Host：配置和 API Key 由 Host 保存，前端、CLI、MCP 共用；从浏览器本地存储迁移 | feature | — | F-0056 |
+| E-08/8 | 安装包签名与公证：macOS 签名 + 公证、Windows 代码签名，接入发版流程 | feature | — | F-0057 |
 
 ## 相关决定
 

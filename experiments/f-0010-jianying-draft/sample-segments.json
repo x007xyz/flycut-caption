@@ -1,0 +1,256 @@
+{
+  "_note": "Synthetic excerpt from F-0010 read-only research. Not a complete draft. Not imported into Jianying.",
+  "_observed_from": "AI包装口播_v3 (Windows 5.9.0 plain JSON), 2026-11-09",
+  "_purpose": "Show the shape of two kept ranges in one video track and one text track.",
+  "draft_content": {
+    "version": 360000,
+    "new_version": "110.0.0",
+    "platform": {
+      "app_id": 3704,
+      "app_source": "lv",
+      "app_version": "5.9.0",
+      "os": "windows"
+    },
+    "id": "00000000-0000-4000-8000-000000000001",
+    "duration": 8000000,
+    "fps": 30,
+    "canvas_config": {
+      "width": 1080,
+      "height": 1920,
+      "ratio": "original"
+    },
+    "tracks": [
+      {
+        "type": "video",
+        "name": "口播主轨",
+        "id": "10000000000000000000000000000001",
+        "attribute": 0,
+        "flag": 0,
+        "is_default_name": false,
+        "segments": [
+          {
+            "id": "20000000000000000000000000000001",
+            "material_id": "30000000000000000000000000000001",
+            "target_timerange": { "start": 0, "duration": 2000000 },
+            "source_timerange": { "start": 0, "duration": 2000000 },
+            "speed": 1.0,
+            "volume": 1.0,
+            "visible": true,
+            "render_index": 0,
+            "clip": {
+              "alpha": 1.0,
+              "flip": { "horizontal": false, "vertical": false },
+              "rotation": 0.0,
+              "scale": { "x": 1.0, "y": 1.0 },
+              "transform": { "x": 0.0, "y": 0.0 }
+            },
+            "uniform_scale": { "on": true, "value": 1.0 },
+            "hdr_settings": { "intensity": 1.0, "mode": 1, "nits": 1000 },
+            "extra_material_refs": ["40000000000000000000000000000001"],
+            "common_keyframes": [],
+            "keyframe_refs": [],
+            "is_tone_modify": false,
+            "last_nonzero_volume": 1.0,
+            "reverse": false,
+            "track_attribute": 0,
+            "track_render_index": 0,
+            "enable_adjust": true,
+            "enable_color_correct_adjust": false,
+            "enable_color_curves": true,
+            "enable_color_match_adjust": false,
+            "enable_color_wheels": true,
+            "enable_lut": true,
+            "enable_smart_color_adjust": false
+          },
+          {
+            "id": "20000000000000000000000000000002",
+            "material_id": "30000000000000000000000000000001",
+            "target_timerange": { "start": 2000000, "duration": 6000000 },
+            "source_timerange": { "start": 4000000, "duration": 6000000 },
+            "speed": 1.0,
+            "volume": 1.0,
+            "visible": true,
+            "render_index": 0,
+            "clip": {
+              "alpha": 1.0,
+              "flip": { "horizontal": false, "vertical": false },
+              "rotation": 0.0,
+              "scale": { "x": 1.0, "y": 1.0 },
+              "transform": { "x": 0.0, "y": 0.0 }
+            },
+            "uniform_scale": { "on": true, "value": 1.0 },
+            "hdr_settings": { "intensity": 1.0, "mode": 1, "nits": 1000 },
+            "extra_material_refs": ["40000000000000000000000000000002"],
+            "common_keyframes": [],
+            "keyframe_refs": [],
+            "is_tone_modify": false,
+            "last_nonzero_volume": 1.0,
+            "reverse": false,
+            "track_attribute": 0,
+            "track_render_index": 0,
+            "enable_adjust": true,
+            "enable_color_correct_adjust": false,
+            "enable_color_curves": true,
+            "enable_color_match_adjust": false,
+            "enable_color_wheels": true,
+            "enable_lut": true,
+            "enable_smart_color_adjust": false
+          }
+        ]
+      },
+      {
+        "type": "text",
+        "name": "字幕",
+        "id": "10000000000000000000000000000002",
+        "attribute": 0,
+        "flag": 0,
+        "is_default_name": false,
+        "segments": [
+          {
+            "id": "50000000000000000000000000000001",
+            "material_id": "60000000000000000000000000000001",
+            "target_timerange": { "start": 0, "duration": 2000000 },
+            "source_timerange": null,
+            "speed": 1.0,
+            "volume": 1.0,
+            "visible": true,
+            "render_index": 1,
+            "clip": {
+              "alpha": 1.0,
+              "flip": { "horizontal": false, "vertical": false },
+              "rotation": 0.0,
+              "scale": { "x": 1.0, "y": 1.0 },
+              "transform": { "x": 0.0, "y": -0.47651006711409394 }
+            },
+            "uniform_scale": { "on": true, "value": 1.0 },
+            "extra_material_refs": [],
+            "common_keyframes": [],
+            "keyframe_refs": [],
+            "is_tone_modify": false,
+            "last_nonzero_volume": 1.0,
+            "reverse": false,
+            "track_attribute": 0,
+            "track_render_index": 0,
+            "enable_adjust": true,
+            "enable_color_correct_adjust": false,
+            "enable_color_curves": true,
+            "enable_color_match_adjust": false,
+            "enable_color_wheels": true,
+            "enable_lut": true,
+            "enable_smart_color_adjust": false
+          },
+          {
+            "id": "50000000000000000000000000000002",
+            "material_id": "60000000000000000000000000000002",
+            "target_timerange": { "start": 2000000, "duration": 6000000 },
+            "source_timerange": null,
+            "speed": 1.0,
+            "volume": 1.0,
+            "visible": true,
+            "render_index": 1,
+            "clip": {
+              "alpha": 1.0,
+              "flip": { "horizontal": false, "vertical": false },
+              "rotation": 0.0,
+              "scale": { "x": 1.0, "y": 1.0 },
+              "transform": { "x": 0.0, "y": -0.47651006711409394 }
+            },
+            "uniform_scale": { "on": true, "value": 1.0 },
+            "extra_material_refs": [],
+            "common_keyframes": [],
+            "keyframe_refs": [],
+            "is_tone_modify": false,
+            "last_nonzero_volume": 1.0,
+            "reverse": false,
+            "track_attribute": 0,
+            "track_render_index": 0,
+            "enable_adjust": true,
+            "enable_color_correct_adjust": false,
+            "enable_color_curves": true,
+            "enable_color_match_adjust": false,
+            "enable_color_wheels": true,
+            "enable_lut": true,
+            "enable_smart_color_adjust": false
+          }
+        ]
+      }
+    ],
+    "materials": {
+      "videos": [
+        {
+          "id": "30000000000000000000000000000001",
+          "material_id": "30000000000000000000000000000001",
+          "local_material_id": "",
+          "material_name": "source.mp4",
+          "path": "/absolute/path/to/source.mp4",
+          "media_path": "",
+          "duration": 10000000,
+          "width": 1080,
+          "height": 1920,
+          "type": "video",
+          "category_name": "local",
+          "check_flag": 63487,
+          "crop": {
+            "upper_left_x": 0.0,
+            "upper_left_y": 0.0,
+            "upper_right_x": 1.0,
+            "upper_right_y": 0.0,
+            "lower_left_x": 0.0,
+            "lower_left_y": 1.0,
+            "lower_right_x": 1.0,
+            "lower_right_y": 1.0
+          },
+          "crop_ratio": "free",
+          "crop_scale": 1.0
+        }
+      ],
+      "texts": [
+        {
+          "id": "60000000000000000000000000000001",
+          "content": "{\"styles\":[{\"fill\":{\"alpha\":1.0,\"content\":{\"render_type\":\"solid\",\"solid\":{\"alpha\":1.0,\"color\":[1.0,1.0,1.0]}}},\"range\":[0,4],\"size\":10.0,\"bold\":true,\"italic\":false,\"underline\":false,\"strokes\":[{\"content\":{\"solid\":{\"alpha\":1.0,\"color\":[0.0,0.0,0.0]}},\"width\":0.09}]}],\"text\":\"第一段字幕\"}",
+          "typesetting": 0,
+          "alignment": 1,
+          "letter_spacing": 0.0,
+          "line_spacing": 0.02,
+          "line_feed": 1,
+          "line_max_width": 0.82,
+          "force_apply_line_max_width": false,
+          "check_flag": 15,
+          "type": "text",
+          "global_alpha": 1.0
+        },
+        {
+          "id": "60000000000000000000000000000002",
+          "content": "{\"styles\":[{\"fill\":{\"alpha\":1.0,\"content\":{\"render_type\":\"solid\",\"solid\":{\"alpha\":1.0,\"color\":[1.0,1.0,1.0]}}},\"range\":[0,4],\"size\":10.0,\"bold\":true,\"italic\":false,\"underline\":false,\"strokes\":[{\"content\":{\"solid\":{\"alpha\":1.0,\"color\":[0.0,0.0,0.0]}},\"width\":0.09}]}],\"text\":\"第二段字幕\"}",
+          "typesetting": 0,
+          "alignment": 1,
+          "letter_spacing": 0.0,
+          "line_spacing": 0.02,
+          "line_feed": 1,
+          "line_max_width": 0.82,
+          "force_apply_line_max_width": false,
+          "check_flag": 15,
+          "type": "text",
+          "global_alpha": 1.0
+        }
+      ],
+      "speeds": [
+        {
+          "id": "40000000000000000000000000000001",
+          "speed": 1.0,
+          "mode": 0,
+          "curve_speed": null,
+          "type": "speed"
+        },
+        {
+          "id": "40000000000000000000000000000002",
+          "speed": 1.0,
+          "mode": 0,
+          "curve_speed": null,
+          "type": "speed"
+        }
+      ]
+    }
+  }
+}
+
