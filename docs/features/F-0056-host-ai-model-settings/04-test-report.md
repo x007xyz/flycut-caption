@@ -47,7 +47,7 @@ ID 重试，成功后才清理。所有面板写操作和根快照加载都绑�
 | AC-6 | Playwright | 加载显示处理中，刷新/添加/编辑/删除在忙碌期间禁用；错误 Host 响应和 identity 切换不写回旧数据 | ✅ |
 | AC-7 | Playwright、Host 重启、第二个客户端 | 只有 Host 返回新 snapshot 才显示完成；重启与第二客户端读回同一 Host 配置 | ✅ |
 | AC-8 | Playwright、架构 Red check | 迁移失败保留来源；revision 冲突保留表单并提示重新检查；错误 Host 响应保留当前列表 | ✅ |
-| AC-9 | 40 张截图、8 段录屏、真实 Host/DeepSeek 官方 API、真实 Tauri | localhost:5175 UI 8/8；真实本地 Host 和 macOS 凭据后端通过；DeepSeek 官方 `deepseek-flash` 连接、翻译、纠错通过。修复后真实 Tauri 窗口与 Host 已启动；窗口内完整操作按约定交主 agent 继续 | Tauri 构建/启动 ✅；完整 UI ⏸；真实 API ✅ |
+| AC-9 | 40 张截图、8 段录屏、真实 Host/DeepSeek 官方 API、真实 Tauri | localhost:5175 UI 8/8；真实本地 Host 和 macOS 凭据后端通过；DeepSeek 官方 `deepseek-flash` 连接、翻译、纠错通过。完整 Tauri 窗口已完成原生导入、转写、字幕编辑/删除/撤销、AI 配置 CRUD、Keychain、重启读回、保存重开、导出和原生关闭，见下方实机记录 | ✅ |
 
 ## 界面证据
 
@@ -56,6 +56,7 @@ ID 重试，成功后才清理。所有面板写操作和根快照加载都绑�
 | AI 设置 | 空态、已保存、清除 Key、冲突已重编 | AC-3、AC-5、AC-8 | `screenshots/settings-{empty,saved,key-cleared,conflict-resolved}-{light,dark}-{zh,en}.png` | 2 段/主题语言组合 |
 | AI 设置 | 加载、错误 Host 响应、identity 切换 | AC-6、AC-8 | `screenshots/settings-{loading,host-mismatch,host-switched}-{light,dark}-{zh,en}.png` | 同组录屏 |
 | 旧配置迁移 | 核对、失败保留、成功清理 | AC-2、AC-6、AC-8 | `screenshots/migration-{review,failed,complete}-{light,dark}-{zh,en}.png` | 同组录屏 |
+| 真实 Tauri 桌面 | 导入、转写、AI 配置、翻译/纠错、保存重开、导出 | AC-1、AC-3、AC-4、AC-7、AC-9 | `screenshots/tauri-*.{jpg,png}` | 无 |
 
 `docs/features/F-0056-host-ai-model-settings/screenshots/` 共 40 张 PNG；
 `recordings/summary.json` 记录 commit `83059bd`、8 passed / 0 failed；8 段 WebM 仅保存在本地，已被 git 忽略。
@@ -65,8 +66,8 @@ ID 重试，成功后才清理。所有面板写操作和根快照加载都绑�
 - `pnpm lint` ✅
 - `pnpm tsc -b --noEmit` ✅
 - `pnpm check:host` ✅
-- `pnpm test`：95 passed、3 skipped；跳过项是未下载的可选 ASR 模型 moonshine、nemo_transducer、whisper，不计为通过
-- `pnpm test:architecture`：96/96 ✅（只读复用本机媒体、FFmpeg、FunASR 和 VAD 资源）
+- `pnpm test`：103 项，100 passed、3 skipped；跳过项是未下载的可选 ASR 模型 moonshine、nemo_transducer、whisper，不计为通过
+- `pnpm test:architecture`：97/97 ✅（只读复用本机媒体、FFmpeg、FunASR 和 VAD 资源）
 - `pnpm exec playwright test tests/e2e/features/F-0056.spec.ts --config /private/tmp/f0056-playwright.config.ts`：8/8 ✅，localhost:5175
 - `pnpm build` ✅；`pnpm build:lib` ✅；`pnpm package:host` ✅；`cargo check --manifest-path src-tauri/Cargo.toml` ✅
 - Red check 1：撤掉 save 的 revision 检查，专项测试失败于 `saved !== conflict`
@@ -177,12 +178,39 @@ ID 重试，成功后才清理。所有面板写操作和根快照加载都绑�
 补充回归：
 
 - `pnpm lint`、`pnpm tsc -b --noEmit`、`pnpm check:host`、`cargo check`、`pnpm build` ✅
-- `pnpm test`：100 passed、3 skipped（未下载的 moonshine、nemo_transducer、whisper 可选模型）✅
-- `pnpm test:architecture`：96/96 ✅。目标 worktree 缺少被 git 忽略的 `tests/media` 时首轮有 3 项
+- `pnpm test`：103 项，100 passed、3 skipped（未下载的 moonshine、nemo_transducer、whisper 可选模型）✅
+- `pnpm test:architecture`：97/97 ✅。目标 worktree 缺少被 git 忽略的 `tests/media` 时首轮有 3 项
   文件缺失；只读链接现有测试媒体后串行复跑全绿。并行高负载时另有 1 项 WebSocket ready 断言失败，
   同一资源齐全后串行复跑通过，未改产品代码。
-- 窗口内的文件导入、AI 配置读取/测试、清除 Key 和错误状态操作由主 agent 继续执行；本报告不把
-  这部分 UI 操作写成已通过，也不自行 approve。
+- 窗口内的文件导入、AI 配置读取/测试、清除 Key、失败状态和完整编辑/导出流程现已在真实 Tauri
+  窗口中完成；本报告仍不自行 approve。
+
+### 完整 Tauri 窗口与视频导出（2026-11-10 最终验收）
+
+本轮使用 `pnpm exec tauri build --debug --bundles app` 生成独立 debug `.app`，通过完整路径绑定窗口，
+避免了同 bundle id 的旧安装版。运行环境为隔离 HOME `/private/tmp/f0056-tauri-final`，Host ID
+`b5da5cba-9ca8-4d17-920f-4a334fb0539d`；真实 Keychain 通过只读软链使用，未记录 token 或 Key。
+
+- 原生文件选择器成功导入 `/private/tmp/f0056-tauri-input.mp4`；SenseVoice Small INT8 完成
+  201.153 秒转写，共 101 句，时间轴与字幕列表可操作。
+- 窗口内完成 DeepSeek 配置读取、HTTP 200 连接测试、改名时留空 Key 保留、显式清除 Key、
+  不可达 endpoint 失败状态和恢复官方地址/名称。关闭重开后 Host 读回同一配置与 Key 状态。
+- 完成真实字幕编辑：首句改为「测试字幕已修改」，删除第二句后撤销，内容自动保存；关闭重开后
+  首句修改仍在。窗口内 DeepSeek 翻译写回「Test subtitle updated.」和
+  「What are pre-made dishes?」；纠错预览成功生成 40 条建议，检查后取消，未写回正式字幕。
+- 原生保存对话框导出 MP4：3:21.17、H.264 902 kb/s + AAC 130 kb/s；抽取 0.5 秒画面确认底部
+  烧录「测试字幕已修改」。另删除一句后导出无字幕版本，时长 3:19.96，说明 cut 已生效，随后撤销。
+- 通过 File → Close Window 关闭应用，进程和 Host 均退出；重新打开后项目与修改可读回。测试中的
+  重复 AI 配置已清理，只保留一条带 Key 的 DeepSeek Official 配置。
+- 截图：`screenshots/tauri-deepseek-test-http-200.jpg`、`tauri-deepseek-rename-key-retained.jpg`、
+  `tauri-deepseek-failure.jpg`、`tauri-deepseek-cleaned.jpg`、`tauri-deepseek-translation.jpg`、
+  `tauri-deepseek-correction.jpg`、`tauri-export-hard-subtitle.png`。
+
+本轮还修复了一个真实桌面包资源错位：Tauri 将 `models.json` 放在 `Resources/_up_`，将字体放在
+`Resources/shared_assets`，Host 以 `_up_` 为资源根时找不到 Skia 字体，导致硬字幕导出失败。
+`server/subtitle-render.ts` 现在同时查找资源根本身、其父目录和开发目录；新增
+`tests/architecture/subtitle-resource-root.test.ts`。撤掉父目录候选后测试失败于 `actual undefined`，
+恢复后通过；重建 `.app` 后真实硬字幕导出成功。
 
 ### DeepSeek 官方 API 实测（2026-11-10）
 
@@ -190,11 +218,11 @@ ID 重试，成功后才清理。所有面板写操作和根快照加载都绑�
 - `GET https://api.deepseek.com/models` 返回 HTTP 200，模型列表包含 `deepseek-flash` 和 `deepseek-v4-pro`。
 - 用 `deepseek-flash` 保存临时 memory secret backend 配置，`aiSettings.test` 返回 `连接成功 (HTTP 200)`；公开配置只有 `hasApiKey:true`，元数据文件不包含 Key。
 - 真实字幕翻译返回 `Hey everyone, welcome to this episode.` / `Today we're starting from scratch.`；真实中文纠错把「这个功能可以使用把」修正为「这个功能可以使用吧。」，两个任务均 `complete`。
-- 临时 Host 与临时 home 在测试后清理。此项补上此前的“真实付费外部 AI 接口 Not run”；完整 Tauri 窗口仍未完成。
+- 临时 Host 与临时 home 在测试后清理。此项补上此前的“真实付费外部 AI 接口 Not run”；随后完整 Tauri 窗口也已通过。
 
 ## 结论
 
-本地实现、Host 架构、UI 矩阵和 macOS 凭据后端均已通过。此前阻断桌面启动的 Homebrew Node /
-`libnode` 问题已在 `a853ecd` 修复，真实 Tauri 窗口和新 Host 已用自包含的 nvm Node 启动并保持
-运行；真实 DeepSeek 官方 AI 已验证。窗口内完整 UI 操作按约定由主 agent 继续，完成后由维护者
-验收。本报告不自行批准。
+本地实现、Host 架构、UI 矩阵、macOS 凭据后端、真实 Tauri 完整客户端流程和真实 DeepSeek 官方
+AI 均已通过。此前阻断桌面启动的 Homebrew Node / `libnode` 问题已在 `a853ecd` 修复；本轮还修复
+了桌面包字体资源根错位，并用真实硬字幕导出验证。请维护者审阅这些证据并决定是否批准；本报告
+不自行批准。

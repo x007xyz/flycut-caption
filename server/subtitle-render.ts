@@ -25,9 +25,12 @@ async function loadCanvasModule(): Promise<typeof import('@napi-rs/canvas')> {
   return canvasModule;
 }
 
-async function findFontDir(resourceRoot: string): Promise<string | undefined> {
+export async function findFontDir(resourceRoot: string): Promise<string | undefined> {
   const candidates = [
     join(resourceRoot, 'shared_assets', 'subtitle-fonts'),
+    // Tauri copies ../models.json under Resources/_up_, while shared_assets stays beside _up_.
+    // The desktop passes _up_ as the Host resource root so bundled fonts must be found in its parent.
+    join(resourceRoot, '..', 'shared_assets', 'subtitle-fonts'),
     join(resourceRoot, 'src-tauri', 'shared_assets', 'subtitle-fonts'),
   ];
   for (const dir of candidates) {
