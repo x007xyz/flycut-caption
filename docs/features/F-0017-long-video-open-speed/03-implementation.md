@@ -20,10 +20,10 @@ approved_at:
 
 | 日期 | 清单项 | 提交 | 检查 |
 |---|---|---|---|
-| 2026-11-10 | 1–3：虚拟布局、列表接入、transient draft | 待回填 | `pnpm tsc -b --noEmit`；F-0017 长列表草稿/选择/删除/恢复定向 E2E |
-| 2026-11-10 | 4–6：查找/Tab、播放跟随、长列表交互和写回 | 待回填 | F-0017 8 条 E2E；F-0006/F-0007/F-0013 回归；`pnpm test`；`pnpm test:architecture` |
-| 2026-11-10 | 7：真实 60 分钟性能基准 | 待回填 | `pnpm bench:f0017`；前台 Chrome 5 次数据见测试报告 |
-| 2026-11-10 | 8：前端说明与验收报告 | 待回填 | `pnpm build`；`cargo check`；`pnpm e2e:evidence F-0017` |
+| 2026-11-10 | 1–3：虚拟布局、列表接入、transient draft | b930e45 | `pnpm tsc -b --noEmit`；F-0017 长列表草稿/选择/删除/恢复定向 E2E |
+| 2026-11-10 | 4–6：查找/Tab、播放跟随、长列表交互和写回 | b930e45 | F-0017 8 条 E2E；F-0006/F-0007/F-0013 回归；`pnpm test`；`pnpm test:architecture` |
+| 2026-11-10 | 7：真实 60 分钟性能基准 | b930e45 | `pnpm bench:f0017`；前台 Chrome 5 次数据见交付说明 |
+| 2026-11-10 | 8：前端说明与验收证据 | b930e45 | `pnpm build`；`cargo check`；`pnpm e2e:evidence F-0017` |
 
 ## 自行决定的事项
 
@@ -45,3 +45,4 @@ approved_at:
 
 - 桌面端、Windows 和 Linux 真机验收未执行，不能由 Web/Chrome 数据代替。
 - AC-3 的“真实 Provider 转写完成后注入”未单独接真实 Provider 跑；固定长转写注入和打开路径由 E2E 覆盖。
+- 按本次执行约束，未运行 `pnpm feature review F-0017` 自动确认 03，也未创建/确认 04；等待维护者放行。
