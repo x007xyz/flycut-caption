@@ -1,15 +1,17 @@
 import { edlCopy } from '@/locales/edl';
 // 字幕列表组件
 
-import { useCallback, useEffect, useMemo, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { cn } from '@/lib/utils';
 import { useHistoryStore, useChunks, useHistoryText, useHistoryLanguage, useHistoryDuration, useCanUndo, useCanRedo, useUndo, useRedo } from '@/stores/historyStore';
 import { useAppStore } from '@/stores/appStore';
+import { useProjectStore } from '@/stores/projectStore';
 import { isTimeInRange } from '@/utils/timeUtils';
 import { runSmartCutBlank } from '@/utils/smartCutBlank';
 import { FileText, Trash2, RotateCcw, Undo, Redo, Languages, Loader2, Mic, AlertCircle, Wand2, Scissors } from 'lucide-react';
 import { toast } from 'sonner';
-import { SubtitleItem } from './SubtitleItem';
+import { SubtitleItem, type SubtitleItemDraft } from './SubtitleItem';
+import { useVariableRows } from './useVariableRows';
 import type { EnhancedVideoPlayerRef } from '@/components/VideoPlayer/EnhancedVideoPlayer';
 import { useTranslation } from '@/contexts/LocaleProvider';
 import type { ASRProgress } from '@/types/subtitle';
@@ -26,6 +28,32 @@ import { useCorrectionReview } from '@/hooks/useCorrectionReview';
 import { CorrectionReviewPanel } from './CorrectionReviewPanel';
 import type { FindReplaceActions, FindReplaceState } from '@/hooks/useFindReplace';
 import type { FindMatch } from '../../../shared/text/findReplace';
+
+interface StoredSubtitleDraft extends SubtitleItemDraft {
+  baseMainText: string;
+  baseSecondText: string;
+  preview: boolean;
+}
+
+function VirtualSubtitleRow({ index, top, registerRow, children }: {
+  index: number; top: number; registerRow: (index: number, node: HTMLElement | null) => void; children: ReactNode;
+}) {
+  const rowRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const node = rowRef.current;
+    registerRow(index, node);
+    return () => registerRow(index, null);
+  }, [index, registerRow]);
+  return (
+    <div
+      ref={rowRef}
+      data-virtual-row-index={index}
+      style={{ position: 'absolute', top, left: 0, right: 0 }}
+    >
+      {children}
+    </div>
+  );
+}
 
 interface SubtitleListProps {
   className?: string;
@@ -91,6 +119,126 @@ export function SubtitleList({
   const videoDuration = useAppStore(state => state.videoPlayerState.duration);
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const projectId = useProjectStore(state => state.current?.projectId ?? '');
+  const videoId = useProjectStore(state => state.current?.videoId ?? '');
+  const activeById = useMemo(() => new Map(activeChunks.map(chunk => [chunk.id, chunk])), [activeChunks]);
+  const indexById = useMemo(() => new Map(activeChunks.map((chunk, index) => [chunk.id, index])), [activeChunks]);
+  const draftScope = `${projectId}:${videoId}`;
+  const draftsRef = useRef(new Map<string, StoredSubtitleDraft>());
+  const updateChunk = useHistoryStore(state => state.update);
+  const isPreviewing = review.preview && (review.phase === 'review' || review.phase === 'partial' || review.phase === 'applying');
+  const virtual = useVariableRows({
+    count: activeChunks.length,
+    estimate: displayMode === 'Bilingual' ? 128 : 104,
+    measurementKey: `${draftScope}:${displayMode}`,
+  });
+  const { range, contentRef, registerRow, scrollToIndex, isIndexVisible, markManualScroll, manualScrollAt } = virtual;
+
+  const clearDraftField = useCallback((id: string, field: 'mainText' | 'secondText') => {
+    const draft = draftsRef.current.get(id);
+    if (!draft) return;
+    const next = { ...draft, [field]: undefined };
+    if (next.mainText === undefined && next.secondText === undefined && next.isExpanded === undefined) draftsRef.current.delete(id);
+    else draftsRef.current.set(id, next);
+  }, []);
+
+  const updateDraft = useCallback((id: string, patch: SubtitleItemDraft) => {
+    const chunk = activeById.get(id);
+    if (!chunk) return;
+    const previous = draftsRef.current.get(id);
+    const next: StoredSubtitleDraft = {
+      ...previous,
+      baseMainText: previous?.baseMainText ?? chunk.text,
+      baseSecondText: previous?.baseSecondText ?? (chunk.secondText || ''),
+      preview: isPreviewing,
+      ...patch,
+    };
+    if (next.mainText === chunk.text && next.secondText === undefined && next.isExpanded === undefined) draftsRef.current.delete(id);
+    else draftsRef.current.set(id, next);
+  }, [activeById, isPreviewing]);
+
+  const flushDrafts = useCallback((ids?: Iterable<string>) => {
+    const selected = new Set(ids ?? draftsRef.current.keys());
+    for (const id of selected) {
+      const draft = draftsRef.current.get(id);
+      if (!draft) continue;
+      const chunk = chunks.find(item => item.id === id);
+      if (!chunk) { draftsRef.current.delete(id); continue; }
+      if (!draft.preview) {
+        const patch: { text?: string; secondText?: string } = {};
+        if (draft.mainText !== undefined && draft.mainText.trim() !== chunk.text) patch.text = draft.mainText.trim();
+        if (draft.secondText !== undefined && draft.secondText.trim() !== (chunk.secondText || '')) patch.secondText = draft.secondText.trim();
+        if (Object.keys(patch).length) updateChunk(id, patch);
+      }
+      const next = { ...draft, mainText: undefined, secondText: undefined };
+      if (next.isExpanded === undefined) draftsRef.current.delete(id);
+      else draftsRef.current.set(id, next);
+    }
+  }, [chunks, updateChunk]);
+
+  useEffect(() => {
+    draftsRef.current.clear();
+  }, [draftScope]);
+
+  useEffect(() => {
+    for (const [id, draft] of draftsRef.current) {
+      const chunk = chunks.find(item => item.id === id);
+      if (!chunk || chunk.text !== draft.baseMainText || (chunk.secondText || '') !== draft.baseSecondText) {
+        draftsRef.current.delete(id);
+      }
+    }
+  }, [chunks]);
+
+  useEffect(() => {
+    const outside = [...draftsRef.current.keys()].filter(id => {
+      const index = indexById.get(id);
+      return index !== undefined && (index < range.start || index >= range.end);
+    });
+    if (outside.length) flushDrafts(outside);
+  }, [flushDrafts, indexById, range.end, range.start]);
+
+  useEffect(() => {
+    const flushBeforeLeavingList = (event: PointerEvent) => {
+      const node = contentRef.current;
+      if (!node || (event.target instanceof Node && node.contains(event.target))) return;
+      flushDrafts();
+    };
+    const flushOnPageHide = () => flushDrafts();
+    document.addEventListener('pointerdown', flushBeforeLeavingList, true);
+    window.addEventListener('pagehide', flushOnPageHide);
+    return () => {
+      document.removeEventListener('pointerdown', flushBeforeLeavingList, true);
+      window.removeEventListener('pagehide', flushOnPageHide);
+    };
+  }, [contentRef, flushDrafts]);
+
+  const handleVirtualKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Tab' || event.altKey || event.ctrlKey || event.metaKey) return;
+    const target = event.target as HTMLElement;
+    const row = target.closest<HTMLElement>('[data-virtual-row-index]');
+    if (!row) return;
+    const rowIndex = Number(row.dataset.virtualRowIndex);
+    const controls = [...row.querySelectorAll<HTMLElement>('input:not([disabled]), textarea:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+      .filter(element => element.getClientRects().length > 0);
+    const position = controls.indexOf(target);
+    if (position < 0) return;
+    const backwards = event.shiftKey;
+    const atBoundary = backwards
+      ? rowIndex === range.start && position === 0
+      : rowIndex === Math.max(range.start, range.end - 1) && position === controls.length - 1;
+    if (!atBoundary) return;
+    const nextIndex = rowIndex + (backwards ? -1 : 1);
+    if (nextIndex < 0 || nextIndex >= activeChunks.length) return;
+    event.preventDefault();
+    scrollToIndex(nextIndex, 'auto');
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const nextRow = contentRef.current?.querySelector<HTMLElement>(`[data-virtual-row-index="${nextIndex}"]`);
+      if (!nextRow) return;
+      const nextControls = [...nextRow.querySelectorAll<HTMLElement>('input:not([disabled]), textarea:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+        .filter(element => element.getClientRects().length > 0);
+      (backwards ? nextControls.at(-1) : nextControls[0])?.focus();
+    }));
+  }, [activeChunks.length, contentRef, range.end, range.start, scrollToIndex]);
 
   const findMatchesByChunk = useMemo(() => {
     const byChunk = new Map<string, FindMatch[]>();
@@ -105,9 +253,9 @@ export function SubtitleList({
   const activeFindChunkId = find?.matches[find.current]?.chunkId;
   useEffect(() => {
     if (!activeFindChunkId) return;
-    const row = document.querySelector(`[data-chunk-id="${activeFindChunkId}"]`);
-    row?.scrollIntoView({ block: 'center' });
-  }, [activeFindChunkId]);
+    const index = indexById.get(activeFindChunkId);
+    if (index !== undefined) scrollToIndex(index, 'center');
+  }, [activeFindChunkId, indexById, scrollToIndex]);
 
   const seekTo = useCallback((time: number) => {
     setCurrentTime(time);
@@ -126,6 +274,20 @@ export function SubtitleList({
     }
     return result;
   }, [transcript.chunks, currentTime]);
+
+  const currentChunkId = currentChunk?.id;
+  const followStateRef = useRef({ indexById, isIndexVisible, manualScrollAt, scrollToIndex });
+  followStateRef.current = { indexById, isIndexVisible, manualScrollAt, scrollToIndex };
+  useEffect(() => {
+    if (!currentChunkId) return;
+    const follow = followStateRef.current;
+    const index = follow.indexById.get(currentChunkId);
+    if (index === undefined || follow.isIndexVisible(index)) return;
+    if (performance.now() - follow.manualScrollAt() < 3000) return;
+    const active = document.activeElement;
+    if (active instanceof HTMLTextAreaElement && contentRef.current?.contains(active)) return;
+    follow.scrollToIndex(index, 'center');
+  }, [contentRef, currentChunkId]);
 
   const statistics = useMemo(() => {
     const realChunks = transcript.chunks.filter(chunk => !chunk.isBlankSpacer);
@@ -387,33 +549,50 @@ export function SubtitleList({
 
       <CorrectionReviewPanel review={review} />
 
-      {/* Subtitle List (scrollable) */}
-      <div className="flex-1 overflow-y-auto">
-        {transcript.chunks
-          .filter(chunk => !chunk.deleted)
-          .map((chunk, index) => {
-            const isActive = !chunk.deleted;
-            const isCurrent = currentChunk?.id === chunk.id;
-            const isSelected = selectedIds.has(chunk.id);
-
+      {/* Subtitle List (virtualized scroll window) */}
+      <div
+        ref={virtual.scrollRef}
+        data-testid="subtitle-virtual-scroll"
+        className="flex-1 overflow-y-auto"
+        style={{ overflowAnchor: 'none' }}
+        onScroll={virtual.onScroll}
+        onWheel={markManualScroll}
+        onTouchMove={markManualScroll}
+        onPointerDown={(event) => { if (event.target === event.currentTarget) markManualScroll(); }}
+        onMouseDown={(event) => { if (event.target === event.currentTarget) markManualScroll(); }}
+        onKeyDownCapture={handleVirtualKeyDown}
+      >
+        <div ref={contentRef} className="relative w-full" style={{ height: virtual.layout.totalSize }}>
+          {activeChunks.slice(range.start, range.end).map((chunk, offset) => {
+            const index = range.start + offset;
             return (
-              <SubtitleItem
+              <VirtualSubtitleRow
                 key={chunk.id}
-                chunk={chunk}
                 index={index}
-                findMatches={findMatchesByChunk.get(chunk.id)}
-                findActive={activeFindChunkId === chunk.id}
-                isActive={isActive}
-                isCurrent={isCurrent}
-                isSelected={isSelected}
-                textSuggestion={review.suggestionsById.get(chunk.id)}
-                textPreview={review.preview && (review.phase === 'review' || review.phase === 'partial' || review.phase === 'applying')}
-                onSuggestionChange={review.updateSuggestion}
-                onToggleSelection={handleToggleSelection}
-                onSeekTo={seekTo}
-              />
+                top={virtual.layout.starts[index]}
+                registerRow={registerRow}
+              >
+                <SubtitleItem
+                  chunk={chunk}
+                  index={index}
+                  draft={draftsRef.current.get(chunk.id)}
+                  onDraftChange={updateDraft}
+                  onDraftCommitted={clearDraftField}
+                  findMatches={findMatchesByChunk.get(chunk.id)}
+                  findActive={activeFindChunkId === chunk.id}
+                  isActive
+                  isCurrent={currentChunk?.id === chunk.id}
+                  isSelected={selectedIds.has(chunk.id)}
+                  textSuggestion={review.suggestionsById.get(chunk.id)}
+                  textPreview={isPreviewing}
+                  onSuggestionChange={review.updateSuggestion}
+                  onToggleSelection={handleToggleSelection}
+                  onSeekTo={seekTo}
+                />
+              </VirtualSubtitleRow>
             );
           })}
+        </div>
       </div>
 
       {/* Status/toolbar area at the bottom */}

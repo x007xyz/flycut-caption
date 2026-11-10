@@ -57,3 +57,11 @@ pnpm build
 字幕画面统一走 `shared/subtitle-graphics/`：`drawFrame`、`frameKey`、`layoutScene`、`subtitleBand` 只依赖 Canvas 2D，预览和 Host 共用。`src/subtitle/graphicsScene.ts` 把现有 `SubtitleStylePair` 和 chunks 适配成场景，预览用原始时间轴，导出用 EDL 投影后的时间轴。
 
 `SubtitleOverlay` 用 `requestVideoFrameCallback` 的 `mediaTime` 绘制，暂停拖动在 `seeked` 补画，同一字幕条按 `frameKey` 跳过重画；画布按显示尺寸 × DPR（上限 2）。字体改为 `FontFace` 加载 `public/fonts/subtitle/` 下的完整文件，状态分 loading / ready / error，失败显示「字幕渲染不可用」和重试，不静默用系统字体或 ASS。空字幕不绘制、不显示加载提示。本地 WebAV / ffmpeg.wasm 回退已移除；没有 Host 时导出入口显示 Host 不可用，不再在浏览器内合成视频。
+
+## F-0017 实施
+
+`SubtitleList` 只挂载可视窗口和上下各 6 行缓冲。`virtualRows.ts` 负责可变行高的前缀偏移、二分范围、最小跟随偏移和高度变化锚点；`useVariableRows.ts` 用 `ResizeObserver` 测量实际行高，并在挂载行改变布局后继续校正远处的 `scrollToIndex` 目标。未测行按主/双语视图使用 104/128 px 估值。行外层定位包装和 `data-virtual-row-index` 不改变原行外观，历史 store 仍是字幕、删除、选择和撤销的唯一真源。
+
+未提交的输入和展开状态只保存在 `SubtitleList` 的 transient Map 中。行失焦、滚出挂载窗口、切换项目/视频或页面离开时提交到 history store；离屏重挂载读取最新 store 与仍存在的 draft。查找先由 chunk ID 映射到全量索引再滚入可视区；Tab 到挂载窗口边界时补挂相邻行并继续焦点。播放跟随只响应当前 chunk ID 变化，文本框聚焦或最近 3 秒有 wheel / touch / 拖动等手动滚动时抑制，高亮本身始终更新。
+
+可重复基准用 `pnpm bench:f0017`：读取两段 COSCUP 真实转写与素材，在临时 Host 中建立约 60 分钟项目，通过 5173 隔离端口和前台 Chrome 记录打开、切换、滚动、long task 与原语言切换。脚本输出 `test-results/f0017-bench/after.{json,md}`，不会修改源素材。
