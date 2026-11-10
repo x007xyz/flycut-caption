@@ -288,6 +288,7 @@ const customJaJP: FlyCutCaptionLocale = {
       asrCompleted: '音声認識完了',
       asrFailed: '音声認識失敗',
       asrCancelled: '音声認識キャンセル',
+      taskVerifying: '結果を確認中…',
       noAudioDetected: '音声信号が検出されません',
       audioTooShort: '音声が短すぎます',
       audioTooLong: '音声が長すぎます',
@@ -307,6 +308,7 @@ const customJaJP: FlyCutCaptionLocale = {
       encodingError: 'エンコードエラー',
       ioError: '入出力エラー',
       permissionDenied: 'アクセス拒否',
+      taskVerifying: '結果を確認中…',
     },
     subtitle: {
       subtitleAdded: '字幕を追加しました',

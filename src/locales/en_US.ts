@@ -668,6 +668,7 @@ const enUS: FlyCutCaptionLocale = {
       asrCompleted: 'ASR completed',
       asrFailed: 'ASR failed',
       asrCancelled: 'ASR cancelled',
+      taskVerifying: 'Checking result…',
       noAudioDetected: 'No audio detected',
       audioTooShort: 'Audio is too short',
       audioTooLong: 'Audio is too long',
@@ -687,6 +688,7 @@ const enUS: FlyCutCaptionLocale = {
       encodingError: 'Encoding error',
       ioError: 'I/O error',
       permissionDenied: 'Permission denied',
+      taskVerifying: 'Checking result…',
     },
     subtitle: {
       subtitleAdded: 'Subtitle added',

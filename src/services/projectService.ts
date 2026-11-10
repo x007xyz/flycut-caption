@@ -30,8 +30,8 @@ import { UploadLocatorStore, viewFromLocator, type UploadLocator } from '@/uploa
 declare module '@deepseek-ai/cordis' {
   interface Context { projects: ProjectService }
   interface Events {
-    /** 识别完成（`useASR`）。项目模式下由项目服务写进对应项目。 */
-    'flycut/transcribed'(payload: { videoFile: VideoFile; transcript: SubtitleTranscript; model: ModelRef | null }): void;
+    /** 识别完成（`useASR`）。所有订阅者都会收到；项目模式在返回的 Promise 中确认 Host 保存结果。 */
+    'flycut/transcribed'(payload: { videoFile: VideoFile; transcript: SubtitleTranscript; model: ModelRef | null }): void | Promise<void>;
   }
 }
 
@@ -1188,7 +1188,7 @@ export class ProjectService {
 
   /** 识别完成：写回项目，失败时保留结果并按保存失败处理（AC-4）。 */
   async handleTranscribed(videoFile: VideoFile, transcript: SubtitleTranscript, model: ModelRef | null) {
-    try { await this.saveTranscript(videoFile, transcript, model); this.pendingTranscript = null; }
+    try { await this.saveTranscript(videoFile, transcript, model); this.pendingTranscript = null; return true; }
     catch (error) {
       console.error('保存转写结果失败', error);
       this.pendingTranscript = { videoFile, transcript, model };
@@ -1196,6 +1196,7 @@ export class ProjectService {
         this.state.setSave({ status: 'failed', error: error instanceof Error ? error.message : String(error) });
         this.scheduleRetry();
       }
+      return false;
     }
   }
 
@@ -1712,9 +1713,11 @@ export const projectsClientPlugin = { name: 'flycut-projects-client', inject: ['
   ctx.effect(() => ctx.stores.history.subscribe((history, previous) => {
     if (history.chunks !== previous.chunks || history.wordChunks !== previous.wordChunks || history.edl !== previous.edl || history.cutHistory !== previous.cutHistory) service.onEdit();
   }));
-  ctx.effect(() => ctx.on('flycut/transcribed', ({ videoFile, transcript, model }) => {
-    // useASR 在发出事件后同步写入字幕编辑器；等它写完再记下保存起点
+  ctx.effect(() => ctx.on('flycut/transcribed', async ({ videoFile, transcript, model }) => {
+    // Keep the existing event for every subscriber, and let useASR await the
+    // typed project listener before clearing the recoverable Host operation.
     queueMicrotask(() => service.transcriptApplied(videoFile));
-    void service.handleTranscribed(videoFile, transcript, model);
+    const saved = await service.handleTranscribed(videoFile, transcript, model);
+    if (!saved) throw new Error('Transcript persistence failed');
   }));
 } };

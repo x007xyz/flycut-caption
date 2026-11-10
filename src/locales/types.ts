@@ -671,6 +671,7 @@ export interface FlyCutCaptionLocale {
       asrCompleted: string;
       asrFailed: string;
       asrCancelled: string;
+      taskVerifying: string;
       noAudioDetected: string;
       audioTooShort: string;
       audioTooLong: string;
@@ -690,6 +691,7 @@ export interface FlyCutCaptionLocale {
       encodingError: string;
       ioError: string;
       permissionDenied: string;
+      taskVerifying: string;
     };
     subtitle: {
       subtitleAdded: string;

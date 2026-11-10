@@ -668,6 +668,7 @@ const zhCN: FlyCutCaptionLocale = {
       asrCompleted: '语音识别完成',
       asrFailed: '语音识别失败',
       asrCancelled: '语音识别已取消',
+      taskVerifying: '正在核验结果…',
       noAudioDetected: '未检测到音频信号',
       audioTooShort: '音频时长过短',
       audioTooLong: '音频时长过长',
@@ -687,6 +688,7 @@ const zhCN: FlyCutCaptionLocale = {
       encodingError: '编码错误',
       ioError: '输入输出错误',
       permissionDenied: '权限被拒绝',
+      taskVerifying: '正在核验结果…',
     },
     subtitle: {
       subtitleAdded: '字幕已添加',

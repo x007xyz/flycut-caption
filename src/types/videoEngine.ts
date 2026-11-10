@@ -31,6 +31,10 @@ export interface VideoProcessingOptions {
   outputPath?: string;
   /** 字幕烧录/嵌入用的时间轴（无裁剪时可与 segments 分离） */
   subtitleChunks?: SubtitleChunk[];
+  /** F-0015: stable identity for retrying one export without creating another Host job. */
+  operationKey?: string;
+  /** Localized status shown while an uncertain start response is verified against Host jobs. */
+  taskVerifyingMessage?: string;
 }
 
 // 引擎能力检测结果

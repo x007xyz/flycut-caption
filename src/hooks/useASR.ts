@@ -7,6 +7,8 @@ import type { ASRProgress, SubtitleChunk } from '@/types/subtitle';
 import type { VideoFile } from '@/types/video';
 import { useClientRuntime } from '@/runtime/context';
 import { loadMediaBuffer } from '@/utils/mediaSource';
+import { taskOperationKey } from '@/services/taskOperation';
+import { hashBytes } from '@/upload/sha256';
 
 export interface UseASRReturn { isASRLoading: boolean; asrProgress: ASRProgress | null; startASR: (videoFile: VideoFile) => Promise<void> }
 export function useASR(options: { onSubtitleGenerated?: (subtitles: SubtitleChunk[]) => void } = {}): UseASRReturn {
@@ -28,14 +30,29 @@ export function useASR(options: { onSubtitleGenerated?: (subtitles: SubtitleChun
       if (!app.asrModel) throw new Error('请先在「设置 → 模型」中下载或添加一个识别模型');
       // Browser files, desktop paths and Host project media (F-0002)
       const buffer = await loadMediaBuffer(videoFile);
+      const sourceSha256 = await hashBytes(new Uint8Array(buffer));
+      const current = runtime.stores.project.getState().current;
+      const operationKey = taskOperationKey('asr', current?.projectId, current?.videoId,
+        videoFile.remotePath ?? videoFile.path ?? videoFile.name, videoFile.size, app.asrModel.providerId, app.asrModel.modelId,
+        app.language, JSON.stringify(app.asrOptions[modelKey(app.asrModel)] ?? {}), sourceSha256);
       const transcript = await asrService.transcribeAudio(buffer, { ...app.asrModel, language: app.language,
-        options: app.asrOptions[modelKey(app.asrModel)] });
-      // Project mode saves the result to the project the video belongs to (F-0002/AC-2).
-      runtime.emit('flycut/transcribed', { videoFile, transcript, model: app.asrModel });
+        options: app.asrOptions[modelKey(app.asrModel)] }, { key: operationKey, verifyingMessage: t('messages.asr.taskVerifying') });
       // The user may have opened something else while recognition ran; never overwrite that editor.
-      if (stores.app.getState().videoFile !== videoFile) return;
-      stores.history.getState().setTranscript(transcript); app.setStage('edit');
-      onSubtitleGenerated?.(stores.history.getState().chunks.filter(chunk => !chunk.deleted));
+      if (stores.app.getState().videoFile === videoFile) {
+        stores.history.getState().setTranscript(transcript); app.setStage('edit');
+        onSubtitleGenerated?.(stores.history.getState().chunks.filter(chunk => !chunk.deleted));
+      }
+      // Project mode saves the result to the project the video belongs to (F-0002/AC-2).
+      let persisted = true;
+      try {
+        await runtime.events.parallel('flycut/transcribed', { videoFile, transcript, model: app.asrModel });
+      } catch (error) {
+        persisted = false;
+        console.warn('转写结果尚未写入项目，保留任务恢复定位', error);
+      }
+      // A completed Host job is not enough: retain its locator until the project save is confirmed.
+      await asrService.completeOperation(operationKey, persisted)
+        .catch(error => console.warn('清理 ASR 操作定位失败', error));
     } catch (error) {
       const message = error instanceof Error ? error.message : t('messages.asr.asrFailed');
       app.setError(message); app.setASRProgress({ status: 'error', error: message });

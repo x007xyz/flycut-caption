@@ -218,6 +218,18 @@ test('F-0015/AC-3/AC-7 final size/digest/header verification and cancel-after-co
     const wrongDigest = await host.complete(created.session.id, 'f'.repeat(64));
     assert.equal(wrongDigest.status, 422);
     const active = await (await host.get(created.session.id)).json() as UploadSession; assert.equal(active.state, 'active');
+
+    // Chunk-level hashes can all be valid while the assembled file differs from the declared source.
+    const contaminated = media(1500); contaminated[800] ^= 0xff;
+    const mismatch = await host.create(file); assert.ok(mismatch.session);
+    for (let index = 0; index < mismatch.session.chunkCount; index += 1) {
+      const part = contaminated.subarray(index * 1024, Math.min(contaminated.length, (index + 1) * 1024));
+      assert.equal((await host.chunk(mismatch.session.id, index, part, index * 1024)).response.status, 200);
+    }
+    const assembledMismatch = await host.complete(mismatch.session.id, SHA256(file));
+    assert.equal(assembledMismatch.status, 422);
+    assert.equal((await (await host.get(mismatch.session.id)).json() as UploadSession).state, 'active');
+
     const completed = await host.complete(created.session.id, SHA256(file)); assert.equal(completed.status, 200);
     const session = await completed.json() as UploadSession;
     const cancelled = await host.cancel(created.session.id); assert.equal(cancelled.status, 200);
