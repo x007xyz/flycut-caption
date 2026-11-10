@@ -121,9 +121,9 @@ OpenAI 兼容服务。
 - [x] 1. 定义 shared 配置/revision/migration 契约，完成 Host 元数据存储、Host identity 校验、冲突和幂等导入。
 - [x] 2. 接通桌面系统凭据与远程 AES secret backend，完成遮罩、保留/清除 Key、元数据失败回滚和 jobs/error 脱敏。
 - [x] 3. 将文本纠错/翻译和 Agent 改为 Host 按 configId 解析，保留旧形状兼容并用本地真实 HTTP fixture 验证请求只带 configId。
-- [ ] 4. 重做 AI 设置面板与根快照同步，覆盖 CRUD、测试连接、加载/失败/冲突、切 Host 清缓存和迟到响应隔离。
-- [ ] 5. 完成浏览器旧配置的显式 Host 迁移、Host identity/migrationId 幂等重试和成功后才清理本地 Key。
-- [ ] 6. 补齐中英文/明暗主题 E2E、失败重试与快速回归，跑架构测试、red check 和真实本地 Host 使用证据。
+- [x] 4. 重做 AI 设置面板与根快照同步，覆盖 CRUD、测试连接、加载/失败/冲突、切 Host 清缓存和迟到响应隔离。
+- [x] 5. 完成浏览器旧配置的显式 Host 迁移、Host identity/migrationId 幂等重试和成功后才清理本地 Key。
+- [x] 6. 补齐中英文/明暗主题 E2E、失败重试与快速回归，跑架构测试、red check 和真实本地 Host 使用证据。
 
 ## 验证计划
 
