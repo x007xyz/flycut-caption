@@ -1,0 +1,61 @@
+const en = {
+  title: 'Jianying draft',
+  subtitle: 'Compatibility research and support status',
+  checking: 'Checking Jianying draft support…',
+  failed: 'Could not read Jianying draft support. Try again.',
+  retry: 'Retry',
+  research: 'Research source: F-0010, checked 2026-11-09',
+  realImport: 'Real import verification: not run',
+  realImportDetail: 'No Windows 5.9.0 Jianying installation has opened, played, edited, saved and reopened a generated candidate draft.',
+  unavailable: 'Unsupported draft version',
+  candidate: 'Candidate format; real import is not verified',
+  candidateDetail: 'The local draft structure was inspected, but the product export stays disabled until a real Windows 5.9.0 import passes.',
+  exportDisabled: 'Export disabled until real import validation passes',
+  scope: 'Planned candidate scope',
+  scopeItems: [
+    'Single timeline, one video track and one main-subtitle track',
+    'F-0005 EDL cuts are mapped to integer microseconds',
+    'Media is copied into the draft rather than referenced in place',
+    'The user Jianying root_meta_info.json is never changed',
+  ],
+  limitations: 'Unverified or unsupported',
+  limitationsItems: [
+    'Secondary subtitles and bilingual text are not written',
+    'Font family, exact position, font size and spacing are not preserved',
+    'Moving the draft folder after creation is not verified',
+    'macOS 11.7.0 private Timelines drafts and CapCut are out of scope',
+  ],
+  close: 'Close',
+};
+
+const zh: typeof en = {
+  title: '剪映草稿',
+  subtitle: '兼容性研究与支持状态',
+  checking: '正在检查剪映草稿支持信息…',
+  failed: '无法读取剪映草稿支持信息，请重试。',
+  retry: '重试',
+  research: '研究来源：F-0010，检查日期 2026-11-09',
+  realImport: '真实导入验证：未完成',
+  realImportDetail: '尚无 Windows 5.9.0 剪映实际打开、播放、编辑、保存并重新打开候选草稿的证据。',
+  unavailable: '不支持此草稿版本',
+  candidate: '候选格式，尚未完成真实导入验证',
+  candidateDetail: '已只读检查本机草稿结构，但在 Windows 5.9.0 真实导入通过前，产品导出保持禁用。',
+  exportDisabled: '真实导入验证通过前，导出保持禁用',
+  scope: '候选范围',
+  scopeItems: [
+    '单时间线、单视频轨、单主字幕轨',
+    'F-0005 EDL 切点按整数微秒映射',
+    '媒体复制到草稿目录，不引用原位置',
+    '不修改用户的剪映 root_meta_info.json',
+  ],
+  limitations: '未验证或不支持',
+  limitationsItems: [
+    '不写副字幕和双语字幕',
+    '不保留字体、精确位置、字号和间距',
+    '草稿生成后移动目录尚未验证',
+    'macOS 11.7.0 私有 Timelines 草稿和 CapCut 不在范围',
+  ],
+  close: '关闭',
+};
+
+export const jianyingCopy = (language: string) => language.startsWith('zh') ? zh : en;

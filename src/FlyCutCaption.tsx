@@ -317,7 +317,7 @@ export function FlyCutCaptionContent(props: FlyCutCaptionProps) {
 
   // 导出对话框状态
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
-  const [exportDialogType, setExportDialogType] = useState<'subtitles' | 'video'>('video');
+  const [exportDialogType, setExportDialogType] = useState<'subtitles' | 'video' | 'jianying'>('video');
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   // 字幕样式状态：主/副字幕独立样式对，位置（底边距/比例）共享 primary
@@ -405,6 +405,11 @@ export function FlyCutCaptionContent(props: FlyCutCaptionProps) {
     setExportDialogOpen(true);
   }, []);
 
+  const handleOpenJianyingDraftDialog = useCallback(() => {
+    setExportDialogType('jianying');
+    setExportDialogOpen(true);
+  }, []);
+
   // 智能剪切空白段
   const handleSmartCutBlank = useCallback(() => {
     runSmartCutBlank({
@@ -437,7 +442,8 @@ export function FlyCutCaptionContent(props: FlyCutCaptionProps) {
       <div className="h-screen bg-background flex flex-col">
         {/* 顶部标题栏 - Aimu 风格 */}
         <WorkstationHeader media={media} mergedConfig={mergedConfig} onLanguageChange={onLanguageChange} onOpenVideoExport={handleOpenVideoExportDialog}
-          onOpenSubtitleExport={handleOpenSubtitleExportDialog} onSmartCutBlank={handleSmartCutBlank} onOpenSettings={() => setSettingsOpen(true)} slot={props.headerSlot} />
+          onOpenSubtitleExport={handleOpenSubtitleExportDialog} onOpenJianyingDraft={handleOpenJianyingDraftDialog}
+          onSmartCutBlank={handleSmartCutBlank} onOpenSettings={() => setSettingsOpen(true)} slot={props.headerSlot} />
 
         {/* 主要内容区域 - Aimu 风格左右分栏 */}
         <div className="flex-1 flex overflow-hidden bg-background">

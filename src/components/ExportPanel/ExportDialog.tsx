@@ -24,6 +24,7 @@ import { isTauriRuntime } from '@/utils/runtime';
 import { useTranslation } from '@/contexts/LocaleProvider';
 import type { SubtitleDisplayMode } from '@/subtitle';
 import { useClientRuntime } from '@/runtime/context';
+import { JianyingDraftInfoPanel } from './JianyingDraftInfoPanel';
 
 export interface VideoExportOptions {
   format: 'mp4' | 'webm';
@@ -35,7 +36,7 @@ export interface VideoExportOptions {
 interface ExportDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  exportType: 'subtitles' | 'video';
+  exportType: 'subtitles' | 'video' | 'jianying';
   onExportSubtitles: (format: 'srt' | 'json' | 'vtt' | 'ass', exportMode: SubtitleDisplayMode) => void | Promise<void>;
   onExportVideo: (options: VideoExportOptions) => void;
   defaultExportMode?: SubtitleDisplayMode;
@@ -187,7 +188,12 @@ export function ExportDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center space-x-2">
-            {exportType === 'subtitles' ? (
+            {exportType === 'jianying' ? (
+              <>
+                <FileText className="h-5 w-5 text-primary" />
+                <span>剪映草稿 / Jianying draft</span>
+              </>
+            ) : exportType === 'subtitles' ? (
               <>
                 <FileText className="h-5 w-5 text-primary" />
                 <span>导出字幕</span>
@@ -200,14 +206,16 @@ export function ExportDialog({
             )}
           </DialogTitle>
           <DialogDescription>
-            {exportType === 'subtitles' 
-              ? '选择字幕格式并导出字幕文件' 
-              : '配置视频导出选项'}
+            {exportType === 'jianying'
+              ? '兼容性研究与支持状态 / Compatibility research and support status'
+              : exportType === 'subtitles' ? '选择字幕格式并导出字幕文件' : '配置视频导出选项'}
           </DialogDescription>
         </DialogHeader>
 
         <DialogBody>
-          {exportType === 'subtitles' ? (
+          {exportType === 'jianying' ? (
+            <JianyingDraftInfoPanel active={open} />
+          ) : exportType === 'subtitles' ? (
             <div className="space-y-4">
               {renderExportContentSelector()}
 

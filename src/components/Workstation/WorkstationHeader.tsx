@@ -1,6 +1,6 @@
 // 工作台顶部栏：品牌、创建/导出菜单、智能剪切、撤销重做、语言与设置
 import type { ReactNode } from 'react';
-import { ChevronDown, Download, FileText, Github, Keyboard, Link2, Loader2, Play, Redo2, Settings, Undo2, Upload, Video, Wand2 } from 'lucide-react';
+import { ChevronDown, Download, FileText, Github, Keyboard, Layers, Link2, Loader2, Play, Redo2, Settings, Undo2, Upload, Video, Wand2 } from 'lucide-react';
 import { useTranslation, useLocale } from '@/contexts/LocaleProvider';
 import { useAppStore } from '@/stores/appStore';
 import { useChunks, useHistoryStore } from '@/stores/historyStore';
@@ -26,13 +26,14 @@ export interface WorkstationHeaderProps {
   onLanguageChange?: FlyCutCaptionProps['onLanguageChange'];
   onOpenVideoExport: () => void;
   onOpenSubtitleExport: () => void;
+  onOpenJianyingDraft: () => void;
   onSmartCutBlank: () => void;
   onOpenSettings: () => void;
   /** 顶栏左侧、品牌之后的扩展位置，例如项目面包屑和保存状态 */
   slot?: ReactNode;
 }
 
-export function WorkstationHeader({ media, mergedConfig, onLanguageChange, onOpenVideoExport, onOpenSubtitleExport, onSmartCutBlank, onOpenSettings, slot }: WorkstationHeaderProps) {
+export function WorkstationHeader({ media, mergedConfig, onLanguageChange, onOpenVideoExport, onOpenSubtitleExport, onOpenJianyingDraft, onSmartCutBlank, onOpenSettings, slot }: WorkstationHeaderProps) {
   const { t } = useTranslation();
   const { language, setLanguage } = useLocale();
   const videoFile = useAppStore(state => state.videoFile);
@@ -187,6 +188,10 @@ export function WorkstationHeader({ media, mergedConfig, onLanguageChange, onOpe
             >
               <FileText className="w-4 h-4" />
               <span>{t('components.workstation.exportSubtitles')}</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onOpenJianyingDraft} disabled={!hostReady} className="flex items-center gap-2">
+              <Layers className="w-4 h-4" />
+              <span>剪映草稿 / Jianying draft</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
