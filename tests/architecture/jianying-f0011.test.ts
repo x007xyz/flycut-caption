@@ -40,10 +40,12 @@ function sampleSnapshot(durationUs: number, width: number, height: number): Jian
   };
 }
 
-test('F-0011/AC-1 verified candidate stays disabled and has no export RPC', async () => {
+test('F-0011/AC-1 unverified candidate stays disabled and has no export RPC', async () => {
   assert.equal(JIANYING_CAPABILITIES.verifiedByImport, false);
   assert.equal(JIANYING_CAPABILITIES.exportEnabled, false);
+  assert.equal(JIANYING_CAPABILITIES.checkedAt, '2026-11-09');
   assert.equal(JIANYING_CAPABILITIES.targets[0].status, 'unverified');
+  assert.equal(JIANYING_CAPABILITIES.targets.find(target => target.id === 'jianying-web')?.status, 'unsupported');
   const home = await mkdtemp(join(tmpdir(), 'flycut-f0011-cap-'));
   const ctx = await createHost({ home, token: 'f0011-cap', port: 0, resourceRoot: resolve('.') }, { gateway: false });
   try {
@@ -95,7 +97,7 @@ test('F-0011/AC-4 AC-7 real video candidate preserves EDL ranges, projected subt
   }
 });
 
-test('F-0011/AC-3 AC-5 AC-6 candidate harness refuses existing names and leaves no staging on cancellation', async () => {
+test('F-0011/AC-3 AC-5 AC-6 candidate harness rejects missing media, existing names and failures without staging', async () => {
   const root = await mkdtemp(join(tmpdir(), 'flycut-f0011-cancel-'));
   try {
     const source = await shortVideo(root);
@@ -104,8 +106,12 @@ test('F-0011/AC-3 AC-5 AC-6 candidate harness refuses existing names and leaves 
     const outputParent = join(root, 'output');
     await mkdir(join(outputParent, 'existing'), { recursive: true });
     await writeFile(join(outputParent, 'existing', 'keep.txt'), 'keep');
+    await assert.rejects(generateJianyingDraft({ snapshot, sourcePath: join(root, 'missing.mp4'), outputParent, draftName: 'missing' }),
+      /Source media is missing/);
     await assert.rejects(generateJianyingDraft({ snapshot, sourcePath: source, outputParent, draftName: 'existing' }), /already exists/);
     assert.equal(await readFile(join(outputParent, 'existing', 'keep.txt'), 'utf8'), 'keep');
+    await assert.rejects(generateJianyingDraft({ snapshot, sourcePath: source, outputParent, draftName: 'mid-failure',
+      now: () => { throw new Error('injected post-copy failure'); } }), /injected post-copy failure/);
     const controller = new AbortController(); controller.abort();
     await assert.rejects(generateJianyingDraft({ snapshot, sourcePath: source, outputParent, draftName: 'cancelled', signal: controller.signal }), /cancelled/);
     assert.deepEqual((await readdir(outputParent)).sort(), ['existing']);

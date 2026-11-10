@@ -84,9 +84,13 @@ export async function generateJianyingDraft(options: GenerateJianyingOptions): P
   const inside = relative(parentPath, finalPath);
   if (!inside || inside.startsWith('..') || inside.includes(sep)) throw new Error('Draft target escapes the selected parent');
   await ensureAbsent(finalPath);
-  const probe = await probeJianyingMedia(options.sourcePath, options.ffmpeg);
-  const sourceInfo = await stat(options.sourcePath);
+  const sourceInfo = await stat(options.sourcePath).catch(error => {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error('Source media is missing');
+    throw error;
+  });
   if (!sourceInfo.isFile() || sourceInfo.size <= 0) throw new Error('Source media is missing or empty');
+  assertNotAborted(options.signal);
+  const probe = await probeJianyingMedia(options.sourcePath, options.ffmpeg);
   if (Math.abs(probe.durationUs - options.snapshot.edl.sourceDurationUs) > 50_000) throw new Error('EDL duration does not match source media');
   if (probe.width !== options.snapshot.videoWidth || probe.height !== options.snapshot.videoHeight) throw new Error('Snapshot dimensions do not match source media');
 

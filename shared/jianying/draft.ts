@@ -149,7 +149,7 @@ export function jianyingDegradations(snapshot: JianyingSnapshot): JianyingDegrad
 /** Product gate: local and remote clients cannot turn a candidate into a supported export. */
 export const JIANYING_CAPABILITIES = {
   research: 'F-0010' as const,
-  researchDate: JIANYING_RESEARCH_DATE,
+  checkedAt: JIANYING_RESEARCH_DATE,
   verifiedByImport: false as const,
   exportEnabled: false as const,
   reason: 'Windows 5.9.0 明文格式只有只读结构证据，尚未完成真实剪映导入验证。',
@@ -164,6 +164,8 @@ export const JIANYING_CAPABILITIES = {
       reason: 'Only the inspected 5.9.0 plaintext draft is a candidate.' },
     { id: 'capcut', platform: 'cross-platform', version: 'any', status: 'unsupported' as const,
       reason: 'CapCut compatibility was not researched.' },
+    { id: 'jianying-web', platform: 'web', version: 'any', status: 'unsupported' as const,
+      reason: 'Jianying candidate generation requires the desktop Host; Windows 5.9.0 import is still unverified.' },
   ],
 };
 

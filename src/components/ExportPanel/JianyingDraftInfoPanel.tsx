@@ -42,6 +42,7 @@ export function JianyingDraftInfoPanel({ active }: { active: boolean }) {
   const mac = state.value.targets.find(target => target.id === 'jianying-macos-11.7.0');
   const other = state.value.targets.find(target => target.id === 'jianying-windows-other-builds');
   const capcut = state.value.targets.find(target => target.id === 'capcut');
+  const web = state.value.targets.find(target => target.id === 'jianying-web');
   const row = (id: string, name: string, detail: string, unavailable: boolean) => (
     <div key={id} data-testid={`jianying-target-${id}`} className="flex gap-3 rounded-lg border p-3 text-sm">
       {unavailable ? <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-destructive" /> : <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />}
@@ -56,9 +57,10 @@ export function JianyingDraftInfoPanel({ active }: { active: boolean }) {
     </div>
     <div className="space-y-2">
       {windows && row(windows.id, copy.candidate, copy.candidateDetail, false)}
-      {other && row(other.id, copy.unavailable, 'Windows 5.9.0 other builds are not verified.', true)}
-      {mac && row(mac.id, copy.unavailable, 'Private Timelines drafts cannot be generated from available evidence.', true)}
-      {capcut && row(capcut.id, copy.unavailable, 'CapCut compatibility was not researched.', true)}
+      {other && row(other.id, copy.unavailable, copy.otherBuildDetail, true)}
+      {mac && row(mac.id, copy.unavailable, copy.macDetail, true)}
+      {capcut && row(capcut.id, copy.unavailable, copy.capcutDetail, true)}
+      {web && row(web.id, copy.unavailable, copy.webDetail, true)}
     </div>
     <div className="grid gap-3 sm:grid-cols-2">
       <section className="rounded-lg bg-muted/50 p-3 text-sm"><h4 className="flex items-center gap-2 font-medium"><CheckCircle className="h-4 w-4" />{copy.scope}</h4>
@@ -66,7 +68,7 @@ export function JianyingDraftInfoPanel({ active }: { active: boolean }) {
       <section className="rounded-lg bg-amber-500/10 p-3 text-sm"><h4 className="font-medium">{copy.limitations}</h4>
         <ul className="mt-2 list-disc space-y-1 pl-4 text-muted-foreground">{copy.limitationsItems.map(item => <li key={item}>{item}</li>)}</ul></section>
     </div>
-    <p className="text-xs text-muted-foreground">{copy.research}</p>
+    <p className="text-xs text-muted-foreground">{copy.research.replace('{date}', state.value.checkedAt)}</p>
     <button data-testid="jianying-export-disabled" type="button" disabled className="w-full rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground opacity-50">
       {copy.exportDisabled}
     </button>

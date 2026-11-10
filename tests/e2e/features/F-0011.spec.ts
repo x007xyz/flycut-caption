@@ -28,6 +28,10 @@ async function openEditor(page: Page, theme: 'light' | 'dark', language: 'zh' | 
   const host = await mockHost(page, editorHandlers(extra));
   await page.goto(`/#/projects/${P}/videos/${VIDEO_ID}`);
   await expect(page.getByRole('button', { name: /导出|Export/, exact: true })).toBeVisible();
+  if (language === 'en') {
+    await page.getByRole('button', { name: '选择语言' }).click();
+    await page.getByRole('menuitem', { name: /English/ }).click();
+  }
   return host;
 }
 
@@ -79,8 +83,14 @@ for (const theme of THEMES) for (const language of ['zh', 'en'] as const) {
       await expect(page.getByTestId('jianying-support-matrix')).toBeVisible();
       await expect(page.getByText(/真实导入验证：未完成|Real import verification: not run/)).toBeVisible();
       await expect(page.getByTestId('jianying-target-jianying-windows-5.9.0')).toContainText(/候选格式|Candidate format/);
+      await expect(page.getByTestId('jianying-target-jianying-windows-other-builds')).toContainText(/不支持此草稿版本|Unsupported draft version/);
       await expect(page.getByTestId('jianying-target-jianying-macos-11.7.0')).toContainText(/不支持此草稿版本|Unsupported draft version/);
       await expect(page.getByTestId('jianying-target-capcut')).toContainText(/不支持此草稿版本|Unsupported draft version/);
+      await expect(page.getByTestId('jianying-target-jianying-web')).toContainText(/不支持此草稿版本|Unsupported draft version/);
+      if (language === 'zh') {
+        await expect(page.getByTestId('jianying-target-jianying-web')).toContainText('仅支持桌面 Host');
+        await expect(page.getByTestId('jianying-target-jianying-macos-11.7.0')).not.toContainText('Private Timelines');
+      }
       await expect(page.getByTestId('jianying-export-disabled')).toBeDisabled();
       await expect(page.getByText(/草稿已生成|Draft created/)).toHaveCount(0);
       await shot(page, F, `support-matrix-${theme}-${language}`);
