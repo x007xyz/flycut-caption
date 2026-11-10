@@ -8,7 +8,8 @@ approved_at:
 
 # F-0056 AI模型配置与密钥保存到Host：测试与验收
 
-验收在 commit `83059bd` 上进行。
+原验收基线为 commit `83059bd`；本轮 Tauri Host Node 打包修复及启动补测在 commit
+`a853ecd` 上进行。
 
 > 技术设计和开发阶段由 agent 连续推进、自动确认；维护者在这里一并审阅。
 
@@ -46,7 +47,7 @@ ID 重试，成功后才清理。所有面板写操作和根快照加载都绑�
 | AC-6 | Playwright | 加载显示处理中，刷新/添加/编辑/删除在忙碌期间禁用；错误 Host 响应和 identity 切换不写回旧数据 | ✅ |
 | AC-7 | Playwright、Host 重启、第二个客户端 | 只有 Host 返回新 snapshot 才显示完成；重启与第二客户端读回同一 Host 配置 | ✅ |
 | AC-8 | Playwright、架构 Red check | 迁移失败保留来源；revision 冲突保留表单并提示重新检查；错误 Host 响应保留当前列表 | ✅ |
-| AC-9 | 40 张截图、8 段录屏、真实 Host/DeepSeek 官方 API | localhost:5175 UI 8/8；真实本地 Host 和 macOS 凭据后端通过；DeepSeek 官方 `deepseek-flash` 连接、翻译、纠错通过。完整 Tauri 窗口人工点击未跑 | ⏸ Tauri Not run；真实 API ✅ |
+| AC-9 | 40 张截图、8 段录屏、真实 Host/DeepSeek 官方 API、真实 Tauri | localhost:5175 UI 8/8；真实本地 Host 和 macOS 凭据后端通过；DeepSeek 官方 `deepseek-flash` 连接、翻译、纠错通过。修复后真实 Tauri 窗口与 Host 已启动；窗口内完整操作按约定交主 agent 继续 | Tauri 构建/启动 ✅；完整 UI ⏸；真实 API ✅ |
 
 ## 界面证据
 
@@ -127,6 +128,62 @@ ID 重试，成功后才清理。所有面板写操作和根快照加载都绑�
 - 复测结束后已停止本轮启动的 Tauri 与 Vite，5173、5179、5191、5207 均无监听；未触碰其他
   worktree 或旧安装包进程。
 
+### Host Node 打包修复与真实窗口启动（2026-11-10 续测）
+
+修复提交：`a853ecd`。
+
+- `scripts/package-host.mjs` 支持显式 `FLYCUT_NODE_BINARY`；未设置时仍使用当前
+  `process.execPath`，保持现有 CI 的默认行为。
+- macOS 打包前用 `otool -L` 校验 Node 依赖。依赖 `@rpath`、`@loader_path`、Homebrew 路径，
+  或绝对路径文件缺失时，在替换 Host 资源前明确失败并列出原因；官方自包含 Node 仅依赖系统库时
+  通过。
+- 安装 `flycut-node` 前先移除目标路径再复制，避免旧目标为软链时把二进制写穿到其他 checkout。
+
+失败路径与 Red check：
+
+- 默认 Homebrew Node 26（`/opt/homebrew/bin/node`）被拒绝，错误明确列出
+  `@rpath/libnode.147.dylib` 和 21 个 `/opt/homebrew/opt/**` dylib。
+- 临时禁用 macOS 依赖检查后，`tests/package-host-node.test.mjs` 的
+  “refuses a macOS Node binary...” 用例失败于 `Missing expected exception`；恢复后 5/5 通过。
+- 另一个用例验证旧目标为软链时只替换软链本身，软链原目标内容保持不变。
+
+成功路径：
+
+- 使用
+  `FLYCUT_NODE_BINARY=/Users/zhangxiangchen/.nvm/versions/node/v24.6.0/bin/node pnpm package:host`
+  完成最终打包，输出 `Packaged 31 Host dependencies and Node v24.6.0`。
+- 打包出的 `src-tauri/binaries/flycut-node` 是 116,945,120 字节的普通文件，SHA-256 与 nvm Node
+  完全一致；`otool -L` 只剩 CoreFoundation、Security、libc++ 和 libSystem 系统库。
+- 执行前，旧软链指向的原 checkout 文件 SHA-256 为
+  `08dad0581f00a0cabf4d49ec92ca1f25fdfd01c2c18fa8e92b35f04d4c24c164`；修复打包后未变化。
+
+真实 Tauri：
+
+- 清除本 worktree 的 `target/debug/binaries/flycut-node` 和 `target/debug/host` 后，Tauri
+  重新复制资源；debug 资源中的 Node 哈希与 nvm Node 一致，依赖校验通过。
+- 首次使用原 HOME 启动时，Tauri 窗口和新的 Host 进程都进入运行，但同一 bundle id 的旧安装版
+  已占用真实应用数据目录，Host 以 `A Host already owns this home directory` 退出。这是环境中的
+  多实例冲突，不是 Node/dyld 问题；旧安装版进程未被终止，原数据未被修改。
+- 使用隔离 HOME `/private/tmp/f0056-tauri-home-20261110` 启动后，CUA 识别应用为
+  `FlyCut Caption` / `com.flycut.caption`，debug 可执行文件为
+  `src-tauri/target/debug/flycut-caption`。窗口 PID `66908`、Host PID `66984` 均保持运行。
+- Host 监听 `http://127.0.0.1:65440`；shell token 只经环境变量传入，连接发现使用的
+  `connection.json` 和 `auth.token` 保存在隔离 HOME 的
+  `Library/Application Support/com.flycut.caption/host/`，权限均为 `0600`。本报告和命令输出
+  未记录 token 值。
+- 旧安装版与 debug 版拥有相同 bundle id。CUA 操作时需按 debug 可执行路径/窗口确认，不能只按
+  bundle id 选择。
+
+补充回归：
+
+- `pnpm lint`、`pnpm tsc -b --noEmit`、`pnpm check:host`、`cargo check`、`pnpm build` ✅
+- `pnpm test`：100 passed、3 skipped（未下载的 moonshine、nemo_transducer、whisper 可选模型）✅
+- `pnpm test:architecture`：96/96 ✅。目标 worktree 缺少被 git 忽略的 `tests/media` 时首轮有 3 项
+  文件缺失；只读链接现有测试媒体后串行复跑全绿。并行高负载时另有 1 项 WebSocket ready 断言失败，
+  同一资源齐全后串行复跑通过，未改产品代码。
+- 窗口内的文件导入、AI 配置读取/测试、清除 Key 和错误状态操作由主 agent 继续执行；本报告不把
+  这部分 UI 操作写成已通过，也不自行 approve。
+
 ### DeepSeek 官方 API 实测（2026-11-10）
 
 - 按维护者指示从本机 DSH 配置读取 `DEEPSEEK_API_KEY`；只读入临时 Host 内存，未输出、未写入报告，也未复制到项目文件或长期 Host 配置。
@@ -137,6 +194,7 @@ ID 重试，成功后才清理。所有面板写操作和根快照加载都绑�
 
 ## 结论
 
-本地实现、Host 架构、UI 矩阵和 macOS 凭据后端均已通过，未发现需要修复的代码问题。
-真实 DeepSeek 官方 AI 已验证；完整 Tauri 窗口人工点击仍是 `Not run`；完成桌面补测前，结论为
-**需要补测后由维护者验收**。本报告不自行批准。
+本地实现、Host 架构、UI 矩阵和 macOS 凭据后端均已通过。此前阻断桌面启动的 Homebrew Node /
+`libnode` 问题已在 `a853ecd` 修复，真实 Tauri 窗口和新 Host 已用自包含的 nvm Node 启动并保持
+运行；真实 DeepSeek 官方 AI 已验证。窗口内完整 UI 操作按约定由主 agent 继续，完成后由维护者
+验收。本报告不自行批准。
