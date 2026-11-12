@@ -4,11 +4,12 @@
 // Format 2 (F-0003): several videos, project style, per-video revisions, Trash: docs/20-architecture/adr/0003-multi-video-projects.md
 import { z } from 'zod';
 import { editingSchema } from './editing/edl';
+import { languageTrackSchema } from './languageTracks';
 import { modelRefSchema } from './providers';
 import { textRecordSchema } from './text/corrections';
 
 /** Bump together with a migration in `server/projects/migrations.ts` and a note in ADR-0001. */
-export const PROJECT_FORMAT_VERSION = 3;
+export const PROJECT_FORMAT_VERSION = 4;
 
 export const projectIdSchema = z.uuid();
 
@@ -51,6 +52,13 @@ export const projectEditsSchema = z.object({
    * the project format version stays 3. At most 100 records are kept (newest first when read back).
    */
   textHistory: z.array(textRecordSchema).optional(),
+  /**
+   * F-0030 format 4: per-video translation tracks. Entries are keyed by chunk id and keep the exact source
+   * text used to create each translation. Missing means a pre-format-4 file and is migrated lazily on read.
+   */
+  languageTracks: z.array(languageTrackSchema).optional(),
+  /** F-0030: active track whose translation is projected into the legacy chunk.secondText field. */
+  activeLanguageTrackId: z.string().min(1).max(128).nullable().optional(),
 });
 export type ProjectEdits = z.infer<typeof projectEditsSchema>;
 

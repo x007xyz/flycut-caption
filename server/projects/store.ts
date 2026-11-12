@@ -1,4 +1,5 @@
 import { migrateLegacy, type Cue } from '../../shared/editing/edl';
+import { normalizeLanguageTracks, projectLanguageTrack, validateLanguageTracks } from '../../shared/languageTracks';
 // File layout of one Host's projects (ADR-0001). The `projects` plugin is the only caller.
 //
 //   <home>/projects/<projectId>/
@@ -193,6 +194,10 @@ export class ProjectStore {
     if (!(await exists(file))) return undefined;
     const edits = projectEditsSchema.parse(await readJson(file));
     if (edits.textHistory?.length) edits.textHistory = trimTextHistory(edits.textHistory);
+    const tracks = normalizeLanguageTracks(edits.chunks, edits.languageTracks, edits.activeLanguageTrackId);
+    edits.languageTracks = tracks.languageTracks;
+    edits.activeLanguageTrackId = tracks.activeLanguageTrackId;
+    edits.chunks = projectLanguageTrack(edits.chunks, tracks.languageTracks, tracks.activeLanguageTrackId);
     if (edits.editing) return edits;
     const transcript = await this.readTranscript(id, videoId);
     if (!transcript?.duration) return edits;
@@ -203,6 +208,14 @@ export class ProjectStore {
   }
   async writeEdits(id: string, videoId: string, edits: ProjectEdits) {
     edits = projectEditsSchema.parse(edits);
+    if (edits.activeLanguageTrackId && !edits.languageTracks?.some(track => track.id === edits.activeLanguageTrackId))
+      throw new Error('Active language track does not exist');
+    const tracks = normalizeLanguageTracks(edits.chunks, edits.languageTracks, edits.activeLanguageTrackId);
+    validateLanguageTracks(tracks.languageTracks, tracks.activeLanguageTrackId, edits.chunks);
+    edits.languageTracks = tracks.languageTracks;
+    edits.activeLanguageTrackId = tracks.activeLanguageTrackId;
+    // secondText is the active-track projection; write it to keep old display/export readers compatible.
+    edits.chunks = projectLanguageTrack(edits.chunks, tracks.languageTracks, tracks.activeLanguageTrackId);
     // F-0013: the format-3 text history is bounded on both sides; an older client cannot grow the file without limit.
     if (edits.textHistory?.length) edits.textHistory = trimTextHistory(edits.textHistory);
     if (edits.editing) {

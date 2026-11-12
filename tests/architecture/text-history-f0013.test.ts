@@ -73,7 +73,7 @@ test('F-0013/AC-9 text history keeps at most 100 records and restore conflicts w
   assert.equal(store.getState().textHistory.filter(item => item.id === cleanId).length, 1, 'the original record stays');
 });
 
-test('F-0013/AC-9 textHistory is a format-3 additive project field, bounded by ProjectStore and readable on open', async () => {
+test('F-0013/AC-9 textHistory survives the F-0030 format-4 project upgrade, is bounded by ProjectStore and readable on open', async () => {
   const home = await mkdtemp(join(tmpdir(), 'flycut-f0013-'));
   try {
     const store = new ProjectStore(home);
@@ -94,7 +94,7 @@ test('F-0013/AC-9 textHistory is a format-3 additive project field, bounded by P
     assert.equal(edits?.textHistory?.length, 100);
     assert.equal(edits?.textHistory?.at(-1)?.id, 'record-104');
     const projectRaw = JSON.parse(await readFile(join(home, 'projects', project.id, 'project.json'), 'utf8'));
-    assert.equal(projectRaw.formatVersion, 3, 'the optional field does not bump the project format');
+    assert.equal(projectRaw.formatVersion, 4, 'F-0030 upgrades the stored project to format 4');
   } finally { await rm(home, { recursive: true, force: true }); }
 });
 
