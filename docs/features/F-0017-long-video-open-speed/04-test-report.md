@@ -1,9 +1,9 @@
 ---
 id: F-0017
 stage: 04-test-report
-status: review
-approved_by:
-approved_at:
+status: approved
+approved_by: zhangxiang.chen
+approved_at: 2026-11-12
 ---
 
 # F-0017 长视频打开提速：测试与验收
