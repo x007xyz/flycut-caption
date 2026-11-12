@@ -24,6 +24,7 @@ approved_at:
 | 2026-11-12 | 2. history、自动保存、恢复副本与另存 | `3076037` | `pnpm tsc -b --noEmit` ✅；`pnpm check:host` ✅；`pnpm test` 87 通过、11 个既有前置条件跳过；F-0030 架构测试 4/4 ✅ |
 | 2026-11-12 | 3. 轨道管理界面与保存生命周期 | `75ec972` | `pnpm lint` ✅；`pnpm tsc -b --noEmit` ✅；`pnpm build` ✅；交互证据留到第 5 项统一跑 Playwright |
 | 2026-11-12 | 4. 译文编辑、原文过期与 AI 目标轨 | `1240249` | `pnpm lint` ✅；`pnpm tsc -b --noEmit` ✅；F-0030 架构测试 4/4 ✅；EDL 共享源时间断言通过 |
+| 2026-11-12 | 5. 架构、单元与中英文/明暗 E2E 证据 | `dd9466e` | `pnpm test:e2e tests/e2e/features/F-0030.spec.ts --workers=1` 24/24 ✅；`pnpm e2e:evidence F-0030` 24/24 ✅，56 张截图、24 段录屏；`pnpm lint` ✅；`pnpm tsc -b --noEmit` ✅ |
 
 ## 自行决定的事项
 
