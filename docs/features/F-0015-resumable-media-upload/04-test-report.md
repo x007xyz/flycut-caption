@@ -1,9 +1,9 @@
 ---
 id: F-0015
 stage: 04-test-report
-status: review
-approved_by:
-approved_at:
+status: approved
+approved_by: zhangxiang.chen
+approved_at: 2026-11-12
 ---
 
 # F-0015 大文件断点续传与断线恢复：测试与验收

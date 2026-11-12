@@ -1,6 +1,6 @@
 ---
 id: ADR-0008
-status: proposed
+status: accepted
 date: 2026-11-09
 deciders: zhangxiang.chen
 feature: F-0015
