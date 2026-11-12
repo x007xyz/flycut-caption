@@ -4,6 +4,7 @@ import type { SubtitleTranscript, ASRProgress } from '../src/types/subtitle';
 import type { EditorPluginManifest } from '../src/types/plugin';
 import { asrRequestSchema, modelRefSchema, type ProviderModels, type ProviderSummary } from './providers';
 import { subtitleGraphicSceneSchema } from './subtitle-graphics/scene';
+import { semanticWindowSchema } from './editing/semanticFillers';
 import {
   aiSettingsImportInputSchema, aiSettingsRemoveInputSchema, aiSettingsSaveInputSchema, aiSettingsSelectInputSchema,
   aiSettingsTestInputSchema, type AISettingsImportResult, type AISettingsMutationResult, type AISettingsRemoveResult,
@@ -53,6 +54,12 @@ export const textInputSchema = z.object({ mode: z.enum(['correction', 'translati
   model: z.object({ id: z.string(), name: z.string(), baseUrl: z.url(), apiKey: z.string(), model: z.string(), temperature: z.number().optional() }).optional() })
   .refine(input => !!input.configId !== !!input.model, '必须且只能提供 configId 或旧 model 之一');
 export type TextInput = z.infer<typeof textInputSchema>;
+/** F-0009: Host resolves the saved AI config; only its opaque config ID crosses RPC. */
+export const semanticCutsInputSchema = z.strictObject({
+  configId: z.uuid(),
+  request: semanticWindowSchema,
+});
+export type SemanticCutsInput = z.infer<typeof semanticCutsInputSchema>;
 export const agentInputSchema = z.object({ prompt: z.string().min(1).max(100000), asr: asrInputSchema.optional(),
   configId: z.uuid().optional(),
   /** Compatibility for clients released before F-0056. */
@@ -125,6 +132,7 @@ export interface RpcMethods {
   'workflow.start': { input: z.input<typeof pipelineInputSchema>; output: JobSnapshot };
   'agent.start': { input: z.input<typeof agentInputSchema>; output: JobSnapshot };
   'text.start': { input: z.input<typeof textInputSchema>; output: JobSnapshot };
+  'text.suggestCuts': { input: z.input<typeof semanticCutsInputSchema>; output: JobSnapshot };
   'export.start': { input: z.input<typeof exportInputSchema>; output: JobSnapshot };
   'plugins.list': { input: void; output: { profile: string; layers: string[]; plugins: PluginStatus[] } };
   'plugins.reload': { input: { id: string }; output: PluginStatus };

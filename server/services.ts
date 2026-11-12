@@ -1,4 +1,4 @@
-import type { JobSnapshot, PipelineInput, PipelineResult, ExportInput, AgentInput, TextInput } from '../shared/protocol';
+import type { JobSnapshot, PipelineInput, PipelineResult, ExportInput, AgentInput, TextInput, SemanticCutsInput } from '../shared/protocol';
 import type { AsrRequest, ModelInfo, ModelRef, ProviderKind, ProviderModels, ProviderSummary, VoiceActivityResult } from '../shared/providers';
 import type { ASRProgress, SubtitleTranscript } from '../src/types/subtitle';
 import type { AISettingsImportInput, AISettingsMutationResult, AISettingsRemoveResult, AISettingsSaveInput,
@@ -88,7 +88,11 @@ export interface EditorPluginRegistry {
   has(id: string): boolean;
   list(): EditorPlugin['manifest'][];
 }
-export interface TextService { start(input: TextInput): JobSnapshot }
+export interface TextService {
+  start(input: TextInput): JobSnapshot;
+  /** F-0009: resolve the saved AI config on the Host and validate word-ID candidates. */
+  suggestCuts(input: SemanticCutsInput): JobSnapshot;
+}
 export interface AISettingsService {
   snapshot(): Promise<AISettingsSnapshot>;
   save(input: Omit<AISettingsSaveInput, 'hostId'>): Promise<AISettingsSaveResult>;
