@@ -154,11 +154,15 @@ test('F-0030/AC-1 AC-3 editor tracks switch, mark source changes outdated, keep 
   store.getState().undo();
   assert.equal(store.getState().chunks[0].secondText, 'Bonjour');
   store.getState().redo();
+  store.getState().applyLanguageTranslations({ languageCode: 'de', name: 'Deutsch', updates: [{ id: 's1', text: 'Hallo' }] });
+  assert.equal(store.getState().activeLanguageTrackId, store.getState().languageTracks.at(-1)?.id);
+  assert.deepEqual(store.getState().languageTracks.at(-1)?.languageCode, 'de');
+  assert.equal(store.getState().chunks[0].secondText, 'Hallo');
   const state = store.getState();
   const edits = buildEdits(state.chunks, state.wordChunks, defaultSubtitleStylePair as any, false, editingOf(state), [],
     state.languageTracks, state.activeLanguageTrackId);
-  assert.equal(edits.activeLanguageTrackId, 'track-fr');
-  assert.equal(edits.languageTracks?.[1].entries.s1.text, 'Salut');
+  assert.equal(edits.activeLanguageTrackId, state.activeLanguageTrackId);
+  assert.equal(edits.languageTracks?.[2].entries.s1.text, 'Hallo');
   assert.deepEqual(edits.chunks.map(chunk => chunk.timestamp), transcript.chunks.map(chunk => chunk.timestamp));
   const content = { editing: edits.editing, chunks: edits.chunks, deletedWordIds: edits.deletedWordIds, languageTracks: edits.languageTracks,
     activeLanguageTrackId: edits.activeLanguageTrackId, styleSource: 'project' as const,
@@ -167,7 +171,7 @@ test('F-0030/AC-1 AC-3 editor tracks switch, mark source changes outdated, keep 
     languageTracks: structuredClone(edits.languageTracks), activeLanguageTrackId: edits.activeLanguageTrackId, styleSource: 'project' as const,
     effectiveStyle: content.stylePair as any, projectStyle: content.stylePair as any };
   assert.equal(diffWithHost(content, host).same, true);
-  content.languageTracks[1].entries.s1.text = 'Different';
+  content.languageTracks[2].entries.s1.text = 'Different';
   assert.equal(diffWithHost(content, host).video, true);
 });
 
