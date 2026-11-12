@@ -20,10 +20,10 @@ approved_at: 2026-11-12
 
 | 日期 | 清单项 | 提交 | 检查 |
 |---|---|---|---|
-| 2026-11-12 | 1：固定项目、Chrome 和共用保存用例 | working tree | `pnpm acceptance:web`；真实 Host 快照与重开文本一致 |
-| 2026-11-12 | 2：隔离 Tauri 测试构建和 WKWebView | working tree | `pnpm acceptance:tauri`；同一用例通过，默认构建没有 WebDriver |
-| 2026-11-12 | 3：无驱动启动、字幕导出和反向故障 | working tree | `pnpm acceptance:bundle`；正常导出及缺 Node、缺字体均通过 |
-| 2026-11-12 | 4：CI、命令文档与回归 | working tree | 静态检查、单元测试、打包字体资源测试通过 |
+| 2026-11-12 | 1：固定项目、Chrome 和共用保存用例 | 11c5a49 | `pnpm acceptance:web`；真实 Host 快照与重开文本一致 |
+| 2026-11-12 | 2：隔离 Tauri 测试构建和 WKWebView | 11c5a49 | `pnpm acceptance:tauri`；同一用例通过，默认构建没有 WebDriver |
+| 2026-11-12 | 3：无驱动启动、字幕导出和反向故障 | 11c5a49 | `pnpm acceptance:bundle`；正常导出及缺 Node、缺字体均通过 |
+| 2026-11-12 | 4：CI、命令文档与回归 | 11c5a49 | 静态检查、单元测试、92 项架构测试和打包字体资源测试通过 |
 
 ## 自行决定的事项
 
