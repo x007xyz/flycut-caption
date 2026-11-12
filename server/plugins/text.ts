@@ -2,6 +2,7 @@ import type { Context } from '@deepseek-ai/cordis';
 import { semanticCutsInputSchema, textInputSchema } from '../../shared/protocol';
 import type { TextService } from '../services';
 import { OpenAICompatibleEngine } from '../../shared/text/OpenAICompatibleEngine';
+import { SemanticContractError } from '../../shared/editing/semanticFillers';
 
 export const textPlugin = { name: 'flycut-text-provider', inject: ['jobs', 'rpc', 'aiSettings'], apply(ctx: Context) {
   const service: TextService = {
@@ -18,7 +19,14 @@ export const textPlugin = { name: 'flycut-text-provider', inject: ['jobs', 'rpc'
         const engine = new OpenAICompatibleEngine();
         engine.setAbortSignal(signal); engine.setProgressCallback(report);
         const model = await ctx.aiSettings.resolve(input.configId);
-        return engine.suggestCuts(model, input.request);
+        try {
+          return await engine.suggestCuts(model, input.request);
+        } catch (error) {
+          if (error instanceof SemanticContractError) {
+            throw new Error(`Invalid analysis result (${error.code}): ${error.message}`);
+          }
+          throw error;
+        }
       });
     },
   };

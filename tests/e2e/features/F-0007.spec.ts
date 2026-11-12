@@ -60,7 +60,7 @@ test('F-0007/AC-7 save failure keeps the candidates and the formal subtitles', a
   await connect(page, transcript, { 'projects.saveVideoEdits': () => { throw new RpcError('save failed'); } });
   await page.goto(`/#/projects/${P}/videos/${VIDEO_ID}`);
   const boxes = page.getByPlaceholder(/请输入主字幕|Enter main subtitle/);
-  await page.getByRole('button', { name: /去口癖|Remove fillers/ }).click();
+  await page.getByRole('button', { name: /^(去口癖|Remove fillers)$/ }).click();
   await expect(page.getByTestId('cut-suggestions')).toBeVisible();
   await page.getByRole('button', { name: /应用选中建议|Apply selected suggestions/ }).click();
   await expect(page.getByTestId('cut-suggestions')).toBeVisible();
@@ -72,7 +72,7 @@ test('F-0007/AC-6 stale suggestions never partially apply', async ({ page }) => 
   await prepare(page, 'light', { 'flycut-locale': 'zh' });
   await connect(page);
   await page.goto(`/#/projects/${P}/videos/${VIDEO_ID}`);
-  await page.getByRole('button', { name: /去口癖|Remove fillers/ }).click();
+  await page.getByRole('button', { name: /^(去口癖|Remove fillers)$/ }).click();
   await expect(page.getByTestId('cut-suggestions')).toBeVisible();
   await page.getByTestId('pending-suggestion-item').first().getByRole('checkbox').check().catch(() => undefined);
   const first = page.getByTestId('subtitle-main-text').first();
@@ -98,7 +98,7 @@ for (const theme of ['light', 'dark'] as const) for (const english of [false, tr
       if (english) await setEnglish(page);
       const boxes = page.getByPlaceholder(/请输入主字幕|Enter main subtitle/);
       await expect(boxes.first()).toHaveValue('嗯我觉得很好');
-      await page.getByRole('button', { name: /去口癖|Remove fillers/ }).click();
+      await page.getByRole('button', { name: /^(去口癖|Remove fillers)$/ }).click();
       await expect(page.getByTestId('cut-suggestions')).toBeVisible();
       const items = page.getByTestId('pending-suggestion-item');
       await expect(items).toHaveCount(2);
@@ -133,7 +133,7 @@ for (const theme of ['light', 'dark'] as const) for (const english of [false, tr
       await connect(page, noWords);
       await page.goto(`/?lang=${lang}#/projects/${P}/videos/${VIDEO_ID}`);
       if (english) await setEnglish(page);
-      await page.getByRole('button', { name: /去口癖|Remove fillers/ }).click();
+      await page.getByRole('button', { name: /^(去口癖|Remove fillers)$/ }).click();
       await expect(page.getByText(/缺少可靠字词时间戳|Reliable word timestamps/)).toBeVisible();
       await expect(page.getByTestId('cut-suggestions')).toHaveCount(0);
       await shot(page, F, `gate-${theme}-${lang}`);

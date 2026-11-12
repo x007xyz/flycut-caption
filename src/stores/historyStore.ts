@@ -310,7 +310,7 @@ export const createHistoryStore = () => createStore<HistoryState & HistoryAction
         cut([], s.pendingCuts.ranges, 'suggestions'); if (!get().cutError) set({ pendingCuts: null });
         return;
       }
-      if (batch.base !== keyOf(s)) { fail(new Error('Suggestions are outdated. Analyze again.')); return; }
+      if ((batch.stateKey ?? batch.base) !== keyOf(s)) { fail(new Error('Suggestions are outdated. Analyze again.')); return; }
       const selected = batch.items.filter(item => item.selected);
       const ranges = selectPendingRanges({ pendingSuggestions: batch })?.ranges ?? [];
       if (!selected.length || !ranges.length) return;

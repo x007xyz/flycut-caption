@@ -26,6 +26,8 @@ export interface SuggestionBatch {
   kind: SuggestionKind;
   /** Formal edit revision this analysis was based on. */
   base: string;
+  /** Optional exact history-store snapshot key when base is an external hash (F-0009). */
+  stateKey?: string;
   preview: boolean;
   items: CutSuggestion[];
   /** F-0009: a batch may combine unchanged rule candidates with semantic candidates. */

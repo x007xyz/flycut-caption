@@ -451,14 +451,18 @@ export function TimelineWaveform({
             {(suggestions?.items.filter(item => item.selected) ?? pending?.ranges.map((range, index) => ({
               id: `pending-${index}`, start: range.start, end: range.end, reason: 'silence', category: 'silence', selected: true,
             })) ?? []).map(item => {
-              const reason = item.category === 'repeated-word' ? suggestionCopy.reasonRepeat
-                : item.category === 'standalone-filler' ? suggestionCopy.reasonStandalone : copy.pending;
+              const sources = item.sources?.length ? item.sources : [item.source ?? 'rule'];
+              const sourceLabel = sources.includes('semantic') && sources.includes('rule')
+                ? `${suggestionCopy.sourceRule} + ${suggestionCopy.sourceSemantic}`
+                : sources.includes('semantic') ? suggestionCopy.sourceSemantic : suggestionCopy.sourceRule;
+              const reason = item.semanticReason ?? (item.category === 'repeated-word' ? suggestionCopy.reasonRepeat
+                : item.category === 'standalone-filler' ? suggestionCopy.reasonStandalone : copy.pending);
               return <div key={item.id} data-testid="pending-cut" role="img" tabIndex={0}
-                aria-label={`${copy.pending}: ${item.reason} ${reason}`} title={`${copy.pending} · ${reason}`}
+                aria-label={`${copy.pending}: ${sourceLabel}. ${reason}`} title={`${copy.pending} · ${sourceLabel} · ${reason}`}
                 onClick={event => event.stopPropagation()}
                 className="group pointer-events-auto absolute top-8 bottom-1 z-20 min-w-[2px] overflow-visible border border-red-700 bg-red-500/60 text-[10px] text-foreground outline-none focus:ring-2 focus:ring-amber-400"
                 style={{ left: item.start * pixelsPerSecond, width: Math.max(2, (item.end - item.start) * pixelsPerSecond) }}>
-                <span className="block truncate px-1">{copy.pending}</span>
+                <span className="block truncate px-1">{copy.pending} · {sourceLabel}</span>
                 <span className="pointer-events-none absolute left-0 top-full z-30 hidden max-w-64 whitespace-normal rounded border border-border bg-background px-2 py-1 text-[10px] text-foreground shadow-lg group-hover:block group-focus:block">
                   {reason}
                 </span>
