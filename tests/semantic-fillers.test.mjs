@@ -73,6 +73,35 @@ test('F-0009/AC-4 half-sentence, whole-sentence word scope and category/scope mi
   ]), window), errorCode('INVALID_CATEGORY_SCOPE'));
 });
 
+test('F-0009/AC-4 a candidate may not cover non-deletable context inside the target span', () => {
+  const long = {
+    ...transcript,
+    chunks: [
+      { id: 'a', text: '这个就是这个', timestamp: [0, 1], wordIds: ['a1', 'a2', 'a3'] },
+      { id: 'b', text: '普通内容', timestamp: [1.5, 2.5], wordIds: ['b1', 'b2'] },
+      { id: 'c', text: '那个我觉得', timestamp: [3, 4], wordIds: ['c1', 'c2', 'c3'] },
+    ],
+    wordChunks: [
+      { id: 'a1', text: '这个', timestamp: [0, 0.3], sentenceId: 'a' },
+      { id: 'a2', text: '就是', timestamp: [0.3, 0.6], sentenceId: 'a' },
+      { id: 'a3', text: '这个', timestamp: [0.6, 1], sentenceId: 'a' },
+      { id: 'b1', text: '普通', timestamp: [1.5, 2], sentenceId: 'b' },
+      { id: 'b2', text: '内容', timestamp: [2, 2.5], sentenceId: 'b' },
+      { id: 'c1', text: '那个', timestamp: [3, 3.3], sentenceId: 'c' },
+      { id: 'c2', text: '我', timestamp: [3.3, 3.6], sentenceId: 'c' },
+      { id: 'c3', text: '觉得', timestamp: [3.6, 4], sentenceId: 'c' },
+    ],
+  };
+  const built = buildSemanticWindowPlan({ ...options, ...long }).windows[0];
+  assert.equal(built.sentences.find(sentence => sentence.id === 'b').words.every(word => !word.deletable), true);
+  assert.throws(() => validateSemanticModelResponse({
+    version: 1, base: built.base, candidates: [{
+      startWordId: 'a1', endWordId: 'c3', scope: 'sentence', category: 'repetition',
+      reason: '跨过不可删除的上下文', confidence: 'high',
+    }],
+  }, built), errorCode('NON_DELETABLE_WORD'));
+});
+
 test('F-0009/AC-5 AC-8 semantic candidates stay unselected and exact rule overlap shows both sources', () => {
   const semantic = validateSemanticModelResponse(response([candidate()]), window);
   const rule = [{

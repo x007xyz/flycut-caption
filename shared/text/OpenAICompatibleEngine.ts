@@ -3,7 +3,7 @@ import type { AIModelConfig, AIProgress, AISubtitleItem } from '../../src/types/
 import {
   SEMANTIC_PROMPT_VERSION, validateSemanticModelResponse,
   type SemanticAnalysisResult, type SemanticWindow,
-} from '../editing/semanticFillers'
+} from '../editing/semanticFillers.ts'
 
 const SEMANTIC_SYSTEM_PROMPT = `You review Chinese talking-head transcripts and propose only deletions that are safe when removed from the spoken video.
 

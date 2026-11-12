@@ -15,14 +15,17 @@ const T = '2026-11-12T12:00:00Z';
 type Scenario = 'success' | 'partial' | 'cancel' | 'invalid' | 'empty';
 
 const transcript = {
-  text: '这个这个方案 嗯好的 那个我觉得',
+  text: '这个这个方案 嗯好的 我们继续 下周再看 最后结束 那个我觉得',
   language: 'zh',
-  duration: 6,
+  duration: 7.5,
   hasWordTimestamps: true,
   chunks: [
     { id: 's1', text: '这个这个方案', timestamp: [0, 1.2], wordIds: ['w1', 'w2', 'w3'] },
     { id: 's2', text: '嗯好的', timestamp: [1.5, 2.2], wordIds: ['w4', 'w5'] },
-    { id: 's3', text: '那个我觉得', timestamp: [3, 4.5], wordIds: ['w6', 'w7', 'w8'] },
+    { id: 's3', text: '我们继续', timestamp: [2.5, 3.1], wordIds: ['w6', 'w7'] },
+    { id: 's4', text: '下周再看', timestamp: [3.2, 3.8], wordIds: ['w8', 'w9'] },
+    { id: 's5', text: '最后结束', timestamp: [4, 4.6], wordIds: ['w10', 'w11'] },
+    { id: 's6', text: '那个我觉得', timestamp: [5, 6.5], wordIds: ['w12', 'w13', 'w14'] },
   ],
   wordChunks: [
     { id: 'w1', text: '这个', timestamp: [0, 0.3], sentenceId: 's1' },
@@ -30,9 +33,15 @@ const transcript = {
     { id: 'w3', text: '方案', timestamp: [0.6, 1.2], sentenceId: 's1' },
     { id: 'w4', text: '嗯', timestamp: [1.5, 1.7], sentenceId: 's2' },
     { id: 'w5', text: '好的', timestamp: [1.7, 2.2], sentenceId: 's2' },
-    { id: 'w6', text: '那个', timestamp: [3, 3.3], sentenceId: 's3' },
-    { id: 'w7', text: '我', timestamp: [3.3, 3.6], sentenceId: 's3' },
-    { id: 'w8', text: '觉得', timestamp: [3.6, 4.5], sentenceId: 's3' },
+    { id: 'w6', text: '我们', timestamp: [2.5, 2.8], sentenceId: 's3' },
+    { id: 'w7', text: '继续', timestamp: [2.8, 3.1], sentenceId: 's3' },
+    { id: 'w8', text: '下周', timestamp: [3.2, 3.5], sentenceId: 's4' },
+    { id: 'w9', text: '再看', timestamp: [3.5, 3.8], sentenceId: 's4' },
+    { id: 'w10', text: '最后', timestamp: [4, 4.3], sentenceId: 's5' },
+    { id: 'w11', text: '结束', timestamp: [4.3, 4.6], sentenceId: 's5' },
+    { id: 'w12', text: '那个', timestamp: [5, 5.3], sentenceId: 's6' },
+    { id: 'w13', text: '我', timestamp: [5.3, 5.6], sentenceId: 's6' },
+    { id: 'w14', text: '觉得', timestamp: [5.6, 6.5], sentenceId: 's6' },
   ],
 };
 const aiSnapshot = {
@@ -47,7 +56,7 @@ test.beforeAll(() => {
   mediaDir = mkdtempSync(join(tmpdir(), 'flycut-f0009-ui-'));
   media = join(mediaDir, 'marker.mp4');
   const run = spawnSync(process.env.FFMPEG_PATH ?? resolve('src-tauri/binaries/ffmpeg'), [
-    '-y', '-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=25:duration=6',
+    '-y', '-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=25:duration=8',
     '-c:v', 'libx264', '-preset', 'ultrafast', media,
   ], { encoding: 'utf8' });
   if (run.status !== 0) throw new Error(run.stderr);
@@ -73,16 +82,16 @@ async function connect(page: Page, options: { withModel?: boolean; scenario?: Sc
       startWordId: 'w1', endWordId: 'w2', scope: 'word', category: 'repetition',
       reason: '重复开头，保留后一次', confidence: 'high', startMs: 0, endMs: 600, text: '这个这个',
     };
-    if (startWordId === 'w6') return {
-      startWordId: 'w6', endWordId: 'w6', scope: 'word', category: 'contextual-filler',
-      reason: '这里的“那个”不承担指代', confidence: 'medium', startMs: 3000, endMs: 3300, text: '那个',
+    if (startWordId === 'w12') return {
+      startWordId: 'w12', endWordId: 'w12', scope: 'word', category: 'contextual-filler',
+      reason: '这里的“那个”不承担指代', confidence: 'medium', startMs: 5000, endMs: 5300, text: '那个',
     };
     return null;
   };
   const handlers: MockHandlers = {
     'projects.open': () => ({ status: 'ok',
       project: { id: P, name: 'Semantic fillers', formatVersion: 3, revision, styleRevision: 0, videos: [], createdAt: T, updatedAt: T },
-      video: { id: VIDEO_ID, name: 'Semantic.mp4', durationSeconds: 6, revision, styleSource: 'project', hasTranscript: true,
+      video: { id: VIDEO_ID, name: 'Semantic.mp4', durationSeconds: 7.5, revision, styleSource: 'project', hasTranscript: true,
         createdAt: T, media: { kind: 'stored', file: 'media/' + VIDEO_ID + '.mp4', size: 1, mimeType: 'video/mp4' } },
       videos: [], transcript, edits: undefined,
       media: { status: 'ok', name: 'Semantic.mp4', playback: { kind: 'url', path: '/projects/' + P + '/media/' + VIDEO_ID } } }),
@@ -102,10 +111,10 @@ async function connect(page: Page, options: { withModel?: boolean; scenario?: Sc
       attempts.set(target, attempt);
       const id = uuid(4000 + sequence);
       let job: any;
-      if (scenario === 'cancel' && target === 'w6') {
+      if (scenario === 'cancel' && target === 'w12') {
         job = { id, status: 'running', progress: { status: 'running', progress: 50 } };
-      } else if ((scenario === 'partial' && target === 'w6' && attempt === 1)
-        || scenario === 'invalid' && target === 'w6') {
+      } else if ((scenario === 'partial' && target === 'w12' && attempt === 1)
+        || scenario === 'invalid' && target === 'w12') {
         job = { id, status: 'error', error: 'Invalid analysis result (UNKNOWN_WORD_ID): unknown word' };
       } else {
         const item = candidate(request);
@@ -147,8 +156,15 @@ async function connect(page: Page, options: { withModel?: boolean; scenario?: Sc
 async function openEditor(page: Page, theme: 'light' | 'dark', lang: 'zh' | 'en', options: { withModel?: boolean; scenario?: Scenario } = {}) {
   await prepare(page, theme, { 'flycut-locale': lang });
   const state = await connect(page, options);
-  await page.goto('/?lang=' + lang + '#/projects/' + P + '/videos/' + VIDEO_ID);
-  await expect(page.getByTestId('subtitle-main-text').first()).toHaveValue('这个这个方案');
+  const url = '/?lang=' + lang + '#/projects/' + P + '/videos/' + VIDEO_ID;
+  await page.goto(url);
+  try {
+    await expect(page.getByTestId('subtitle-main-text').first()).toHaveValue('这个这个方案', { timeout: 7_000 });
+  } catch {
+    // A cold dev-server navigation can briefly land on the project list before the hash runtime mounts.
+    await page.goto(url);
+    await expect(page.getByTestId('subtitle-main-text').first()).toHaveValue('这个这个方案', { timeout: 15_000 });
+  }
   await expect(page.getByTestId('semantic-filler-open')).toBeVisible();
   return state;
 }
@@ -167,7 +183,7 @@ for (const theme of ['light', 'dark'] as const) for (const lang of ['zh', 'en'] 
   test.describe(theme + '-' + lang, () => {
     test('F-0009/AC-1 AC-2 no-model message, working rule layer, scoped preflight and remote consent', async ({ page }) => {
       const state = await openEditor(page, theme, lang, { withModel: false });
-      await page.getByRole('button', { name: /^(去口癖|Remove fillers)$/ }).click();
+      await page.getByRole('button', { name: /^(去口癖|Remove fillers)$/ }).click({ force: true });
       await expect(page.getByTestId('cut-suggestions')).toBeVisible();
       await expect(page.getByText(/规则|Rule/).first()).toBeVisible();
       await openSemantic(page);

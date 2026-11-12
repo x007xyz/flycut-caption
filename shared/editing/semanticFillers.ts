@@ -255,20 +255,19 @@ export function buildSemanticWindowPlan(input: SemanticWindowInput): SemanticWin
   const groups: number[][] = [];
   for (const sentenceIndex of eligible) {
     const previous = groups.at(-1);
-    if (previous && sentenceIndex === previous.at(-1)! + 1 && previous.length < maxTargetSentences) previous.push(sentenceIndex);
+    if (previous && sentenceIndex - previous.at(-1)! <= 4 && previous.length < maxTargetSentences) previous.push(sentenceIndex);
     else groups.push([sentenceIndex]);
   }
   const windows: SemanticWindow[] = [];
   let targetWordCount = 0;
-  for (const [batchIndex, group] of groups.entries()) {
+  for (const group of groups) {
     const from = Math.max(0, group[0] - contextSentences);
     const to = Math.min(index.sentences.length - 1, group.at(-1)! + contextSentences);
     const targetStart = index.sentences[group[0]].wordIds[0];
     const targetEnd = index.sentences[group.at(-1)!].wordIds.at(-1)!;
-    const startIndex = index.wordIndexById.get(targetStart)!;
-    const endIndex = index.wordIndexById.get(targetEnd)!;
     const targetSentenceSet = new Set(group);
-    targetWordCount += endIndex - startIndex + 1;
+    targetWordCount += group.reduce((sum, sentenceIndex) =>
+      sum + index.sentences[sentenceIndex].wordIds.length, 0);
     windows.push({
       version: SEMANTIC_FILLER_VERSION,
       base: input.base,
@@ -297,7 +296,6 @@ export function buildSemanticWindowPlan(input: SemanticWindowInput): SemanticWin
         maxReasonChars: 200,
       },
     });
-    if (batchIndex > 100) fail('TOO_MANY_WINDOWS', 'Transcript produced too many semantic windows');
   }
   return {
     windows,
@@ -388,6 +386,9 @@ export function validateSemanticModelResponse(raw: unknown, request: SemanticWin
       }
     }
     if (wordIds.length > request.policy.maxWordsPerCandidate) fail('RANGE_TOO_LONG', 'Candidate is too long');
+    if (!wordIds.every(id => index.words[index.wordIndexById.get(id)!].deletable)) {
+      fail('NON_DELETABLE_WORD', 'Candidate includes context that was not marked deletable');
+    }
     const scope = semanticScopeSchema.safeParse(candidate.scope);
     if (!scope.success) fail('INVALID_SCOPE', 'Unknown candidate scope');
     const scopeValue = scope.data!;
