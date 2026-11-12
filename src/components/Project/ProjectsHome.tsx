@@ -11,6 +11,7 @@ import { ProjectActionsMenu } from './ProjectActionsMenu';
 import { Thumbnail } from './Thumbnail';
 import { formatDuration, formatRelativeTime } from './format';
 import { useProjectText } from './useProjectText';
+import { languageTrackCopy } from '@/locales/languageTracks';
 import { useHostReady } from '@/runtime/connectionHooks';
 
 export interface ProjectsHomeProps {
@@ -153,16 +154,19 @@ function Empty({ icon, title, hint, action }: { icon: React.ReactNode; title: st
 }
 
 function SkeletonGrid() {
-  const { tp } = useProjectText();
+  const { tp, language } = useProjectText();
   return (
-    <div className="-mx-2 grid grid-cols-2 gap-x-2 gap-y-4 md:grid-cols-3 xl:grid-cols-4" aria-busy="true" aria-label={tp('loading')}>
-      {Array.from({ length: 8 }, (_, i) => (
-        <div key={i} className="p-2">
-          <div className="aspect-video animate-pulse rounded-md bg-muted" />
-          <div className="mt-2 h-3.5 w-4/5 animate-pulse rounded bg-muted" />
-          <div className="mt-2 h-3 w-1/3 animate-pulse rounded bg-muted" />
-        </div>
-      ))}
+    <div aria-busy="true" aria-label={tp('loading')}>
+      <p role="status" className="mb-3 text-center text-xs text-muted-foreground">{languageTrackCopy(language).loading}</p>
+      <div className="-mx-2 grid grid-cols-2 gap-x-2 gap-y-4 md:grid-cols-3 xl:grid-cols-4">
+        {Array.from({ length: 8 }, (_, i) => (
+          <div key={i} className="p-2">
+            <div className="aspect-video animate-pulse rounded-md bg-muted" />
+            <div className="mt-2 h-3.5 w-4/5 animate-pulse rounded bg-muted" />
+            <div className="mt-2 h-3 w-1/3 animate-pulse rounded bg-muted" />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

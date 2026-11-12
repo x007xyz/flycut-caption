@@ -377,7 +377,8 @@ const customJaJP: FlyCutCaptionLocale = {
  * It shows how to integrate custom locale packages and provide language switching UI.
  */
 function App() {
-  const [currentLanguage, setCurrentLanguage] = useState('zh')
+  const initialLanguage = new URLSearchParams(window.location.search).get('ui') === 'en' ? 'en' : 'zh'
+  const [currentLanguage, setCurrentLanguage] = useState(initialLanguage)
   const [currentLocale, setCurrentLocale] = useState<FlyCutCaptionLocale | undefined>(undefined)
 
   const handleLanguageChange = (language: string) => {

@@ -341,9 +341,9 @@ export function SubtitleItem(props: SubtitleItemProps) {
 
         {/* 副字幕输入框 */}
         {(displayMode === 'Bilingual' || displayMode === 'Second') && (
-          <div className={cn('flex-1 flex', isExpanded ? 'items-start' : 'items-center')}>
+          <div className="flex-1 flex flex-col items-stretch">
             {translationOutdated && (
-              <div className="mb-1 flex items-center gap-2 rounded border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 text-[10px] text-amber-700 dark:text-amber-300"
+              <div className="mb-1 flex items-center gap-2 self-start rounded border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 text-[10px] whitespace-nowrap text-amber-700 dark:text-amber-300"
                 data-testid="translation-outdated">
                 <span>{trackCopy.outdated}</span>
                 <button type="button" className="underline underline-offset-2" onClick={event => {

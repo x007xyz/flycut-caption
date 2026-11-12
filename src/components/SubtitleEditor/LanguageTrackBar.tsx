@@ -118,12 +118,13 @@ export function LanguageTrackBar() {
   const editTrack = useHistoryStore(state => state.editLanguageTrack);
   const removeTrack = useHistoryStore(state => state.removeLanguageTrack);
   const save = useProjectStore(state => state.save);
+  const inProjectEditor = useProjectStore(state => !!state.current);
   const [form, setForm] = useState<TrackForm | null>(null);
   const [deleting, setDeleting] = useState<DeleteTarget | null>(null);
 
   const active = tracks.find(track => track.id === activeId);
   const counts = useMemo(() => languageTrackCounts(active, chunks), [active, chunks]);
-  if (!projects || !chunks.length) return null;
+  if (!inProjectEditor || !chunks.length) return null;
 
   const displayName = active
     ? active.origin === 'legacy-second-text' && active.name === LEGACY_LANGUAGE_TRACK_NAME ? copy.legacyName : active.name
@@ -135,13 +136,13 @@ export function LanguageTrackBar() {
       ? <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400" data-testid="language-track-completed"><Check className="h-3 w-3" />{copy.completed}</span>
       : save.status === 'conflict'
         ? <span className="inline-flex items-center gap-1 text-aimu-coral" data-testid="language-track-conflict"><AlertTriangle className="h-3 w-3" />{copy.conflict}
-            <button type="button" className="underline underline-offset-2" onClick={() => projects.openConflict()}>{copy.reviewConflict}</button></span>
+            <button type="button" className="underline underline-offset-2" onClick={() => projects?.openConflict()}>{copy.reviewConflict}</button></span>
         : save.status === 'offline'
           ? <span className="text-amber-700 dark:text-amber-400" data-testid="language-track-offline">{copy.offline}</span>
           : <span className="inline-flex flex-wrap items-center gap-1 text-aimu-coral" role="alert" data-testid="language-track-failed">
               <AlertTriangle className="h-3 w-3" />{copy.failed}{save.error ? `: ${save.error}` : ''}
-              <button type="button" className="underline underline-offset-2" onClick={() => { void projects.flush(); }}>{copy.retry}</button>
-              <button type="button" className="underline underline-offset-2" onClick={() => { void projects.goHome(); }}>{copy.back}</button>
+              <button type="button" className="underline underline-offset-2" onClick={() => { void projects?.flush(); }}>{copy.retry}</button>
+              <button type="button" className="underline underline-offset-2" onClick={() => { void projects?.goHome(); }}>{copy.back}</button>
             </span>;
 
   return (
