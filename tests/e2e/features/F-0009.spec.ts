@@ -165,6 +165,11 @@ async function openEditor(page: Page, theme: 'light' | 'dark', lang: 'zh' | 'en'
     await page.goto(url);
     await expect(page.getByTestId('subtitle-main-text').first()).toHaveValue('这个这个方案', { timeout: 15_000 });
   }
+  if (lang === 'en') {
+    await page.getByRole('button', { name: '选择语言' }).click();
+    await page.getByRole('menuitem', { name: /English/ }).click();
+    await expect(page.getByRole('button', { name: /^(去口癖|Remove fillers)$/ })).toBeVisible();
+  }
   await expect(page.getByTestId('semantic-filler-open')).toBeVisible();
   return state;
 }
@@ -244,7 +249,7 @@ for (const theme of ['light', 'dark'] as const) for (const lang of ['zh', 'en'] 
       await acknowledgeAndStart(page);
       const items = page.getByTestId('pending-suggestion-item');
       await expect(items).toHaveCount(3);
-      await expect(items.nth(0)).toContainText(/重复开头|重复/);
+      await expect(items.nth(0)).toContainText(/重复开头|重复|Repeated/);
       await expect(items.nth(0).getByTestId('suggestion-source')).toContainText(/规则|Rule/);
       await expect(items.nth(1).getByTestId('suggestion-source')).toContainText(/语义|Semantic/);
       await expect(items.nth(1)).toContainText(/高可信|High confidence/);

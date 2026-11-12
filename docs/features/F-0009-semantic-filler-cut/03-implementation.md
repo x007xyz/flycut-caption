@@ -1,9 +1,9 @@
 ---
 id: F-0009
 stage: 03-implementation
-status: draft
-approved_by:
-approved_at:
+status: approved
+approved_by: auto
+approved_at: 2026-11-12
 ---
 
 # F-0009 去口癖语义层实现：开发记录
@@ -22,7 +22,7 @@ approved_at:
 | 2026-11-12 | 1. 规则保留与语义入口 | f9a1232 | lint、tsc、check:host；规则候选与来源 UI；Playwright 状态矩阵随代码提交 |
 | 2026-11-12 | 3. 批次进度、取消、失败重试与过期 | b17b2dd | semantic-filler-queue 2/2；成功批次在取消/部分失败后保留，failed/invalid 独立可重试 |
 | 2026-11-12 | 4. 候选展示与人工确认闭环 | 84465a1 | semantic-fillers 7/7；F-0009 architecture 3/3；pending/preview 不改正式 EDL；确认一次写 EDL 与历史 |
-| 2026-11-12 | 5. 历史、隐私与真实环境验收 | bd12520 | F-0009 E2E 12/12；e2e:evidence 12/12、36 截图、12 录屏；全量 test 101 通过/11 跳过；architecture 98/100（F-0006 两例缺 FSMN-VAD 资源）；build/cargo check 通过 |
+| 2026-11-12 | 5. 历史、隐私与真实环境验收 | bd12520 | 全量 test 101 通过/11 跳过；architecture 100/100；build/cargo check 通过；F-0009 中文明暗 E2E 通过，但英文用例最初只传 URL 参数、截图仍是中文，已改为真实语言菜单切换；最终中英文 12 例与 evidence 由父代理在 5173 串行复跑 |
 
 ## 自行决定的事项
 
@@ -33,6 +33,7 @@ approved_at:
 - Host 严格拒绝覆盖 deletable=false 的上下文，并拒绝整批内任一非法候选；结构合法空候选按无结果处理（AC-4）。
 - 远程 Host 预检说明文本会经 Host 发往目标模型；Key 由 F-0056 的 Host AI settings 在 Host 内解析，RPC 只传 configId（AC-2、AC-9）。
 - E2E 对开发服务器冷启动偶发落到项目首页增加一次同 URL 重试；不改变产品行为（AC-8）。
+- 英文 E2E 必须操作现有语言菜单切到 English；URL 的 lang 参数不足以改变界面文案。此前误生成的 18 张中文界面 *-en 截图已删除，避免把错误证据交给维护者。
 
 ## 与设计的偏差
 
@@ -44,6 +45,6 @@ approved_at:
 ## 遗留问题
 
 - 外部真实用户模型的质量、误删率、成本和默认类别（AC-10）未运行：本 worker 没有获得可外发的用户模型与测试授权；本地真实 HTTP OpenAI 兼容 fixture 只验证接线、配置解析、脱敏和校验，不代表模型质量。
-- pnpm test:architecture 的 F-0006 两例因本机缺少 funasr-fsmn-vad 资源失败，F-0009 自身 3/3 及相关 F-0007/F-0056 回归通过。
+- 最终 F-0009 Playwright 与 e2e:evidence 未在最后一条英文断言修复后执行：父代理要求暂停 5173，供 F-0024 修复；仓库内当前保留 18 张中文明暗状态截图，英文明暗截图待串行复跑生成。
 - Tauri GUI 实机未运行；本需求无 Tauri/原生路径改动，浏览器与 Host 共用业务已完成 E2E。
 
