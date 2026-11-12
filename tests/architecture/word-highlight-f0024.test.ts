@@ -13,9 +13,10 @@ import {
   type SubtitleGraphicScene,
   type SubtitleGraphicStyle,
 } from '../../shared/subtitle-graphics/index.ts';
-import { buildPreviewSubtitleScene, hasReliableWordHighlight } from '../../src/subtitle/graphicsScene.ts';
+import { buildExportSubtitleScene, buildPreviewSubtitleScene, hasReliableWordHighlight } from '../../src/subtitle/graphicsScene.ts';
 import { defaultSubtitleStylePair } from '../../src/subtitle/subtitleStyle.ts';
 import type { SubtitleChunk } from '../../src/types/subtitle.ts';
+import { HostExportEngine } from '../../src/services/videoEngines/HostExportEngine.ts';
 
 (globalThis as unknown as { OffscreenCanvas?: unknown }).OffscreenCanvas = class {
   private readonly canvas: ReturnType<typeof createCanvas>;
@@ -143,6 +144,71 @@ test('F-0024/AC-1 AC-2 preview scene carries only verified words and reports sen
   const bad = words.map((word, index) => index === 2 ? { ...word, text: '坏' } : word);
   assert.equal(buildPreviewSubtitleScene({ ...input, wordChunks: bad }).cues[0].words, undefined);
   assert.equal(hasReliableWordHighlight(chunks, bad, true), false);
+});
+
+test('F-0024/AC-3 AC-4 export scene projects word times onto the EDL output clock', () => {
+  const chunks: SubtitleChunk[] = [
+    { id: 's1', text: '第一句', timestamp: [0, 1], wordIds: ['w1', 'w2'] },
+    { id: 's2', text: '第二句', timestamp: [2, 3], wordIds: ['w3', 'w4'] },
+  ];
+  const words: SubtitleChunk[] = [
+    { id: 'w1', text: '第一', timestamp: [0.1, 0.4], sentenceId: 's1' },
+    { id: 'w2', text: '句', timestamp: [0.45, 0.9], sentenceId: 's1' },
+    { id: 'w3', text: '第二', timestamp: [2.1, 2.4], sentenceId: 's2' },
+    { id: 'w4', text: '句', timestamp: [2.45, 2.9], sentenceId: 's2' },
+  ];
+  const pair = { primary: { ...defaultSubtitleStylePair.primary, wordHighlightMode: 'word' as const }, secondary: defaultSubtitleStylePair.secondary };
+  const preview = buildPreviewSubtitleScene({ chunks, wordChunks: words, hasWordTimestamps: true, stylePair: pair,
+    videoWidth: 1920, videoHeight: 1080, duration: 4 });
+  assert.deepEqual(preview.cues[1].words?.map(word => [word.text, word.start, word.end]), [
+    ['第二', 2.1, 2.4], ['句', 2.45, 2.9],
+  ]);
+
+  const exported = buildExportSubtitleScene({ chunks, wordChunks: words, hasWordTimestamps: true, stylePair: pair,
+    videoWidth: 1920, videoHeight: 1080, duration: 4,
+    keptSegments: [{ start: 0, end: 1.2, keep: true }, { start: 2, end: 3, keep: true }] });
+  const second = exported.cues.find(cue => cue.id.startsWith('s2@'));
+  assert.ok(second);
+  assert.ok(Math.abs(second.start - 1.2) < 0.001);
+  assert.deepEqual(second.words?.map(word => [word.text, Number(word.start.toFixed(3)), Number(word.end.toFixed(3))]), [
+    ['第二', 1.3, 1.6], ['句', 1.65, 2.1],
+  ]);
+  assert.equal(exported.primary.wordHighlightMode, 'word');
+});
+
+test('F-0024/AC-4 Host export request carries the frozen highlighted scene', async () => {
+  const chunks: SubtitleChunk[] = [{ id: 's1', text: '大家好', timestamp: [0, 2], wordIds: ['w1', 'w2', 'w3'] }];
+  const words: SubtitleChunk[] = [
+    { id: 'w1', text: '大', timestamp: [0.1, 0.3], sentenceId: 's1' },
+    { id: 'w2', text: '家', timestamp: [0.4, 0.6], sentenceId: 's1' },
+    { id: 'w3', text: '好', timestamp: [0.7, 0.9], sentenceId: 's1' },
+  ];
+  const calls: Array<{ method: string; payload: Record<string, unknown> }> = [];
+  const connection = {
+    call: async (method: string, payload: Record<string, unknown>) => {
+      calls.push({ method, payload });
+      return method === 'export.start' ? { id: 'job' } : undefined;
+    },
+    waitJob: async () => ({ assetId: 'out', mimeType: 'video/mp4' }),
+    download: async () => new Blob(),
+  };
+  const engine = new HostExportEngine(connection as never);
+  (engine as unknown as { assetId?: string }).assetId = 'source';
+  const pair = {
+    primary: { ...defaultSubtitleStylePair.primary, wordHighlightMode: 'word' as const, wordHighlightColor: '#FF0000' },
+    secondary: defaultSubtitleStylePair.secondary,
+  };
+  await engine.processVideo([{ start: 0, end: 2, keep: true }], {
+    format: 'mp4', quality: 'low', preserveAudio: false, subtitleProcessing: 'hard', subtitleStylePair: pair,
+    subtitleChunks: chunks, subtitleWordChunks: words, hasWordTimestamps: true, videoWidth: 1920, videoHeight: 1080, fps: 30,
+  });
+  const start = calls.find(call => call.method === 'export.start');
+  assert.ok(start);
+  const options = start.payload.options as { subtitleScene: SubtitleGraphicScene };
+  assert.equal(options.subtitleScene.primary.wordHighlightMode, 'word');
+  assert.deepEqual(options.subtitleScene.cues[0].words?.map(word => word.text), ['大', '家', '好']);
+  assert.equal(chunks[0].text, '大家好', 'highlighting does not mutate subtitle text');
+  assert.deepEqual(words[0].timestamp, [0.1, 0.3], 'highlighting does not mutate word timestamps');
 });
 
 test('F-0024/AC-1 current word changes color and word gaps restore the normal color', () => {

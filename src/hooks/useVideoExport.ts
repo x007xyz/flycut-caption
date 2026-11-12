@@ -166,7 +166,7 @@ export function useVideoExport({
 
     try {
       if (cutError || updatingCuts) throw new Error('Invalid or unsettled cuts');
-      const frozen = structuredClone({ chunks, wordChunks, edl: edl ?? createEdl(timelineDuration) });
+      const frozen = structuredClone({ chunks, wordChunks, hasWordTimestamps, edl: edl ?? createEdl(timelineDuration) });
       const segments = buildVideoExportSegments({
         edl: frozen.edl,
         chunks,
@@ -180,6 +180,8 @@ export function useVideoExport({
         edl: frozen.edl,
         joinFadeMs,
         subtitleChunks: frozen.chunks.filter(c => !c.deleted),
+        subtitleWordChunks: frozen.wordChunks,
+        hasWordTimestamps: frozen.hasWordTimestamps,
       });
     } catch (error) {
       console.error('视频处理失败:', error);
