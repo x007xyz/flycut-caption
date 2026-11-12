@@ -19,7 +19,7 @@ export function AgentPanel() {
   const run = async () => {
     const app = stores.app.getState();
     const model = app.aiModels.find(model => model.id === app.selectedAIModelId);
-    if (!model) { setStatus('请先在 API 设置中选择一个文本模型。'); return; }
+    if (!model || !app.aiSettingsHostId) { setStatus('请先在 API 设置中选择一个文本模型。'); return; }
     setBusy(true); setAnswer(''); setStatus('正在处理…');
     const current = new AbortController(); controller.current = current;
     let uploaded: string | undefined;
@@ -46,8 +46,7 @@ export function AgentPanel() {
         if (id === started.jobId) setStatus(status === 'error' ? `工具 ${name} 失败` : `工具 ${name} 已返回`);
       });
       disposers.current = [offMessage, offTool];
-      const job = await connection.call('agent.start', { prompt, asr,
-        model: { baseUrl: model.baseUrl, model: model.model, apiKey: model.apiKey } });
+      const job = await connection.call('agent.start', { prompt, asr, configId: model.id });
       started.jobId = job.id; early.filter(item => item.jobId === job.id).forEach(item => show(item.text));
       const result = await connection.waitJob<{ messages: AgentMessage[] }>(job.id,
         job => { if (job.progress?.data) setStatus(job.progress.data); }, current.signal);

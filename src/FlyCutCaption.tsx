@@ -11,6 +11,7 @@ import { LocaleProvider, useTranslation } from '@/contexts/LocaleProvider';
 import { ClientRuntime, PluginSlot } from '@/runtime/ui';
 import type { EnhancedVideoPlayerRef } from '@/components/VideoPlayer/EnhancedVideoPlayer';
 import { useASR } from '@/hooks/useASR';
+import { useHostAISettings } from '@/hooks/useHostAISettings';
 import { useVideoExport } from '@/hooks/useVideoExport';
 import { useMediaLoader } from '@/hooks/useMediaLoader';
 import { WorkstationHeader } from '@/components/Workstation/WorkstationHeader';
@@ -87,6 +88,7 @@ interface BrowserPerformanceMemory {
  * ```
  */
 export function FlyCutCaptionContent(props: FlyCutCaptionProps) {
+  useHostAISettings();
   const {
     className,
     style,

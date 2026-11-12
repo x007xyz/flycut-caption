@@ -1,6 +1,11 @@
 import { copyFile, chmod, cp, mkdir, readFile, rm } from 'node:fs/promises';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
-import { dirname, join, sep } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
+import { copyNodeBinary, validateNodeBinary } from './package-host-node.mjs';
+
+const nodeBinary = resolve(process.env.FLYCUT_NODE_BINARY || process.execPath);
+const validatedNode = validateNodeBinary({ nodeBinary });
+
 try {
   const previous = JSON.parse(await readFile('src-tauri/host/package.json', 'utf8'));
   if (previous.name !== '@flycut/host') throw new Error('Refusing to replace an unrecognized Host directory');
@@ -80,6 +85,6 @@ await write(root, 'src-tauri/host');
 
 await mkdir('src-tauri/binaries', { recursive: true });
 const destination = `src-tauri/binaries/flycut-node${process.platform === 'win32' ? '.exe' : ''}`;
-await copyFile(process.execPath, destination);
+await copyNodeBinary({ nodeBinary, destination });
 if (process.platform !== 'win32') await chmod(destination, 0o755);
-console.log(`Packaged ${versions.size} Host dependencies and the current platform Node runtime.`);
+console.log(`Packaged ${versions.size} Host dependencies and Node ${validatedNode.version} from ${nodeBinary}.`);
