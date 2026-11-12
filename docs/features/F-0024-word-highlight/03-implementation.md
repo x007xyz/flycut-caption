@@ -21,6 +21,7 @@ approved_at:
 | 2026-11-12 | 1. 共用场景与词元渲染 | 本提交 | `word-highlight-f0024.test.ts` 4 通过；`pnpm exec eslint shared/subtitle-graphics tests/architecture/word-highlight-f0024.test.ts`、`pnpm tsc -b --noEmit`、`pnpm check:host` 通过；Red check 移除词感知 key 后 frameKey 测试失败 |
 | 2026-11-12 | 2. 预览与样式 UI | 本提交 | 架构测试 5 通过；F-0024 Playwright 7 通过（中英、明暗、改色、词间空隙、倍速 seek、无词降级、字体加载）；`pnpm tsc -b --noEmit`、`pnpm check:host`、targeted eslint 通过；Red check 错误隐藏降级提示时 E2E 失败 |
 | 2026-11-12 | 3. Host 导出与 EDL 投影 | 本提交 | 架构测试 8 通过；真实 Host / FFmpeg 成片逐词红字中心移动、词间无伪高亮、无词整句降级、无 ASS 临时文件；静态检查通过；Red check 漏传词元时 export.request 测试失败 |
+| 2026-11-12 | 4. 持久化、重开与生命周期证据 | 本提交 | `pnpm e2e:evidence F-0024` 13 通过、截图 15 张、录屏 13 段；高亮样式保存后重开保持普通色/高亮色；空字幕不绘制、不误报降级；中英文与明暗主题 loading/error/retry 通过；`pnpm tsc -b --noEmit`、`pnpm check:host`、targeted eslint 通过 |
 
 ## 自行决定的事项
 

@@ -285,7 +285,8 @@ export function SubtitleSettings({
   const activePreset = matchActiveStylePreset(activeStyle);
   const wordHighlightEnabled = activeStyle.wordHighlightMode === 'word';
   const reliableWords = hasReliableWordHighlight(chunks, wordChunks, hasWordTimestamps);
-  const showSentenceFallback = wordHighlightEnabled && (!isPrimaryTab || !reliableWords);
+  const hasVisibleSubtitle = chunks.some(chunk => !chunk.deleted && !chunk.isBlankSpacer && chunk.text.trim());
+  const showSentenceFallback = hasVisibleSubtitle && wordHighlightEnabled && (!isPrimaryTab || !reliableWords);
 
   const displayModes: Array<{ id: SubtitleDisplayMode; label: string }> = [
     { id: 'Bilingual', label: t('components.workstation.displayBilingual') },
