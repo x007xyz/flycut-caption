@@ -215,3 +215,7 @@ cargo check --manifest-path src-tauri/Cargo.toml
 ## F-0005 统一剪辑时间轴
 
 统一 EDL 位于 shared/editing/edl，单位整数微秒。项目格式 3 将正式 EDL 和仅剪辑的持久历史与每视频 edits 一起保存；临时建议与预览不持久化。Host 新导出计划校验 EDL 和 source/segments，预览与字幕共用区间映射。该变更尚未获维护者验收，验证限制见 F-0005/04-test-report.md。
+
+## F-0024 逐字高亮
+
+字幕图形场景 v1 的可选 `cues[].words` 现在驱动逐字高亮；样式使用可选的 `wordHighlightMode` / `wordHighlightColor`。`frameKey` 包含当前词状态，前端 Canvas 与 Host Skia 条带共用同一 Canvas 2D 绘制与词范围映射。预览使用原始媒体时间，导出冻结并按 EDL 投影词元；缺失、错序、越界或文本无法证明映射时不估算时间，改为整句高亮。

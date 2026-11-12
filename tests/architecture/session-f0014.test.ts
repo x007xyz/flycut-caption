@@ -79,7 +79,17 @@ test('F-0014/AC-8 WebSocket accepts the session cookie and rejects a token in th
     const frames: any[] = [];
     const ws = new WebSocket(`${host.base.replace('http', 'ws')}/events`, { headers: { Cookie: cookie }, origin: host.origin });
     ws.on('message', data => frames.push(JSON.parse(String(data))));
-    await new Promise<void>((resolve, reject) => { ws.once('open', resolve); ws.once('error', reject); });
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('timed out waiting for Host WebSocket bootstrap frames')), 5_000);
+      const check = () => {
+        if (!frames.some(frame => frame.type === 'host/ready') || !frames.some(frame => frame.type === 'jobs/snapshot')) return;
+        clearTimeout(timer);
+        resolve();
+      };
+      ws.on('message', check);
+      ws.once('open', check);
+      ws.once('error', error => { clearTimeout(timer); reject(error); });
+    });
     ws.terminate();
     assert.ok(frames.some(frame => frame.type === 'host/ready'));
     assert.ok(frames.some(frame => frame.type === 'jobs/snapshot'));

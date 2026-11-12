@@ -7,6 +7,7 @@ import { remote } from 'webdriverio';
 import { createHost } from '../../server/app';
 import { host, media } from './fixture';
 import { subtitlePersistence } from './subtitle-persistence';
+import { wordHighlightAcceptance } from './word-highlight';
 
 const dir = await mkdtemp(join(tmpdir(), 'flycut-f0058-web-'));
 const source = join(dir, 'fixture.mp4');
@@ -33,7 +34,9 @@ try {
       } });
       try {
         await browser.url(`http://127.0.0.1:${app.port}/#/projects`);
-        await subtitlePersistence(browser, host(connection), source);
+        const api = host(connection);
+        await subtitlePersistence(browser, api, source);
+        await wordHighlightAcceptance(browser, api, dir, 'web');
       } catch (error) {
         await mkdir('test-results', { recursive: true });
         await browser.saveScreenshot('test-results/f0058-web-failure.png').catch(() => undefined);

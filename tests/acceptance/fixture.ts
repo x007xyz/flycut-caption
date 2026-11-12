@@ -44,6 +44,10 @@ export function host(connection: Connection) {
       body: new Uint8Array(await readFile(source)) });
     return (await response.json()).assetId;
   }
+  async function download(assetId: string): Promise<Buffer> {
+    const response = await request(`/assets/${assetId}`, { method: 'GET' });
+    return Buffer.from(await response.arrayBuffer());
+  }
   async function seed(source: string) {
     const assetId = await upload(source);
     const ids = await call<{ projectId: string; videoId: string }>('projects.create', {
@@ -60,5 +64,5 @@ export function host(connection: Connection) {
     const snapshot = await call<ProjectOpenResult>('projects.open', ids);
     return snapshot.status === 'ok' && snapshot.edits?.chunks.some(cue => cue.id === 'fixture-cue' && cue.text === changed);
   }
-  return { call, upload, seed, saved };
+  return { call, upload, download, seed, saved };
 }
