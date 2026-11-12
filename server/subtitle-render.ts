@@ -1,5 +1,5 @@
 import { access } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import type { SKRSContext2D } from '@napi-rs/canvas';
 import {
   drawFrame,
@@ -25,9 +25,11 @@ async function loadCanvasModule(): Promise<typeof import('@napi-rs/canvas')> {
   return canvasModule;
 }
 
-async function findFontDir(resourceRoot: string): Promise<string | undefined> {
+export async function findFontDir(resourceRoot: string): Promise<string | undefined> {
   const candidates = [
     join(resourceRoot, 'shared_assets', 'subtitle-fonts'),
+    // macOS bundles place models.json under Resources/_up_ and fonts under Resources.
+    ...(basename(resourceRoot) === '_up_' ? [join(resourceRoot, '..', 'shared_assets', 'subtitle-fonts')] : []),
     join(resourceRoot, 'src-tauri', 'shared_assets', 'subtitle-fonts'),
   ];
   for (const dir of candidates) {

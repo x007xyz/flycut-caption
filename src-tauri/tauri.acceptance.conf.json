@@ -1,0 +1,9 @@
+{
+  "identifier": "com.flycut.caption.acceptance",
+  "productName": "FlyCut Acceptance",
+  "app": {
+    "windows": [
+      { "title": "FlyCut Acceptance", "width": 1280, "height": 800 }
+    ]
+  }
+}

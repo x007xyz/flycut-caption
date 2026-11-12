@@ -1,0 +1,71 @@
+name: macOS acceptance
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'tests/acceptance/**'
+      - 'src-tauri/**'
+      - 'scripts/package-host.mjs'
+      - 'server/subtitle-render.ts'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/acceptance-macos.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    runs-on: macos-14
+    timeout-minutes: 45
+    env:
+      CARGO_PROFILE_DEV_DEBUG: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            src-tauri
+            src-tauri/sidecars/funasr-asr
+      - name: Prepare dependencies and tools
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build:core
+          brew install ffmpeg
+          mkdir -p test-results
+      - name: Chrome — real Host subtitle persistence
+        run: pnpm acceptance:web 2>&1 | tee test-results/f0058-web.log
+        shell: bash
+      - name: Build ordinary and isolated Tauri driver apps
+        if: success() || failure()
+        run: |
+          pnpm package:host
+          pnpm fetch:ffmpeg
+          pnpm exec tauri build --debug --bundles app 2>&1 | tee test-results/f0058-build.log
+          CARGO_TARGET_DIR="$RUNNER_TEMP/flycut-driver-target" \
+            pnpm exec tauri build --debug --bundles app --features acceptance-webdriver \
+            --config src-tauri/tauri.acceptance.conf.json 2>&1 | tee test-results/f0058-build-driver.log
+        shell: bash
+      - name: Tauri WKWebView — same real Host subtitle case
+        if: success() || failure()
+        run: pnpm acceptance:tauri "$RUNNER_TEMP/flycut-driver-target/debug/bundle/macos/FlyCut Acceptance.app" 2>&1 | tee test-results/f0058-tauri.log
+        shell: bash
+      - name: Ordinary bundle — startup, hard subtitles and failure paths
+        if: success() || failure()
+        run: pnpm acceptance:bundle "$PWD/src-tauri/target/debug/bundle/macos/FlyCut Caption.app" 2>&1 | tee test-results/f0058-bundle.log
+        shell: bash
+      - name: Save evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-acceptance
+          path: test-results/f0058*

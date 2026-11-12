@@ -18,7 +18,9 @@ static HOST: OnceLock<Mutex<Option<OwnedHost>>> = OnceLock::new();
 
 #[tauri::command]
 pub async fn ensure_host(app: AppHandle) -> Result<HostConnection, String> {
-    tauri::async_runtime::spawn_blocking(move || start_host(app))
+    tauri::async_runtime::spawn_blocking(move || {
+        start_host(app).inspect_err(|error| eprintln!("FlyCut Host startup failed: {error}"))
+    })
         .await.map_err(|error| error.to_string())?
 }
 
@@ -57,17 +59,23 @@ fn start_host(app: AppHandle) -> Result<HostConnection, String> {
     let resource = app.path().resource_dir().map_err(|error| error.to_string())?;
     let project = PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf();
     let packaged_script = resource.join("host/lib/main.mjs");
-    let script = if packaged_script.is_file() { packaged_script } else { project.join("dist-host/main.mjs") };
+    let packaged = packaged_script.is_file();
+    let script = if packaged { packaged_script } else { project.join("dist-host/main.mjs") };
     if !script.is_file() { return Err("FlyCut Host 尚未构建，请运行 pnpm build:host".into()); }
     let resource_root = if resource.join("_up_/models.json").is_file() { resource.join("_up_") }
         else if resource.join("models.json").is_file() { resource.clone() } else { project.clone() };
     let node_name = if cfg!(windows) { "flycut-node.exe" } else { "flycut-node" };
     let bundled_node = resource.join("binaries").join(node_name);
     let dev_node = project.join("src-tauri/binaries").join(node_name);
-    let node = std::env::var_os("FLYCUT_NODE").map(PathBuf::from)
-        .or_else(|| bundled_node.is_file().then_some(bundled_node))
-        .or_else(|| dev_node.is_file().then_some(dev_node))
-        .unwrap_or_else(|| PathBuf::from("node"));
+    let node = if packaged {
+        if !bundled_node.is_file() { return Err("随包 Node 不可用：缺少 flycut-node".into()); }
+        bundled_node
+    } else {
+        std::env::var_os("FLYCUT_NODE").map(PathBuf::from)
+            .or_else(|| bundled_node.is_file().then_some(bundled_node))
+            .or_else(|| dev_node.is_file().then_some(dev_node))
+            .unwrap_or_else(|| PathBuf::from("node"))
+    };
     let app_data = app.path().app_data_dir().map_err(|error| error.to_string())?;
     let home = app_data.join("host");
     std::fs::create_dir_all(&home).map_err(|error| error.to_string())?;

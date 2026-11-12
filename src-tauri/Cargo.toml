@@ -13,6 +13,12 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[features]
+acceptance-webdriver = ["dep:tauri-plugin-wdio-webdriver"]
+
+[target.'cfg(target_os = "macos")'.dependencies]
+tauri-plugin-wdio-webdriver = { version = "=1.0.0", optional = true }
+
 [dependencies]
 tauri = { version = "2", features = ["protocol-asset"] }
 serde = { version = "1", features = ["derive"] }

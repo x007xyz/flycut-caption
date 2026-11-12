@@ -96,7 +96,10 @@
     "test:architecture": "tsx --tsconfig server/tsconfig.json --test tests/architecture/*.test.ts",
     "check:host": "tsc -p server/tsconfig.json --noEmit",
     "package:host": "pnpm build:host && node scripts/package-host.mjs",
-    "eval:asr": "node scripts/eval-asr.mjs"
+    "eval:asr": "node scripts/eval-asr.mjs",
+    "acceptance:web": "tsx --tsconfig server/tsconfig.json tests/acceptance/web.ts",
+    "acceptance:tauri": "tsx --tsconfig server/tsconfig.json tests/acceptance/tauri.ts",
+    "acceptance:bundle": "tsx --tsconfig server/tsconfig.json tests/acceptance/bundle-smoke.ts"
   },
   "peerDependencies": {
     "i18next": ">=25.0.0",
@@ -166,6 +169,7 @@
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.39.1",
     "vite": "^7.1.2",
-    "vite-plugin-dts": "^4.5.4"
+    "vite-plugin-dts": "^4.5.4",
+    "webdriverio": "^9"
   }
 }
