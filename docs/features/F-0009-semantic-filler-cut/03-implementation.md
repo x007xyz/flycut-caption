@@ -1,0 +1,49 @@
+---
+id: F-0009
+stage: 03-implementation
+status: draft
+approved_by:
+approved_at:
+---
+
+# F-0009 去口癖语义层实现：开发记录
+
+## 分支与 PR
+
+- 分支：codex/f0009-semantic-filler
+- PR：未创建（按要求不 push）
+
+## 进度
+
+| 日期 | 清单项 | 提交 | 检查 |
+|---|---|---|---|
+| 2026-11-12 | 基线：合入已验收 F-0056 | 92a1dca | merge --no-ff；保留 F-0058 的字体根目录条件查找；F-0056/F-0058 相关测试通过；冲突原因和解决已记录 |
+| 2026-11-12 | 2. 共享词 ID 协议与 Host 文本任务 | 9d823f7 | lint、tsc、check:host；semantic-fillers 6/6；Host/configId fixture 1/1 |
+| 2026-11-12 | 1. 规则保留与语义入口 | f9a1232 | lint、tsc、check:host；规则候选与来源 UI；Playwright 状态矩阵随代码提交 |
+| 2026-11-12 | 3. 批次进度、取消、失败重试与过期 | b17b2dd | semantic-filler-queue 2/2；成功批次在取消/部分失败后保留，failed/invalid 独立可重试 |
+| 2026-11-12 | 4. 候选展示与人工确认闭环 | 84465a1 | semantic-fillers 7/7；F-0009 architecture 3/3；pending/preview 不改正式 EDL；确认一次写 EDL 与历史 |
+| 2026-11-12 | 5. 历史、隐私与真实环境验收 | bd12520 | F-0009 E2E 12/12；e2e:evidence 12/12、36 截图、12 录屏；全量 test 101 通过/11 跳过；architecture 98/100（F-0006 两例缺 FSMN-VAD 资源）；build/cargo check 通过 |
+
+## 自行决定的事项
+
+- 规则按钮与语义按钮分开：未配置模型或显式请求前不发送文本；规则层继续本地执行（AC-1、AC-2）。
+- 语义批次使用 SHA-256 作为模型/Host base，并增加可选的 stateKey 保留 historyStore 现有精确 JSON 快照校验；不改变 F-0005/F-0007 的 batch.base 兼容路径（AC-7、AC-8）。
+- 语义候选默认不勾选；confidence 只显示高/中/低，不显示伪概率；跨来源完全相同区间合并并同时显示规则/语义（AC-5、AC-8）。
+- 易混目标句间隔不超过 4 句时合入同一窗口；每窗最多 20 个目标句、前后各 1 个非删除上下文句。真实 8,321 词素材产生 30 批，6,693 词素材产生 26 批（AC-2、AC-10）。
+- Host 严格拒绝覆盖 deletable=false 的上下文，并拒绝整批内任一非法候选；结构合法空候选按无结果处理（AC-4）。
+- 远程 Host 预检说明文本会经 Host 发往目标模型；Key 由 F-0056 的 Host AI settings 在 Host 内解析，RPC 只传 configId（AC-2、AC-9）。
+- E2E 对开发服务器冷启动偶发落到项目首页增加一次同 URL 重试；不改变产品行为（AC-8）。
+
+## 与设计的偏差
+
+- 实现顺序为清单 2 → 1 → 3 → 4 → 5，以满足先定共享协议、再接 UI 的依赖关系。
+- 真实长转写验证发现连续/近邻易混句可能生成过多窗口；从仅合并相邻句改为合并间隔不超过 4 句的目标句，并取消任意 100 窗口上限。目标词数按真实 deletable 句统计，上下文不入剪切。
+- E2E 转写扩展为 6 句，故意让两个语义目标之间隔着 3 个普通句，稳定验证 2 批进度、取消和失败重试。
+- 未修改 playwright.config.ts；E2E 按父代理安排单线占用 5173 运行。
+
+## 遗留问题
+
+- 外部真实用户模型的质量、误删率、成本和默认类别（AC-10）未运行：本 worker 没有获得可外发的用户模型与测试授权；本地真实 HTTP OpenAI 兼容 fixture 只验证接线、配置解析、脱敏和校验，不代表模型质量。
+- pnpm test:architecture 的 F-0006 两例因本机缺少 funasr-fsmn-vad 资源失败，F-0009 自身 3/3 及相关 F-0007/F-0056 回归通过。
+- Tauri GUI 实机未运行；本需求无 Tauri/原生路径改动，浏览器与 Host 共用业务已完成 E2E。
+
