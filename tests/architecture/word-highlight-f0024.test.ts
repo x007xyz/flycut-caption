@@ -13,6 +13,9 @@ import {
   type SubtitleGraphicScene,
   type SubtitleGraphicStyle,
 } from '../../shared/subtitle-graphics/index.ts';
+import { buildPreviewSubtitleScene, hasReliableWordHighlight } from '../../src/subtitle/graphicsScene.ts';
+import { defaultSubtitleStylePair } from '../../src/subtitle/subtitleStyle.ts';
+import type { SubtitleChunk } from '../../src/types/subtitle.ts';
 
 (globalThis as unknown as { OffscreenCanvas?: unknown }).OffscreenCanvas = class {
   private readonly canvas: ReturnType<typeof createCanvas>;
@@ -120,6 +123,26 @@ test('F-0024/AC-1 AC-2 scene rejects invalid word timing and maps only exact wor
   assert.equal(findActiveWordRange(ranges, 0.2)?.text, '大');
   assert.equal(findActiveWordRange(ranges, 0.32), undefined, 'gaps do not invent a current word');
   assert.equal(findActiveWordRange(ranges, 0.95)?.text, '世界');
+});
+
+test('F-0024/AC-1 AC-2 preview scene carries only verified words and reports sentence fallback', () => {
+  const chunks: SubtitleChunk[] = [{
+    id: 's1', text: '大家好世界', timestamp: [0, 2], wordIds: ['w1', 'w2', 'w3', 'w4'],
+  }];
+  const words: SubtitleChunk[] = [
+    { id: 'w1', text: '大', timestamp: [0.1, 0.3], sentenceId: 's1' },
+    { id: 'w2', text: '家', timestamp: [0.35, 0.55], sentenceId: 's1' },
+    { id: 'w3', text: '好', timestamp: [0.6, 0.8], sentenceId: 's1' },
+    { id: 'w4', text: '世界', timestamp: [0.9, 1.4], sentenceId: 's1' },
+  ];
+  const input = { chunks, wordChunks: words, hasWordTimestamps: true, stylePair: defaultSubtitleStylePair,
+    videoWidth: 1920, videoHeight: 1080, duration: 4 };
+  assert.equal(buildPreviewSubtitleScene(input).cues[0].words?.length, 4);
+  assert.equal(hasReliableWordHighlight(chunks, words, true), true);
+  assert.equal(hasReliableWordHighlight(chunks, undefined, false), false);
+  const bad = words.map((word, index) => index === 2 ? { ...word, text: '坏' } : word);
+  assert.equal(buildPreviewSubtitleScene({ ...input, wordChunks: bad }).cues[0].words, undefined);
+  assert.equal(hasReliableWordHighlight(chunks, bad, true), false);
 });
 
 test('F-0024/AC-1 current word changes color and word gaps restore the normal color', () => {

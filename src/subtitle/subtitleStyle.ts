@@ -48,6 +48,9 @@ export interface SubtitleStyle {
   backgroundPadding: number;
 
   visible: boolean;
+  /** `word` uses verified word timestamps; missing words fall back to a whole-sentence highlight. */
+  wordHighlightMode: 'none' | 'word';
+  wordHighlightColor: string;
 }
 
 /**
@@ -85,6 +88,9 @@ export const defaultSubtitleStyle: SubtitleStyle = {
   backgroundPadding: 8,
 
   visible: true,
+
+  wordHighlightMode: 'none',
+  wordHighlightColor: '#FFE100',
 };
 
 /**

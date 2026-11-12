@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useTranslation } from '@/contexts/LocaleProvider';
+import { useChunks, useHasWordTimestamps, useWordChunks } from '@/stores/historyStore';
 import { SUBTITLE_FONTS } from '@/config/subtitleFonts';
 import {
   type SubtitleStyle,
@@ -22,6 +23,7 @@ import {
   bottomOffsetRatioFromReference,
   STYLE_PRESETS,
   applyStylePreset,
+  hasReliableWordHighlight,
   matchActiveStylePreset,
 } from '@/subtitle';
 
@@ -137,6 +139,7 @@ function ColorControl({
   onChange,
   onOpacityChange,
   allowNone = false,
+  testId,
 }: {
   label: string;
   value: string;
@@ -144,6 +147,7 @@ function ColorControl({
   onChange: (value: string) => void;
   onOpacityChange: (value: number) => void;
   allowNone?: boolean;
+  testId?: string;
 }) {
   const disabled = allowNone && opacity === 0;
 
@@ -154,6 +158,7 @@ function ColorControl({
         <label className="relative h-7 w-9 shrink-0 cursor-pointer overflow-hidden rounded border border-aimu-border subtitle-alpha-bg">
           <input
             type="color"
+            aria-label={label}
             value={normalizeHexColor(value)}
             onChange={(e) => {
               onChange(e.target.value.toUpperCase());
@@ -164,6 +169,7 @@ function ColorControl({
           <span className="block h-full w-full" style={{ backgroundColor: rgbaPreview(value, opacity) }} />
         </label>
         <Input
+          data-testid={testId}
           value={normalizeHexColor(value)}
           onChange={(e) => onChange(normalizeHexColor(e.target.value))}
           className="h-7 flex-1 border-aimu-border bg-aimu-panel px-2 text-[11px] text-aimu-text-primary"
@@ -217,6 +223,7 @@ function PresetButton({
     <button
       type="button"
       title={label}
+      aria-label={label}
       data-active={active}
       onClick={onClick}
       className="subtitle-preset-btn flex h-9 w-full items-center justify-center rounded-md border transition-colors"
@@ -253,6 +260,9 @@ export function SubtitleSettings({
   className,
 }: SubtitleSettingsProps) {
   const { t } = useTranslation();
+  const chunks = useChunks();
+  const wordChunks = useWordChunks();
+  const hasWordTimestamps = useHasWordTimestamps();
   const [positionOpen, setPositionOpen] = useState(true);
   const [activeStyleTab, setActiveStyleTab] = useState<'primary' | 'secondary'>('primary');
 
@@ -273,6 +283,9 @@ export function SubtitleSettings({
   const fontSizeDisplay = fontSizeAtReference(activeStyle);
   const bottomOffsetDisplay = bottomOffsetAtReference(stylePair.primary);
   const activePreset = matchActiveStylePreset(activeStyle);
+  const wordHighlightEnabled = activeStyle.wordHighlightMode === 'word';
+  const reliableWords = hasReliableWordHighlight(chunks, wordChunks, hasWordTimestamps);
+  const showSentenceFallback = wordHighlightEnabled && (!isPrimaryTab || !reliableWords);
 
   const displayModes: Array<{ id: SubtitleDisplayMode; label: string }> = [
     { id: 'Bilingual', label: t('components.workstation.displayBilingual') },
@@ -347,12 +360,21 @@ export function SubtitleSettings({
             <PresetButton
               key={preset.id}
               active={activePreset === preset.id}
-              label={preset.label}
+              label={preset.id === 'word-highlight' ? t('components.workstation.wordHighlightPreset') : preset.label}
               preview={preset.preview}
               onClick={() => updateActiveStyle(applyStylePreset(activeStyle, preset.id))}
             />
           ))}
         </div>
+        {showSentenceFallback && (
+          <div
+            role="status"
+            data-testid="word-highlight-fallback"
+            className="rounded border border-aimu-border bg-aimu-input px-2 py-1.5 text-[11px] text-aimu-text-secondary"
+          >
+            {t('components.workstation.sentenceHighlightFallback')}
+          </div>
+        )}
       </div>
 
       <div className="h-px bg-aimu-border" />
@@ -414,12 +436,37 @@ export function SubtitleSettings({
       <SettingRow label={t('components.workstation.color')} className="items-start">
         <div className="grid flex-1 gap-2">
           <ColorControl
-            label="字体"
+            label={t('components.workstation.fontColor')}
             value={activeStyle.color}
             opacity={activeStyle.colorOpacity}
+            testId="subtitle-base-color"
             onChange={(value) => updateActiveStyle({ color: value })}
             onOpacityChange={(value) => updateActiveStyle({ colorOpacity: value })}
           />
+          {wordHighlightEnabled && (
+            <div className="flex items-center gap-2 rounded border border-aimu-border bg-aimu-input p-2">
+              <span className="w-10 shrink-0 text-[10px] text-aimu-text-muted">
+                {t('components.workstation.highlightColor')}
+              </span>
+              <label className="relative h-7 w-9 shrink-0 cursor-pointer overflow-hidden rounded border border-aimu-border">
+                <input
+                  type="color"
+                  aria-label={t('components.workstation.highlightColor')}
+                  data-testid="word-highlight-color"
+                  value={normalizeHexColor(activeStyle.wordHighlightColor ?? '#FFE100')}
+                  onChange={(event) => updateActiveStyle({ wordHighlightColor: event.target.value.toUpperCase() })}
+                  className="absolute -left-2 -top-2 h-12 w-12 cursor-pointer opacity-0"
+                />
+                <span className="block h-full w-full" style={{ backgroundColor: normalizeHexColor(activeStyle.wordHighlightColor ?? '#FFE100') }} />
+              </label>
+              <Input
+                aria-label={`${t('components.workstation.highlightColor')} HEX`}
+                value={normalizeHexColor(activeStyle.wordHighlightColor ?? '#FFE100')}
+                onChange={(event) => updateActiveStyle({ wordHighlightColor: normalizeHexColor(event.target.value) })}
+                className="h-7 flex-1 border-aimu-border bg-aimu-panel px-2 text-[11px] text-aimu-text-primary"
+              />
+            </div>
+          )}
           <ColorControl
             label={t('components.workstation.outline')}
             value={activeStyle.borderColor}
