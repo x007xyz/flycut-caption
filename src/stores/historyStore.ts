@@ -10,14 +10,17 @@ import { changeCuts, createEdl, editingSchema, isDeleted, outputDuration, valida
 import { selectPendingRanges, validateSuggestionBatch, type SuggestionBatch } from '../../shared/editing/suggestions';
 import { applyTextSnapshots, createTextRecord, planTextRestore, trimTextHistory, validateTextUpdates,
   type TextRecord, type TextUpdate } from '../../shared/text/corrections';
+import { createLanguageTrack as makeLanguageTrack, findTrackForLanguage, keepTranslation, normalizeLanguageTracks,
+  projectLanguageTrack, withTranslation, type LanguageTrack } from '../../shared/languageTracks';
 
 type ChunkLayer = 'sentence' | 'word';
 type Chunk = SubtitleChunk;
-interface Snapshot { chunks: Chunk[]; wordChunks: Chunk[]; edl: Edl }
+interface Snapshot { chunks: Chunk[]; wordChunks: Chunk[]; edl: Edl; languageTracks: LanguageTrack[]; activeLanguageTrackId: string | null }
 /** `textRecord`: set when this step was a recorded text operation, so undo/redo also append a text record. */
 interface Action { before: Snapshot; after: Snapshot; textRecord?: TextRecord }
 export interface HistoryState {
   chunks: Chunk[]; wordChunks: Chunk[]; hasWordTimestamps: boolean; language: string;
+  languageTracks: LanguageTrack[]; activeLanguageTrackId: string | null;
   sourceDuration: number; edl: Edl | null; cutHistory: CutRecord[];
   cutError: string | null; updatingCuts: boolean;
   pendingCuts: { ranges: Array<{start: number; end: number}>; base: string; preview: boolean } | null;
@@ -33,8 +36,14 @@ export interface HistoryState {
   text: string; duration: number; canUndo: boolean; canRedo: boolean;
 }
 export interface HistoryActions {
-  setTranscript: (transcript: SubtitleTranscript) => void;
+  setTranscript: (transcript: SubtitleTranscript, languageTracks?: LanguageTrack[], activeLanguageTrackId?: string | null) => void;
   update: (id: string, next: Partial<Chunk>, layer?: ChunkLayer) => void;
+  selectLanguageTrack: (id: string) => void;
+  addLanguageTrack: (input: { name: string; languageCode: string | null }) => string;
+  editLanguageTrack: (id: string, input: { name: string; languageCode: string | null }) => void;
+  removeLanguageTrack: (id: string) => void;
+  applyLanguageTranslations: (input: { languageCode: string; name: string; updates: { id: string; text: string }[] }) => void;
+  keepLanguageTranslation: (id: string) => void;
   delete: (id: string) => void; deleteWord: (id: string) => void;
   undo: () => void; redo: () => void; clearHistory: () => void;
   deleteSelected: (ids: Set<string>) => void; restoreSelected: (ids: Set<string>) => void;
@@ -63,6 +72,7 @@ export interface HistoryActions {
   clearCutError: () => void; reset: () => void;
 }
 const initialState: HistoryState = { chunks: [], wordChunks: [], hasWordTimestamps: false, language: 'en',
+  languageTracks: [], activeLanguageTrackId: null,
   sourceDuration: 0, edl: null, cutHistory: [], cutError: null, updatingCuts: false, pendingCuts: null, pendingSuggestions: null, audition: null, historyPreview: null,
   textHistory: [], textHistoryPreview: null, textError: null,
   undoStack: [], redoStack: [], lastUpdateTime: 0, mergeThreshold: 500, text: '', duration: 0, canUndo: false, canRedo: false };
@@ -73,7 +83,8 @@ const record = (snap: Snapshot, kind: string): CutRecord => ({ id: crypto.random
   edl: snap.edl, deletedIds: snap.chunks.filter(c => c.deleted).map(c => c.id), deletedWordIds: snap.wordChunks.filter(c => c.deleted).map(c => c.id) });
 const snapshot = (s: HistoryState): Snapshot => {
   if (!s.edl) throw new Error('Invalid media duration or edit data');
-  return { chunks: s.chunks, wordChunks: s.wordChunks, edl: s.edl };
+  return { chunks: s.chunks, wordChunks: s.wordChunks, edl: s.edl, languageTracks: s.languageTracks,
+    activeLanguageTrackId: s.activeLanguageTrackId };
 };
 /** Preserve source timestamps. Only reconstruct text where the word/text correspondence is still known. */
 function syncWords(chunks: Chunk[], before: Chunk[], after: Chunk[]): Chunk[] {
@@ -103,7 +114,7 @@ export const createHistoryStore = () => createStore<HistoryState & HistoryAction
   const cut = (updates: {id: string; deleted: boolean; layer?: ChunkLayer}[], blanks: {start: number; end: number}[] = [], kind = 'edit', spacers = true) => {
     try {
       const state = get(); if (state.updatingCuts || state.cutError) return;
-      let { chunks, wordChunks, edl } = snapshot(state);
+      let { chunks, wordChunks, edl, languageTracks, activeLanguageTrackId } = snapshot(state);
       const beforeWords = wordChunks;
       const wordTextOk = new Map<string, boolean>();
       for (const u of updates) {
@@ -137,7 +148,7 @@ export const createHistoryStore = () => createStore<HistoryState & HistoryAction
           text: '', timestamp: [r.start, r.end] as [number, number], deleted: true, isBlankSpacer: true })).filter(c => !ids.has(c.id))]
           .sort((a, b) => a.timestamp[0] - b.timestamp[0]);
       }
-      commit({ chunks, wordChunks, edl }, kind, true);
+      commit({ chunks, wordChunks, edl, languageTracks, activeLanguageTrackId }, kind, true);
     } catch (error) { fail(error); }
   };
   const travel = (redo: boolean) => {
@@ -155,8 +166,26 @@ export const createHistoryStore = () => createStore<HistoryState & HistoryAction
         historyPreview: null, textHistoryPreview: null, cutError: null, textError: null });
     } catch (error) { fail(error); }
   };
+  const setTranslations = (state: HistoryState, chunks: Chunk[], updates: { id: string; text?: string }[]) => {
+    let languageTracks = [...state.languageTracks];
+    let activeLanguageTrackId = state.activeLanguageTrackId;
+    let active = languageTracks.find(track => track.id === activeLanguageTrackId);
+    if (!active) {
+      active = makeLanguageTrack({ name: 'Unspecified', languageCode: null });
+      languageTracks = [...languageTracks, active];
+      activeLanguageTrackId = active.id;
+    }
+    let next = active;
+    for (const update of updates) {
+      if (update.text === undefined) continue;
+      const source = chunks.find(chunk => chunk.id === update.id);
+      if (source) next = withTranslation(next, source, update.text);
+    }
+    languageTracks = languageTracks.map(track => track.id === next.id ? next : track);
+    return { languageTracks, activeLanguageTrackId, chunks: projectLanguageTrack(chunks, languageTracks, activeLanguageTrackId) };
+  };
   return { ...initialState,
-    setTranscript: transcript => {
+    setTranscript: (transcript, languageTracks, activeLanguageTrackId) => {
       try {
         const normalized = normalizeAsrTranscript(transcript);
         const editing = transcript.editing ? editingSchema.parse(transcript.editing) : { edl: createEdl(transcript.duration), history: [] };
@@ -168,7 +197,10 @@ export const createHistoryStore = () => createStore<HistoryState & HistoryAction
             timestamp: [r.startUs / 1e6, r.endUs / 1e6] as [number, number], deleted: true, isBlankSpacer: true })).filter(c => !existing.has(c.id))];
         }
         const wordChunks = (normalized.wordChunks ?? []).map(c => ({ ...c, deleted: c.deleted ?? false }));
-        const snap = { chunks, wordChunks, edl: validateEdl(editing.edl) };
+        const tracks = normalizeLanguageTracks(chunks, languageTracks, activeLanguageTrackId);
+        chunks = projectLanguageTrack(chunks, tracks.languageTracks, tracks.activeLanguageTrackId);
+        const snap = { chunks, wordChunks, edl: validateEdl(editing.edl), languageTracks: tracks.languageTracks,
+          activeLanguageTrackId: tracks.activeLanguageTrackId };
         set({ ...initialState, ...snap, ...derived(snap), sourceDuration: transcript.duration, language: normalized.language,
           hasWordTimestamps: normalized.hasWordTimestamps ?? false, cutHistory: editing.history });
       } catch (error) { fail(error); }
@@ -178,11 +210,73 @@ export const createHistoryStore = () => createStore<HistoryState & HistoryAction
       try {
         const s = get(); const snap = snapshot(s);
         const field = layer === 'word' ? 'wordChunks' : 'chunks';
+        const hasTranslation = layer === 'sentence' && Object.prototype.hasOwnProperty.call(next, 'secondText');
         // IDs and source time are immutable. This entry point only edits text/translation/selection.
         const patch = { ...(next.text !== undefined ? { text: next.text, edlWordProjection: false } : {}),
-          ...(next.secondText !== undefined ? { secondText: next.secondText } : {}), ...(next.selected !== undefined ? { selected: next.selected } : {}) };
-        commit({ ...snap, [field]: snap[field].map(c => c.id === id ? { ...c, ...patch } : c) }, 'text', false);
+          ...(!hasTranslation && next.secondText !== undefined ? { secondText: next.secondText } : {}),
+          ...(next.selected !== undefined ? { selected: next.selected } : {}) };
+        const nextField = snap[field].map(c => c.id === id ? { ...c, ...patch } : c);
+        if (hasTranslation) {
+          const translated = setTranslations(s, nextField as Chunk[], [{ id, text: next.secondText }]);
+          commit({ ...snap, chunks: translated.chunks, languageTracks: translated.languageTracks,
+            activeLanguageTrackId: translated.activeLanguageTrackId }, 'translation', false);
+        } else {
+          commit({ ...snap, [field]: nextField }, 'text', false);
+        }
       } catch (error) { fail(error); }
+    },
+    selectLanguageTrack: id => {
+      const s = get();
+      if (!s.languageTracks.some(track => track.id === id)) return;
+      set({ activeLanguageTrackId: id, chunks: projectLanguageTrack(s.chunks, s.languageTracks, id), lastUpdateTime: Date.now() });
+    },
+    addLanguageTrack: input => {
+      const s = get(); const track = makeLanguageTrack(input);
+      const languageTracks = [...s.languageTracks, track]; const chunks = projectLanguageTrack(s.chunks, languageTracks, track.id);
+      commit({ ...snapshot(s), chunks, languageTracks, activeLanguageTrackId: track.id }, 'language-track-add', false);
+      return track.id;
+    },
+    editLanguageTrack: (id, input) => {
+      const s = get();
+      const languageTracks = s.languageTracks.map(track => track.id === id
+        ? { ...track, name: input.name.trim(), languageCode: input.languageCode } : track);
+      commit({ ...snapshot(s), languageTracks }, 'language-track-edit', false);
+    },
+    removeLanguageTrack: id => {
+      const s = get(); const index = s.languageTracks.findIndex(track => track.id === id);
+      if (index < 0) return;
+      const languageTracks = s.languageTracks.filter(track => track.id !== id);
+      const activeLanguageTrackId = s.activeLanguageTrackId === id
+        ? languageTracks[Math.min(index, languageTracks.length - 1)]?.id ?? null : s.activeLanguageTrackId;
+      const chunks = projectLanguageTrack(s.chunks, languageTracks, activeLanguageTrackId);
+      commit({ ...snapshot(s), chunks, languageTracks, activeLanguageTrackId }, 'language-track-remove', false);
+    },
+    applyLanguageTranslations: input => {
+      try {
+        const s = get(); let languageTracks = [...s.languageTracks];
+        let track = findTrackForLanguage(languageTracks, input.languageCode);
+        if (!track) {
+          track = makeLanguageTrack({ name: input.name, languageCode: input.languageCode });
+          languageTracks.push(track);
+        }
+        let next = track;
+        for (const update of input.updates) {
+          const source = s.chunks.find(chunk => chunk.id === update.id);
+          if (source) next = withTranslation(next, source, update.text);
+        }
+        languageTracks = languageTracks.map(item => item.id === next.id ? next : item);
+        const chunks = projectLanguageTrack(s.chunks, languageTracks, next.id);
+        commit({ ...snapshot(s), chunks, languageTracks, activeLanguageTrackId: next.id }, 'language-translation', false);
+      } catch (error) { fail(error); }
+    },
+    keepLanguageTranslation: id => {
+      const s = get(); const active = s.languageTracks.find(track => track.id === s.activeLanguageTrackId);
+      const source = s.chunks.find(chunk => chunk.id === id);
+      if (!active || !source || !active.entries[id]) return;
+      const next = keepTranslation(active, source);
+      const languageTracks = s.languageTracks.map(track => track.id === active.id ? next : track);
+      const chunks = projectLanguageTrack(s.chunks, languageTracks, active.id);
+      commit({ ...snapshot(s), chunks, languageTracks }, 'language-translation-keep', false);
     },
     delete: id => { const c = get().chunks.find(c => c.id === id); if (c) cut([{ id, deleted: !c.deleted }], [], c.deleted ? 'restore' : 'delete'); },
     deleteWord: id => { const c = get().wordChunks.find(c => c.id === id); if (c) cut([{ id, deleted: !c.deleted, layer: 'word' }]); },
@@ -193,8 +287,19 @@ export const createHistoryStore = () => createStore<HistoryState & HistoryAction
     updateChunkText: (id, text) => get().update(id, { text: text.trim() }),
     batchUpdateText: updates => {
       try {
-        const s = get(); const map = new Map(updates.map(u => [u.id, u]));
-        commit({ ...snapshot(s), chunks: s.chunks.map(c => map.has(c.id) ? { ...c, ...map.get(c.id), edlWordProjection: false } : c) }, 'text', false);
+        const s = get(); const text = new Map(updates.filter(update => update.text !== undefined)
+          .map(update => [update.id, update.text!]));
+        const chunks = s.chunks.map(chunk => text.has(chunk.id)
+          ? { ...chunk, text: text.get(chunk.id)!, edlWordProjection: false } : chunk);
+        const translations = updates.filter(update => update.secondText !== undefined)
+          .map(update => ({ id: update.id, text: update.secondText }));
+        if (translations.length) {
+          const translated = setTranslations(s, chunks, translations);
+          commit({ ...snapshot(s), chunks: translated.chunks, languageTracks: translated.languageTracks,
+            activeLanguageTrackId: translated.activeLanguageTrackId }, 'text', false);
+        } else {
+          commit({ ...snapshot(s), chunks }, 'text', false);
+        }
       } catch (error) { fail(error); }
     },
     setTextHistory: records => set({ textHistory: trimTextHistory(records), textHistoryPreview: null, textError: null }),
@@ -339,7 +444,8 @@ export const createHistoryStore = () => createStore<HistoryState & HistoryAction
         chunks = chunks.map(c => c.edlWordProjection && c.wordIds?.length ? { ...c,
           text: joinWordTexts(c.wordIds.map(id => words.find(w => w.id === id)).filter(w => w && !w.deleted).map(w => w!.text)) || c.text } : c);
         // Persisted restore only changes cuts/flags; current text and translations survive.
-        commit({ chunks, wordChunks: words, edl }, 'history-restore', true);
+        commit({ chunks, wordChunks: words, edl, languageTracks: s.languageTracks,
+          activeLanguageTrackId: s.activeLanguageTrackId }, 'history-restore', true);
       } catch (error) { fail(error); }
     },
     clearCutError: () => set({ cutError: null }), reset: () => set(initialState),

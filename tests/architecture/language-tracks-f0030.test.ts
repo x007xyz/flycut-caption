@@ -10,6 +10,8 @@ import { createEdl } from '../../shared/editing/edl';
 import { LEGACY_LANGUAGE_TRACK_ID, languageTrackCounts, projectLanguageTrack } from '../../shared/languageTracks';
 import { PROJECT_FORMAT_VERSION } from '../../shared/projects';
 import { chunksToSrt } from '../../src/subtitle/exportFormats.ts';
+import { defaultSubtitleStylePair } from '../../src/subtitle/subtitleStyle.ts';
+import { diffWithHost } from '../../src/recovery/copy.ts';
 
 const TOKEN = 'test-credential';
 const transcript = {
@@ -130,5 +132,51 @@ test('F-0030/AC-1 AC-4 format-4 tracks persist, share source timing, and a stale
         entries: { ...again.edits.languageTracks[0].entries, missing: { text: 'x', sourceText: 'x', updatedAt: 'now' } } }],
       activeLanguageTrackId: 'track-en' } }), /unknown subtitle/);
   } finally { await host.ctx.fiber.dispose(); await rm(host.home, { recursive: true, force: true }); }
+});
+
+test('F-0030/AC-1 AC-3 editor tracks switch, mark source changes outdated, keep and undo without duplicating time', async () => {
+  const { createHistoryStore, editingOf } = await import('../../src/stores/historyStore.ts');
+  const { buildEdits } = await import('../../src/services/projectService.ts');
+  const store = createHistoryStore();
+  const languageTracks = [track('track-en', 'English', 'en', 'Hello'), track('track-fr', 'Français', 'fr', 'Bonjour')];
+  store.getState().setTranscript(transcript, languageTracks, 'track-en');
+  assert.equal(store.getState().chunks[0].secondText, 'Hello');
+  store.getState().selectLanguageTrack('track-fr');
+  assert.equal(store.getState().chunks[0].secondText, 'Bonjour');
+  store.getState().update('s1', { text: '你好呀' });
+  assert.equal(languageTrackCounts(store.getState().languageTracks[1], store.getState().chunks).outdated, 1);
+  assert.deepEqual(store.getState().chunks.map(chunk => chunk.timestamp), transcript.chunks.map(chunk => chunk.timestamp));
+  store.getState().keepLanguageTranslation('s1');
+  assert.equal(store.getState().languageTracks[1].entries.s1.sourceText, '你好呀');
+  store.getState().update('s1', { secondText: 'Salut' });
+  assert.equal(store.getState().chunks[0].secondText, 'Salut');
+  assert.equal(store.getState().languageTracks[1].entries.s1.text, 'Salut');
+  store.getState().undo();
+  assert.equal(store.getState().chunks[0].secondText, 'Bonjour');
+  store.getState().redo();
+  const state = store.getState();
+  const edits = buildEdits(state.chunks, state.wordChunks, defaultSubtitleStylePair as any, false, editingOf(state), [],
+    state.languageTracks, state.activeLanguageTrackId);
+  assert.equal(edits.activeLanguageTrackId, 'track-fr');
+  assert.equal(edits.languageTracks?.[1].entries.s1.text, 'Salut');
+  assert.deepEqual(edits.chunks.map(chunk => chunk.timestamp), transcript.chunks.map(chunk => chunk.timestamp));
+  const content = { editing: edits.editing, chunks: edits.chunks, deletedWordIds: edits.deletedWordIds, languageTracks: edits.languageTracks,
+    activeLanguageTrackId: edits.activeLanguageTrackId, styleSource: 'project' as const,
+    stylePair: defaultSubtitleStylePair as unknown as Record<string, Record<string, unknown>> };
+  const host = { editing: edits.editing, chunks: structuredClone(edits.chunks), deletedWordIds: edits.deletedWordIds,
+    languageTracks: structuredClone(edits.languageTracks), activeLanguageTrackId: edits.activeLanguageTrackId, styleSource: 'project' as const,
+    effectiveStyle: content.stylePair as any, projectStyle: content.stylePair as any };
+  assert.equal(diffWithHost(content, host).same, true);
+  content.languageTracks[1].entries.s1.text = 'Different';
+  assert.equal(diffWithHost(content, host).video, true);
+});
+
+test('F-0030/AC-2 loading an old secondText transcript creates the same explicitly unspecified track in the editor', async () => {
+  const { createHistoryStore } = await import('../../src/stores/historyStore.ts');
+  const store = createHistoryStore();
+  store.getState().setTranscript({ ...transcript, chunks: [{ ...transcript.chunks[0], secondText: 'Bonjour' }, transcript.chunks[1]] });
+  assert.equal(store.getState().activeLanguageTrackId, LEGACY_LANGUAGE_TRACK_ID);
+  assert.equal(store.getState().languageTracks[0].languageCode, null);
+  assert.equal(store.getState().chunks[0].secondText, 'Bonjour');
 });
 
