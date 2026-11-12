@@ -1,8 +1,8 @@
 ---
 id: ADR-0009
-status: proposed
+status: accepted
 date: 2026-11-09
-deciders:
+deciders: zhangxiang.chen
 feature: F-0011
 superseded_by:
 ---

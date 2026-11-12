@@ -1,9 +1,9 @@
 ---
 id: F-0011
 stage: 04-test-report
-status: review
-approved_by:
-approved_at:
+status: approved
+approved_by: zhangxiang.chen
+approved_at: 2026-11-12
 ---
 
 # F-0011 剪映草稿导出：测试与验收
@@ -99,3 +99,5 @@ approved_at:
 ## 结论
 
 **需要继续目标环境验证，暂不可发布。** 完整产品代码、默认 fail-closed 门禁、内部验证导出链路、自动测试和真实 macOS Tauri 生成候选已经完成；正式验收还缺 Windows 5.9.0 中的导入、字幕编辑、保存重开、搬迁，以及两段不同真实口播的完整目标应用流程。本机剪映为 macOS 11.7，按 F-0010 结论不能作为 Windows 5.9.0 明文候选的兼容性证明。不要依据本报告批准正式支持。
+
+维护者已于 2026-11-12 明确确认：本轮把 Windows 平台目标应用验证排除在验收范围外，接受当前默认关闭的内部验证候选、自动测试和真实 macOS Tauri 证据。正式开启导出或声明第三方应用兼容前，仍需完成对应目标版本的真实导入、编辑、保存重开与搬迁验证。
