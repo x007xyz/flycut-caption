@@ -25,11 +25,14 @@ export {
   layoutTextLines,
   getCueLayout,
   findCue,
+  mapCueWordRanges,
+  findActiveWordRange,
   type TextLine,
   type LayoutItem,
   type LayoutLine,
   type LayoutBlock,
   type CueLayout,
+  type LayoutWordRange,
 } from './layout';
 
 export { drawFrame, frameKey, subtitleBand, findVisibleCue, type SubtitleDrawOptions } from './draw';

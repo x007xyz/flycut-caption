@@ -1,11 +1,14 @@
 import type { SubtitleGraphicCue, SubtitleGraphicScene, SubtitleGraphicStyle } from './scene';
 import {
   buildCanvasFont,
+  findActiveWordRange,
   findCue,
   getCueLayout,
+  mapCueWordRanges,
   type CueLayout,
   type LayoutBlock,
   type LayoutLine,
+  type LayoutWordRange,
 } from './layout';
 
 export interface SubtitleDrawOptions {
@@ -127,6 +130,9 @@ function drawLine(
   block: LayoutBlock,
   scene: SubtitleGraphicScene,
   y: number,
+  wordHighlight: boolean,
+  activeWord: LayoutWordRange | undefined,
+  sentenceHighlight: boolean,
 ): void {
   const style = block.style;
   if (!style.visible) return;
@@ -145,8 +151,31 @@ function drawLine(
     ctx.lineWidth = style.borderWidth;
     ctx.strokeText(line.text, x, y);
   }
-  ctx.fillStyle = withOpacity(style.color, style.colorOpacity);
+  const highlightColor = style.wordHighlightColor ?? '#FFE100';
+  ctx.fillStyle = withOpacity(wordHighlight && sentenceHighlight ? highlightColor : style.color, style.colorOpacity);
   ctx.fillText(line.text, x, y);
+  if (wordHighlight && activeWord && line.charStart !== undefined && line.charEnd !== undefined) {
+    const start = Math.max(activeWord.charStart, line.charStart);
+    const end = Math.min(activeWord.charEnd, line.charEnd);
+    if (end > start) {
+      const localStart = start - line.charStart;
+      const localEnd = end - line.charStart;
+      const prefix = line.text.slice(0, localStart);
+      const fragment = line.text.slice(localStart, localEnd);
+      const alignedStart = style.textAlign === 'left' ? 0
+        : style.textAlign === 'right' ? scene.width - line.width : (scene.width - line.width) / 2;
+      const clipX = alignedStart + ctx.measureText(prefix).width;
+      const clipWidth = Math.max(0.5, ctx.measureText(fragment).width);
+      // 用原排版整行重填并裁到当前词，保留字偶距、字距和换行位置。
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(clipX - 1, y - block.fontSize * 1.45, clipWidth + 2, block.fontSize * 1.8);
+      ctx.clip();
+      ctx.fillStyle = withOpacity(highlightColor, style.colorOpacity);
+      ctx.fillText(line.text, x, y);
+      ctx.restore();
+    }
+  }
   if (style.textDecoration === 'underline') {
     const width = line.width;
     const underlineY = y + block.fontSize * 0.08;
@@ -168,10 +197,15 @@ function drawBlock(
   block: LayoutBlock,
   scene: SubtitleGraphicScene,
   bottom: number,
+  t: number,
+  wordHighlight: boolean,
+  wordRanges: LayoutWordRange[] | undefined,
+  sentenceHighlight: boolean,
 ): void {
   let y = bottom;
+  const activeWord = wordHighlight && wordRanges?.length ? findActiveWordRange(wordRanges, t) : undefined;
   for (let i = block.lines.length - 1; i >= 0; i -= 1) {
-    drawLine(ctx, block.lines[i], block, scene, y);
+    drawLine(ctx, block.lines[i], block, scene, y, wordHighlight, activeWord, sentenceHighlight);
     y -= block.lineHeight;
   }
 }
@@ -201,11 +235,16 @@ export function drawFrame(
     : getCueLayout(ctx, scene, cue);
   if (!layout.primary && !layout.secondary) return false;
   ctx.setTransform(scale, 0, 0, scale, 0, -layer.y * scale);
+  const primaryWords = layout.primary && scene.primary.wordHighlightMode === 'word'
+    ? mapCueWordRanges(cue) : undefined;
+  const primaryWordHighlight = Boolean(layout.primary && scene.primary.wordHighlightMode === 'word');
+  const secondaryWordHighlight = Boolean(layout.secondary && scene.secondary?.wordHighlightMode === 'word');
   if (layout.secondary && layout.secondaryBottom !== undefined) {
-    drawBlock(ctx, layout.secondary, scene, layout.secondaryBottom);
+    // 译文没有独立对齐词元；启用逐字模式时明确整句降级。
+    drawBlock(ctx, layout.secondary, scene, layout.secondaryBottom, t, secondaryWordHighlight, undefined, true);
   }
   if (layout.primary && layout.primaryBottom !== undefined) {
-    drawBlock(ctx, layout.primary, scene, layout.primaryBottom);
+    drawBlock(ctx, layout.primary, scene, layout.primaryBottom, t, primaryWordHighlight, primaryWords, !primaryWords?.length);
   }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   return Boolean(layout.primary || layout.secondary);
@@ -246,7 +285,16 @@ function getPrecomputedLayout(layouts: CueLayout[], id: string): CueLayout | und
 export function frameKey(scene: SubtitleGraphicScene, t: number): string {
   const cue = findCue(scene.cues, t);
   if (!cue) return `${sceneStyleKey(scene)}|empty`;
-  return `${sceneStyleKey(scene)}|${cue.id}|${cue.text}|${cue.secondText ?? ''}`;
+  let wordState = '';
+  if (scene.displayMode !== 'Second' && scene.primary.wordHighlightMode === 'word') {
+    const ranges = mapCueWordRanges(cue);
+    if (!ranges?.length) wordState = '|fallback';
+    else {
+      const active = findActiveWordRange(ranges, t);
+      wordState = active ? `|word${active.index}` : '|gap';
+    }
+  }
+  return `${sceneStyleKey(scene)}|${cue.id}|${cue.text}|${cue.secondText ?? ''}${wordState}`;
 }
 
 /** 计算只包含字幕内容的条带，供 Host 渲染透明字幕层。 */

@@ -18,6 +18,7 @@ approved_at:
 | 日期 | 清单项 | 提交 | 检查 |
 |---|---|---|---|
 | 2026-11-12 | 技术设计 | 本提交 | `pnpm feature review F-0024` 自动确认 02 并创建 03 |
+| 2026-11-12 | 1. 共用场景与词元渲染 | 本提交 | `word-highlight-f0024.test.ts` 4 通过；`pnpm exec eslint shared/subtitle-graphics tests/architecture/word-highlight-f0024.test.ts`、`pnpm tsc -b --noEmit`、`pnpm check:host` 通过；Red check 移除词感知 key 后 frameKey 测试失败 |
 
 ## 自行决定的事项
 
