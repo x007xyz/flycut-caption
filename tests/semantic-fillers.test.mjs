@@ -102,3 +102,4 @@ test('F-0009/AC-7 the base changes with edited text, timestamps and formal EDL',
   const cut = { ...baseInput, edl: { deleted: [{ startUs: 0, endUs: 100000 }] } };
   assert.notEqual(await createSemanticBase(cut), first);
 });
+

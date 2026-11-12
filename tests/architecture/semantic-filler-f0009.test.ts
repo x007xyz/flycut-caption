@@ -8,7 +8,9 @@ import { setTimeout } from 'node:timers/promises';
 import { readFileSync } from 'node:fs';
 import { createHost } from '../../server/app';
 import type { JobSnapshot } from '../../shared/protocol';
+import { semanticCutsInputSchema } from '../../shared/protocol';
 import { buildSemanticWindowPlan, createSemanticBase } from '../../shared/editing/semanticFillers';
+import { createHistoryStore } from '../../src/stores/historyStore';
 
 const fixture = JSON.parse(readFileSync(resolve('experiments/f-0008-semantic-cut/fixtures/mini-transcript.json'), 'utf8'));
 
@@ -117,4 +119,43 @@ test('F-0009/AC-2 AC-4 AC-9 Host resolves saved config, sends no key, and derive
     await host.close();
     await model.close();
   }
+});
+
+test('F-0009/AC-7 AC-8 semantic batches use a SHA base plus exact history snapshot and apply once', () => {
+  const store = createHistoryStore();
+  store.getState().setTranscript(fixture);
+  const before = store.getState();
+  const semanticBase = 'a'.repeat(64);
+  const status = before.proposeSuggestions({
+    kind: 'filler', base: semanticBase, stateKey: JSON.stringify([before.edl, before.chunks, before.wordChunks]),
+    preview: false, origin: 'semantic',
+    items: [{ id: 'semantic-w5-w6', start: 2, end: 2.6, reason: '重复开头', category: 'repetition',
+      label: '这个这个', selected: true, source: 'semantic', sources: ['semantic'], semanticConfidence: 'high' }],
+  });
+  assert.equal(status, 'ok');
+  assert.deepEqual(store.getState().edl, before.edl, 'pending semantic suggestions never enter the formal EDL');
+  assert.deepEqual(store.getState().cutHistory, before.cutHistory);
+  store.getState().previewPending(true);
+  assert.deepEqual(store.getState().edl, before.edl);
+  store.getState().confirmPending();
+  assert.equal(store.getState().cutError, null);
+  assert.equal(store.getState().pendingSuggestions, null);
+  assert.equal(store.getState().chunks[1].text, '方案可以。');
+  assert.equal(store.getState().wordChunks.filter(word => word.deleted).length, 2);
+  assert.equal(store.getState().cutHistory.at(-1)?.kind, 'filler');
+});
+
+test('F-0009/AC-2 AC-9 semantic RPC accepts configId only and rejects an inline model/key', () => {
+  const base = 'base';
+  const request = buildSemanticWindowPlan({
+    base, transcriptId: 'schema', language: 'zh', chunks: fixture.chunks, wordChunks: fixture.wordChunks,
+  }).windows[0];
+  const configId = '00000000-0000-4000-8000-000000000001';
+  const parsed = semanticCutsInputSchema.safeParse({ configId, request });
+  assert.equal(parsed.success, true);
+  assert.deepEqual(Object.keys(parsed.data ?? {}), ['configId', 'request']);
+  assert.equal(semanticCutsInputSchema.safeParse({
+    configId, request,
+    model: { baseUrl: 'https://ai.example/v1', model: 'fixture', apiKey: 'must-not-cross-rpc' },
+  }).success, false);
 });
