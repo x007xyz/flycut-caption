@@ -3,7 +3,7 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { access, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { cpus, loadavg, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { chromium, expect, type Browser, type Page } from '@playwright/test';
+import { chromium, expect, type Browser, type Locator, type Page } from '@playwright/test';
 import { createHost } from '../server/app';
 import { F0017_REAL_SOURCES, makeF0017RealTranscript, type F0017Transcript as Transcript } from '../tests/e2e/lib/longTranscript';
 
@@ -122,6 +122,60 @@ async function finishMeasurement(page: Page, action: () => Promise<void>, settle
     actionMaxLongTaskMs: Math.round(actionMaxLongTaskMs) };
 }
 
+async function measureEditClick(page: Page, button: Locator, expected: string): Promise<number> {
+  // Record inside Chrome: capture the actual input event and stop after the
+  // expected DOM update, excluding Playwright polling and IPC overhead.
+  const observation = await button.evaluateHandle((element, text) => ({ result: new Promise<number>((resolve, reject) => {
+    const state = {
+      started: undefined as number | undefined,
+      normalize(value: string) { return value.replace(/\s+/g, ' ').trim(); },
+      onClick() { state.started = performance.now(); },
+      cleanup() {
+        clearTimeout(timer);
+        observer.disconnect();
+        element.removeEventListener('click', state.onClick, true);
+      },
+    };
+    const observer = new MutationObserver(() => {
+      if (state.started === undefined) return;
+      const matched = [...document.querySelectorAll('button, div.font-mono')].some(node =>
+        state.normalize(node.textContent ?? '') === text);
+      if (!matched) return;
+      const elapsed = performance.now() - state.started;
+      state.cleanup();
+      resolve(elapsed);
+    });
+    const timer = setTimeout(() => {
+      state.cleanup();
+      reject(new Error(`F-0017/AC-6: click did not produce "${text}"`));
+    }, 5000);
+    observer.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true });
+    element.addEventListener('click', state.onClick, { capture: true, once: true });
+  }) }), expected);
+  try {
+    await button.click();
+    return Math.round((await page.evaluate(async handle => await handle.result, observation)) * 10) / 10;
+  } finally {
+    await observation.dispose();
+  }
+}
+
+async function measureEditActions(page: Page, total: number): Promise<Record<string, number>> {
+  const action = (name: string) => page.getByRole('button', { name, exact: true });
+  const row = page.locator('[data-virtual-row-index]');
+  const stats = (active: number) => `总计: ${total} | 有效: ${active}`;
+  const selectAll = await measureEditClick(page, action('全选'), `删除选中 (${total})`);
+  const clearSelection = await measureEditClick(page, action('清除选择'), '删除选中 (0)');
+  const singleDelete = await measureEditClick(page, row.first().getByTitle('删除片段'), stats(total - 1));
+  await action('恢复 (1)').click();
+  await expect(page.getByText(stats(total), { exact: true })).toBeVisible();
+  await row.nth(0).getByRole('checkbox').check();
+  await row.nth(1).getByRole('checkbox').check();
+  const batchDelete = await measureEditClick(page, action('删除选中 (2)'), stats(total - 2));
+  const restore = await measureEditClick(page, action('恢复 (2)'), stats(total));
+  return { selectAll, clearSelection, singleDelete, batchDelete, restore };
+}
+
 async function waitForEditable(page: Page, includes?: string): Promise<void> {
   const first = page.getByTestId('subtitle-main-text').first();
   await expect(first).toBeVisible();
@@ -209,6 +263,23 @@ async function main(): Promise<void> {
         }).observe({ type: 'longtask', buffered: true });
       });
       const page = await context.newPage();
+
+      if (process.env.F0017_EDIT_ONLY === '1') {
+        await page.goto(`/#/projects/${single.projectId}/videos/${single.videoId}`);
+        await expect(page.getByTestId('subtitle-main-text').first()).toBeEditable();
+        const samples = [];
+        for (let index = 0; index < runs; index += 1) {
+          samples.push(await measureEditActions(page, transcript.chunks.length));
+        }
+        const result = { platform: process.platform, arch: process.arch, chrome: browser.version(),
+          chunks: transcript.chunks.length, durationSeconds: transcript.duration, loadAverage: loadavg(), samples };
+        await writeFile(join(outputDir, 'edit-actions.json'), `${JSON.stringify(result, null, 2)}\n`);
+        console.log(JSON.stringify(result, null, 2));
+        if (samples.some(sample => Object.values(sample).some(elapsed => elapsed > 300))) {
+          throw new Error('F-0017/AC-6: an edit action exceeded 300 ms');
+        }
+        return;
+      }
 
       const opens: Measurement[] = [];
       for (let index = 0; index < runs; index += 1) {
