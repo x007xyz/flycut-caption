@@ -26,6 +26,7 @@ import { useCorrectionReview } from '@/hooks/useCorrectionReview';
 import { CorrectionReviewPanel } from './CorrectionReviewPanel';
 import type { FindReplaceActions, FindReplaceState } from '@/hooks/useFindReplace';
 import type { FindMatch } from '../../../shared/text/findReplace';
+import { languageTrackCopy } from '@/locales/languageTracks';
 
 interface SubtitleListProps {
   className?: string;
@@ -250,7 +251,7 @@ export function SubtitleList({
       <div className={cn('flex flex-col items-center justify-center p-8 bg-aimu-panel h-full', className)}>
         <FileText className="h-12 w-12 text-aimu-text-muted mb-4" />
         <p className="text-aimu-text-muted text-center">
-          {t('components.fileUpload.noFileSelected')}
+          {languageTrackCopy(uiLanguage).empty}
           <br />
           {t('components.fileUpload.dragDropText')}
         </p>

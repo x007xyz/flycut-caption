@@ -114,7 +114,9 @@ export const createHistoryStore = () => createStore<HistoryState & HistoryAction
   const cut = (updates: {id: string; deleted: boolean; layer?: ChunkLayer}[], blanks: {start: number; end: number}[] = [], kind = 'edit', spacers = true) => {
     try {
       const state = get(); if (state.updatingCuts || state.cutError) return;
-      let { chunks, wordChunks, edl, languageTracks, activeLanguageTrackId } = snapshot(state);
+      const current = snapshot(state);
+      let { chunks, wordChunks, edl } = current;
+      const { languageTracks, activeLanguageTrackId } = current;
       const beforeWords = wordChunks;
       const wordTextOk = new Map<string, boolean>();
       for (const u of updates) {
