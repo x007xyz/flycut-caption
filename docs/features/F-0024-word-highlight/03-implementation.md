@@ -1,9 +1,9 @@
 ---
 id: F-0024
 stage: 03-implementation
-status: draft
-approved_by:
-approved_at:
+status: approved
+approved_by: auto
+approved_at: 2026-11-12
 ---
 
 # F-0024 逐字高亮字幕：开发记录
@@ -22,7 +22,7 @@ approved_at:
 | 2026-11-12 | 2. 预览与样式 UI | 本提交 | 架构测试 5 通过；F-0024 Playwright 7 通过（中英、明暗、改色、词间空隙、倍速 seek、无词降级、字体加载）；`pnpm tsc -b --noEmit`、`pnpm check:host`、targeted eslint 通过；Red check 错误隐藏降级提示时 E2E 失败 |
 | 2026-11-12 | 3. Host 导出与 EDL 投影 | 本提交 | 架构测试 8 通过；真实 Host / FFmpeg 成片逐词红字中心移动、词间无伪高亮、无词整句降级、无 ASS 临时文件；静态检查通过；Red check 漏传词元时 export.request 测试失败 |
 | 2026-11-12 | 4. 持久化、重开与生命周期证据 | 本提交 | `pnpm e2e:evidence F-0024` 13 通过、截图 15 张、录屏 13 段；高亮样式保存后重开保持普通色/高亮色；空字幕不绘制、不误报降级；中英文与明暗主题 loading/error/retry 通过；`pnpm tsc -b --noEmit`、`pnpm check:host`、targeted eslint 通过 |
-| 2026-11-12 | 5. 真实媒体验收与文档 | 本提交 | Web 真实口播预览与 Host 成片通过；macOS Tauri 隔离包真实预览、Host 导出和媒体加载通过；完成全量 lint / tsc / Host 类型 / 单元 / 架构 / build 与 `pnpm feature review` |
+| 2026-11-12 | 5. 真实媒体验收与文档 | 本提交 | Web 真实口播预览与 Host 成片通过；macOS Tauri 隔离包真实预览、Host 导出和媒体加载通过；`pnpm lint`、`pnpm tsc -b --noEmit`、`pnpm check:host`、`pnpm test`（90 通过 / 8 前置缺项跳过）、`pnpm test:architecture`（100 通过）、`pnpm build`、临时 target 的 `cargo check` 通过 |
 
 ## 自行决定的事项
 
@@ -31,6 +31,7 @@ approved_at:
 - WKWebView 可能在 React 订阅前已完成视频元数据加载，且 `ResizeObserver` 可能没有初始条目；播放器先读取已就绪元素，再以容器 DOM 尺寸补足首个可绘制尺寸。
 - 真实素材验收使用仓库已验收的 Bilibili 口播视频与 `transcript.json` 字词时间，不重新做 ASR；视频切出前 8 秒并保留真实音轨。
 - F-0024 的桌面验收复用 F-0058 的 WebDriver 包流程，但提供 `FLYCUT_ACCEPTANCE_ONLY=f0024` 以便只跑本需求且不依赖共用 5173。
+- 完整架构测试暴露 F-0014 的 WebSocket 引导帧断言在 `open` 后立即 terminate，存在测试自身竞态；改为等 `host/ready` 和 `jobs/snapshot` 都到齐后再关闭，不改变产品代码。
 
 ## 与设计的偏差
 
