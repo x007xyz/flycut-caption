@@ -1,9 +1,9 @@
 ---
 id: F-0058
 stage: 04-test-report
-status: review
-approved_by:
-approved_at:
+status: approved
+approved_by: zhangxiang.chen
+approved_at: 2026-11-12
 ---
 
 # F-0058 Web 与桌面共用自动化验收：测试与验收
@@ -75,3 +75,5 @@ macOS 测试驱动由默认关闭的 `acceptance-webdriver` Cargo feature 注册
 ## 结论
 
 AC-1 至 AC-3 已通过，AC-4 的本机命令与 CI 定义已完成；CI 的实际运行尚未执行。本报告可以提交维护者评审，暂不自行批准或发布。
+
+维护者已于 2026-11-12 明确确认：接受本机 Chrome、真实 WKWebView 和无驱动包三层结果，CI 工作流随本次变更入仓，实际运行在后续推送时完成，不阻塞本次验收。
