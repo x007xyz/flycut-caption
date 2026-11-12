@@ -22,6 +22,7 @@ approved_at:
 |---|---|---|---|
 | 2026-11-12 | 1. 语言轨契约、格式 4 与 Host 迁移 | `32f8141` | `pnpm check:host` ✅；`pnpm tsc -b --noEmit` ✅；F-0030/F-0003/F-0013 架构测试 18/18 ✅；全量架构 91/94，F-0006 两项缺 FSMN 本地资源，F-0003 旧断言已修正并重跑通过 |
 | 2026-11-12 | 2. history、自动保存、恢复副本与另存 | `3076037` | `pnpm tsc -b --noEmit` ✅；`pnpm check:host` ✅；`pnpm test` 87 通过、11 个既有前置条件跳过；F-0030 架构测试 4/4 ✅ |
+| 2026-11-12 | 3. 轨道管理界面与保存生命周期 | `75ec972` | `pnpm lint` ✅；`pnpm tsc -b --noEmit` ✅；`pnpm build` ✅；交互证据留到第 5 项统一跑 Playwright |
 
 ## 自行决定的事项
 
