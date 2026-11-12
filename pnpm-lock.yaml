@@ -197,6 +197,9 @@ importers:
 
   server:
     dependencies:
+      '@chenglou/pretext':
+        specifier: 0.0.8
+        version: 0.0.8
       '@deepseek-ai/cordis':
         specifier: workspace:*
         version: link:../core/cordis

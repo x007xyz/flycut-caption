@@ -8,6 +8,7 @@
     "lib"
   ],
   "dependencies": {
+    "@chenglou/pretext": "0.0.8",
     "@deepseek-ai/cordis": "workspace:*",
     "@langchain/core": "^1.0.0",
     "@langchain/langgraph": "^1.0.0",
