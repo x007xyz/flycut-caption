@@ -13,6 +13,7 @@ import { applyTextSnapshots, createTextRecord, planTextRestore, trimTextHistory,
 import { reconcileChunkKeywords, type SubtitleKeyword } from '../../shared/text/keywords';
 import { createLanguageTrack as makeLanguageTrack, findTrackForLanguage, keepTranslation, normalizeLanguageTracks,
   projectLanguageTrack, withTranslation, type LanguageTrack } from '../../shared/languageTracks';
+import { removeTrackDubbings, upsertCueDubbing, type CueDubbingArtifact } from '../../shared/tts/dubbing';
 
 type ChunkLayer = 'sentence' | 'word';
 type Chunk = SubtitleChunk;
@@ -22,6 +23,8 @@ interface Action { before: Snapshot; after: Snapshot; textRecord?: TextRecord }
 export interface HistoryState {
   chunks: Chunk[]; wordChunks: Chunk[]; hasWordTimestamps: boolean; language: string;
   languageTracks: LanguageTrack[]; activeLanguageTrackId: string | null;
+  /** F-0035 persisted per-cue dubbing artifacts; kept outside undo snapshots like textHistory. */
+  dubbings: CueDubbingArtifact[];
   sourceDuration: number; edl: Edl | null; cutHistory: CutRecord[];
   cutError: string | null; updatingCuts: boolean;
   pendingCuts: { ranges: Array<{start: number; end: number}>; base: string; preview: boolean } | null;
@@ -37,7 +40,7 @@ export interface HistoryState {
   text: string; duration: number; canUndo: boolean; canRedo: boolean;
 }
 export interface HistoryActions {
-  setTranscript: (transcript: SubtitleTranscript, languageTracks?: LanguageTrack[], activeLanguageTrackId?: string | null) => void;
+  setTranscript: (transcript: SubtitleTranscript, languageTracks?: LanguageTrack[], activeLanguageTrackId?: string | null, dubbings?: CueDubbingArtifact[]) => void;
   update: (id: string, next: Partial<Chunk>, layer?: ChunkLayer) => void;
   selectLanguageTrack: (id: string) => void;
   addLanguageTrack: (input: { name: string; languageCode: string | null }) => string;
@@ -45,6 +48,8 @@ export interface HistoryActions {
   removeLanguageTrack: (id: string) => void;
   applyLanguageTranslations: (input: { trackId?: string; languageCode: string; name: string; updates: { id: string; text: string }[] }) => void;
   keepLanguageTranslation: (id: string) => void;
+  setDubbings: (dubbings: CueDubbingArtifact[]) => void;
+  upsertCueDubbing: (artifact: CueDubbingArtifact) => void;
   delete: (id: string) => void; deleteWord: (id: string) => void;
   undo: () => void; redo: () => void; clearHistory: () => void;
   deleteSelected: (ids: Set<string>) => void; restoreSelected: (ids: Set<string>) => void;
@@ -76,6 +81,7 @@ export interface HistoryActions {
 }
 const initialState: HistoryState = { chunks: [], wordChunks: [], hasWordTimestamps: false, language: 'en',
   languageTracks: [], activeLanguageTrackId: null,
+  dubbings: [],
   sourceDuration: 0, edl: null, cutHistory: [], cutError: null, updatingCuts: false, pendingCuts: null, pendingSuggestions: null, audition: null, historyPreview: null,
   textHistory: [], textHistoryPreview: null, textError: null,
   undoStack: [], redoStack: [], lastUpdateTime: 0, mergeThreshold: 500, text: '', duration: 0, canUndo: false, canRedo: false };
@@ -192,7 +198,7 @@ export const createHistoryStore = () => createStore<HistoryState & HistoryAction
     return { languageTracks, activeLanguageTrackId, chunks: projectLanguageTrack(chunks, languageTracks, activeLanguageTrackId) };
   };
   return { ...initialState,
-    setTranscript: (transcript, languageTracks, activeLanguageTrackId) => {
+    setTranscript: (transcript, languageTracks, activeLanguageTrackId, dubbings) => {
       try {
         const normalized = normalizeAsrTranscript(transcript);
         const editing = transcript.editing ? editingSchema.parse(transcript.editing) : { edl: createEdl(transcript.duration), history: [] };
@@ -209,7 +215,7 @@ export const createHistoryStore = () => createStore<HistoryState & HistoryAction
         const snap = { chunks, wordChunks, edl: validateEdl(editing.edl), languageTracks: tracks.languageTracks,
           activeLanguageTrackId: tracks.activeLanguageTrackId };
         set({ ...initialState, ...snap, ...derived(snap), sourceDuration: transcript.duration, language: normalized.language,
-          hasWordTimestamps: normalized.hasWordTimestamps ?? false, cutHistory: editing.history });
+          hasWordTimestamps: normalized.hasWordTimestamps ?? false, cutHistory: editing.history, dubbings: dubbings ?? [] });
       } catch (error) { fail(error); }
     },
     update: (id, next, layer = 'sentence') => {
@@ -267,6 +273,7 @@ export const createHistoryStore = () => createStore<HistoryState & HistoryAction
         ? languageTracks[Math.min(index, languageTracks.length - 1)]?.id ?? null : s.activeLanguageTrackId;
       const chunks = projectLanguageTrack(s.chunks, languageTracks, activeLanguageTrackId);
       commit({ ...snapshot(s), chunks, languageTracks, activeLanguageTrackId }, 'language-track-remove', false);
+      set({ dubbings: removeTrackDubbings(s.dubbings, id) });
     },
     applyLanguageTranslations: input => {
       try {
@@ -296,6 +303,8 @@ export const createHistoryStore = () => createStore<HistoryState & HistoryAction
       const chunks = projectLanguageTrack(s.chunks, languageTracks, active.id);
       commit({ ...snapshot(s), chunks, languageTracks }, 'language-translation-keep', false);
     },
+    setDubbings: dubbings => set({ dubbings }),
+    upsertCueDubbing: artifact => set(state => ({ dubbings: upsertCueDubbing(state.dubbings, artifact) })),
     delete: id => { const c = get().chunks.find(c => c.id === id); if (c) cut([{ id, deleted: !c.deleted }], [], c.deleted ? 'restore' : 'delete'); },
     deleteWord: id => { const c = get().wordChunks.find(c => c.id === id); if (c) cut([{ id, deleted: !c.deleted, layer: 'word' }]); },
     deleteSelected: ids => cut([...ids].map(id => ({ id, deleted: true })), [], 'delete'),
@@ -522,5 +531,6 @@ export const useDeleteWord = () => useHistoryStore(state => state.deleteWord);
 export const useHistoryText = () => useHistoryStore(state => state.text);
 export const useHistoryLanguage = () => useHistoryStore(state => state.language);
 export const useHistoryDuration = () => useHistoryStore(state => state.duration);
+export const useDubbings = () => useHistoryStore(state => state.dubbings);
 
 export const useHistoryStore = bindRuntimeStore('history');
