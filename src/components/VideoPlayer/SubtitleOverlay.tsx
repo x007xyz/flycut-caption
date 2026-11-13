@@ -14,6 +14,7 @@ import {
 } from '@/subtitle';
 import { drawFrame, frameKey, findCue } from '../../../shared/subtitle-graphics';
 import { useTranslation } from '@/contexts/LocaleProvider';
+import { SafeZoneOverlay } from './SafeZoneOverlay';
 
 interface SubtitleOverlayProps {
   currentTime: number;
@@ -249,6 +250,12 @@ export function SubtitleOverlay({
         }}
         onMouseDown={currentSubtitle ? handleDragStart : undefined}
         title={currentSubtitle ? t('components.videoPlayer.dragSubtitle') : undefined}
+      />
+
+      <SafeZoneOverlay
+        style={primaryStyle}
+        width={actualVideoSize.width || canvasSize.width}
+        height={actualVideoSize.height || canvasSize.height}
       />
 
       {isDragging && currentSubtitle && (
