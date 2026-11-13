@@ -1,9 +1,9 @@
 ---
 id: F-0035
 stage: 03-implementation
-status: draft
-approved_by:
-approved_at:
+status: approved
+approved_by: auto
+approved_at: 2026-11-13
 ---
 
 # F-0035 单条译文配音与试听：开发记录
@@ -24,7 +24,7 @@ approved_at:
 | 2026-11-13 | 清单 2：Host 配音插件、项目产物落盘、并发锁与架构测试 | 284d325 | pnpm check:host ✅, tsx --test tests/architecture/dubbing-f0035.test.ts ✅ (2/2) |
 | 2026-11-13 | 清单 3：前端 historyStore/ProjectService/recovery 与 DubbingService 同步 | a1c52e7 | pnpm tsc -b --noEmit ✅, pnpm check:host ✅, tsx --test tests/architecture/dubbing-client-f0035.test.ts ✅ (2/2) |
 | 2026-11-13 | 清单 4：配音文案、useCueDubbing、SingleCueDubbingPanel 与字幕行入口 UI | 1425435 | pnpm lint ✅, pnpm tsc -b --noEmit ✅, pnpm check:host ✅ |
-| 2026-11-13 | 清单 5：Web 端到端测试、Red check 与截图/录屏证据生成 | pending | PW_PORT=5304 pnpm e2e:evidence F-0035 ✅ (8/8, 36 screenshots, 8 recordings), Red check ✅ |
+| 2026-11-13 | 清单 5：Web 端到端测试、Red check 与截图/录屏证据生成 | 0dcdf23 | PW_PORT=5304 pnpm e2e:evidence F-0035 ✅ (8/8, 36 screenshots, 8 recordings), Red check ✅ |
 
 ## 自行决定的事项
 
