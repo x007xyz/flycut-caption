@@ -5,6 +5,7 @@ import { access, mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { exportInputSchema, type ExportInput, type ExportResult } from '../../shared/protocol';
+import type { ExportProbeInfo, ExportService, ProgressReporter } from '../services';
 import { createSubtitleBandRenderer, type SubtitleBandRenderer } from '../subtitle-render';
 import type { SubtitleGraphicScene } from '../../shared/subtitle-graphics';
 
@@ -56,10 +57,36 @@ async function writeFrames(
 export const exportPlugin = { name: 'flycut-export', inject: ['hostConfig', 'jobs', 'assets', 'rpc'], apply(ctx: Context) {
   const exportRoot = join(ctx.hostConfig.home, 'exports');
   const bundledFfmpeg = join(ctx.hostConfig.resourceRoot, 'binaries', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
+  const devFfmpeg = join(ctx.hostConfig.resourceRoot, 'src-tauri', 'binaries', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
+  const resolveFfmpeg = async () => process.env.FFMPEG_PATH
+    || await access(bundledFfmpeg).then(() => bundledFfmpeg).catch(() => undefined)
+    || await access(devFfmpeg).then(() => devFfmpeg).catch(() => 'ffmpeg');
 
-  async function run(input: ExportInput, signal: AbortSignal, report: (progress: { status: 'progress'; purpose: 'transcribe'; progress: number; data: string }) => void): Promise<ExportResult> {
+  async function probeStderr(ffmpeg: string, source: string, signal?: AbortSignal): Promise<string> {
+    return new Promise<string>((resolve, reject) => {
+      const child = spawn(ffmpeg, ['-hide_banner', '-i', source, '-t', '0', '-f', 'null', '-'], { stdio: ['ignore', 'ignore', 'pipe'] });
+      let stderr = ''; const abort = () => child.kill('SIGTERM');
+      const timer = setTimeout(() => child.kill('SIGKILL'), 30_000);
+      signal?.addEventListener('abort', abort, { once: true });
+      child.stderr.on('data', data => { if (stderr.length < 65536) stderr += String(data); });
+      child.on('error', reject); child.on('close', () => {
+        clearTimeout(timer); signal?.removeEventListener('abort', abort);
+        if (signal?.aborted) reject(new Error('Export cancelled')); else resolve(stderr);
+      });
+    });
+  }
+
+  async function probeFile(source: string, signal?: AbortSignal): Promise<ExportProbeInfo> {
+    const ffmpeg = await resolveFfmpeg();
+    const info = await probeStderr(ffmpeg, source, signal);
+    const durationMatch = /Duration:\s*(\d+):(\d+):([\d.]+)/.exec(info);
+    const duration = durationMatch ? Number(durationMatch[1]) * 3600 + Number(durationMatch[2]) * 60 + Number(durationMatch[3]) : undefined;
+    const probe = probeVideo(info);
+    return { ...probe, duration, hasAudio: /Stream.*Audio:/.test(info) };
+  }
+
+  async function runFromFile(source: string, input: Omit<ExportInput, 'assetId'>, signal: AbortSignal, report: ProgressReporter): Promise<ExportResult> {
     await mkdir(exportRoot, { recursive: true });
-    const source = ctx.assets.path(input.assetId);
     const id = randomUUID();
     const extension = input.options.format;
     const output = join(exportRoot, `${id}.${extension}`);
@@ -75,19 +102,9 @@ export const exportPlugin = { name: 'flycut-export', inject: ['hostConfig', 'job
     if (!kept.length) throw new Error('没有选择要保留的视频片段');
 
     const args = ['-y', '-i', source];
-    const ffmpeg = process.env.FFMPEG_PATH || await access(bundledFfmpeg).then(() => bundledFfmpeg).catch(() => 'ffmpeg');
+    const ffmpeg = await resolveFfmpeg();
     // Probe through the bundled FFmpeg; ffprobe is not assumed to be installed.
-    const info = await new Promise<string>((resolve, reject) => {
-      const child = spawn(ffmpeg, ['-hide_banner', '-i', source, '-t', '0', '-f', 'null', '-'], { stdio: ['ignore', 'ignore', 'pipe'] });
-      let stderr = ''; const abort = () => child.kill('SIGTERM');
-      const timer = setTimeout(() => child.kill('SIGKILL'), 30_000);
-      signal.addEventListener('abort', abort, { once: true });
-      child.stderr.on('data', data => { if (stderr.length < 65536) stderr += String(data); });
-      child.on('error', reject); child.on('close', () => {
-        clearTimeout(timer); signal.removeEventListener('abort', abort);
-        if (signal.aborted) reject(new Error('Export cancelled')); else resolve(stderr);
-      });
-    });
+    const info = await probeStderr(ffmpeg, source, signal);
     const durationMatch = /Duration:\s*(\d+):(\d+):([\d.]+)/.exec(info);
     const sourceDuration = durationMatch ? Number(durationMatch[1]) * 3600 + Number(durationMatch[2]) * 60 + Number(durationMatch[3]) : undefined;
     if (input.edl && (!sourceDuration || Math.abs(sourceDuration - input.edl.sourceDurationUs / 1e6) > 0.05))
@@ -209,8 +226,14 @@ export const exportPlugin = { name: 'flycut-export', inject: ['hostConfig', 'job
     report({ status: 'progress', purpose: 'transcribe', progress: 100, data: '导出完成' });
     return { assetId, filename: `cut_video_${id}.${extension}`, mimeType: extension === 'webm' ? 'video/webm' : 'video/mp4' };
   }
-  const service = { start(input: ExportInput) { return ctx.jobs.create((signal, report) => run(input, signal, progress => report(progress)),
-    { operationId: input.operationId }); } };
+  const service: ExportService = {
+    probeFile,
+    runFromFile,
+    start(input: ExportInput) {
+      return ctx.jobs.create((signal, report) => runFromFile(ctx.assets.path(input.assetId), input, signal, report),
+        { operationId: input.operationId });
+    },
+  };
   ctx.provide('export', service);
   ctx.effect(() => ctx.rpc.register('export.start', exportInputSchema, input => service.start(input)));
   ctx.effect(() => ctx.rpc.capability('export'));

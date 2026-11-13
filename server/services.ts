@@ -1,4 +1,5 @@
 import type { JobSnapshot, PipelineInput, PipelineResult, ExportInput, AgentInput, TextInput, SemanticCutsInput } from '../shared/protocol';
+import type { ExportResult } from '../shared/protocol';
 import type { AsrRequest, ModelInfo, ModelRef, ProviderKind, ProviderModels, ProviderSummary, VoiceActivityResult } from '../shared/providers';
 import type { ASRProgress, SubtitleTranscript } from '../src/types/subtitle';
 import type { AISettingsImportInput, AISettingsMutationResult, AISettingsRemoveResult, AISettingsSaveInput,
@@ -90,7 +91,12 @@ export interface AgentTool<S extends z.ZodObject = z.ZodObject> {
 }
 export interface AgentToolRegistry { register<S extends z.ZodObject>(tool: AgentTool<S>): () => void; list(): AgentTool[] }
 export interface AgentService { start(input: AgentInput): JobSnapshot }
-export interface ExportService { start(input: ExportInput): JobSnapshot }
+export interface ExportProbeInfo { width?: number; height?: number; fps?: number; duration?: number; hasAudio: boolean }
+export interface ExportService {
+  start(input: ExportInput): JobSnapshot;
+  probeFile(source: string, signal?: AbortSignal): Promise<ExportProbeInfo>;
+  runFromFile(source: string, input: Omit<ExportInput, 'assetId'>, signal: AbortSignal, report: ProgressReporter): Promise<ExportResult>;
+}
 export interface EditorPluginRegistry {
   register(plugin: EditorPlugin): () => void;
   get(id: string): EditorPlugin;
