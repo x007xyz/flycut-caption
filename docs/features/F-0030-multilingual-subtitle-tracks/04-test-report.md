@@ -1,9 +1,9 @@
 ---
 id: F-0030
 stage: 04-test-report
-status: review
-approved_by:
-approved_at:
+status: approved
+approved_by: zhangxiang.chen
+approved_at: 2026-11-13
 ---
 
 # F-0030 多语言字幕轨道与兼容迁移：测试与验收
