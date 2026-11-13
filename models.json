@@ -128,11 +128,11 @@
       "files": [
         {
           "path": "model.int8.onnx",
-          "sha256": null
+          "sha256": "c71f0ce00bec95b07744e116345e33d8cbbe08cef896382cf907bf4b51a2cd51"
         },
         {
           "path": "tokens.txt",
-          "sha256": null
+          "sha256": "f449eb28dc567533d7fa59be34e2abca8784f771850c78a47fb731a31429a1dc"
         }
       ],
       "recognizer_config": {
@@ -163,7 +163,17 @@
           "provider": "github_release",
           "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2"
         }
-      ]
+      ],
+      "recommendation": {
+        "benchmarkId": "F-0001",
+        "cer": "6.29%",
+        "fillerRecall": "98.65%",
+        "sampleCount": 2,
+        "sentenceCount": 1028,
+        "comparedWith": [
+          "paraformer-zh-int8-2023-09-14"
+        ]
+      }
     },
     {
       "id": "sensevoice-small-fp32-zh-en-ja-ko-yue-2024-07-17",
@@ -304,7 +314,7 @@
       "name": "Paraformer 中文 INT8 2023-09-14",
       "family": "paraformer",
       "enabled": true,
-      "recommended": true,
+      "recommended": false,
       "languages": [
         "zh",
         "en"

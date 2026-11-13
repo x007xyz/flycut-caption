@@ -17,6 +17,15 @@ export interface OptionField {
   step?: number;
 }
 
+export interface ModelRecommendation {
+  benchmarkId: string;
+  cer?: string;
+  fillerRecall?: string;
+  sampleCount?: number;
+  sentenceCount?: number;
+  comparedWith?: string[];
+}
+
 export interface ModelInfo {
   id: string;
   name: string;
@@ -30,6 +39,10 @@ export interface ModelInfo {
   status: ModelStatus;
   reason?: string;
   recommended?: boolean;
+  /** True when the model executes locally offline without cloud/network billing. */
+  offline?: boolean;
+  /** Structured benchmark metadata (e.g. F-0001) supporting a recommendation. */
+  recommendation?: ModelRecommendation;
   options?: Record<string, OptionField>;
 }
 
@@ -71,13 +84,22 @@ export const optionFieldSchema = z.object({
   options: z.array(z.object({ value: z.string(), label: z.string() })).optional(),
   min: z.number().optional(), max: z.number().optional(), step: z.number().optional(),
 });
+export const modelRecommendationSchema = z.object({
+  benchmarkId: z.string().min(1).max(64),
+  cer: z.string().max(32).optional(),
+  fillerRecall: z.string().max(32).optional(),
+  sampleCount: z.number().int().positive().optional(),
+  sentenceCount: z.number().int().positive().optional(),
+  comparedWith: z.array(z.string().max(100)).max(20).optional(),
+});
 /** Validates model rows coming from an HTTP Provider; built-in Providers are typed instead. */
 export const modelInfoSchema = z.object({
   id: z.string().regex(MODEL_ID_PATTERN), name: z.string().min(1).max(200),
   role: z.enum(['asr', 'vad', 'punc', 'speaker', 'align', 'tts']), description: z.string().max(2000).optional(),
   languages: z.array(z.string().max(20)).max(200).optional(), timestampLevel: z.enum(['none', 'segment', 'word']).optional(),
   size: z.string().max(50).optional(), status: z.enum(['ready', 'download', 'unavailable']), reason: z.string().max(1000).optional(),
-  recommended: z.boolean().optional(), options: z.record(z.string(), optionFieldSchema).optional(),
+  recommended: z.boolean().optional(), offline: z.boolean().optional(), recommendation: modelRecommendationSchema.optional(),
+  options: z.record(z.string(), optionFieldSchema).optional(),
 });
 
 /** Rejects option keys the model did not declare, and values of the wrong type. */

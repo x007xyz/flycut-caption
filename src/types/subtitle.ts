@@ -43,6 +43,9 @@ export interface ASRProgress {
   file?: string;
   progress?: number;
   total?: number;
+  downloadedBytes?: number;
+  totalBytes?: number;
+  phase?: 'downloading' | 'extracting' | 'verifying' | 'complete';
   result?: SubtitleTranscript;
   time?: number;
   error?: string;

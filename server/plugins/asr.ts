@@ -73,15 +73,15 @@ export const sherpaAsrPlugin = { name: 'flycut-asr-sherpa', inject: ['providers'
           options: [{ value: 'auto', label: '自动（字级优先）' }, { value: 'segment', label: '只要句段' }] };
         return { id: model.id, name: model.name, role: 'asr', description: model.description, languages: languages(model),
           timestampLevel: model.timestamp.token_timestamp_verified ? 'word' : 'segment', size: sizeText(model.artifact.size_mb_estimate),
-          recommended: model.recommended, options,
+          recommended: model.recommended, offline: true, ...(model.recommendation ? { recommendation: model.recommendation } : {}), options,
           ...!binary ? { status: 'unavailable', reason: `找不到 funasr-asr 识别程序，请运行 pnpm build:funasr-sidecar（${sidecar}）` }
             : { status: await ctx.models.locate(model) ? 'ready' : 'download' } };
       }));
       return [...models,
-        { id: 'fsmn-vad', name: 'FSMN-VAD', role: 'vad', description: '中文口播优先的离线人声检测', languages: ['zh'], recommended: true,
+        { id: 'fsmn-vad', name: 'FSMN-VAD', role: 'vad', description: '中文口播优先的离线人声检测', languages: ['zh'], recommended: true, offline: true,
           status: binary && vad ? 'ready' : 'unavailable', ...!binary ? { reason: '找不到 funasr-asr 识别程序，请运行 pnpm build:funasr-sidecar' }
             : !vad ? { reason: '找不到 FSMN VAD 资源，请运行 pnpm fetch:shared-assets' } : {} },
-        { id: 'silero-vad', name: 'Silero VAD', role: 'vad', description: '多语言离线人声检测', languages: ['auto'],
+        { id: 'silero-vad', name: 'Silero VAD', role: 'vad', description: '多语言离线人声检测', languages: ['auto'], offline: true,
           status: binary && silero ? 'ready' : 'unavailable', ...!binary ? { reason: '找不到 funasr-asr 识别程序，请运行 pnpm build:funasr-sidecar' }
             : !silero ? { reason: '找不到 Silero VAD 资源，请运行 pnpm fetch:shared-assets' } : {} },
       ];

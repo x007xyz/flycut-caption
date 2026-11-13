@@ -75,6 +75,7 @@ export interface AvailableModel {
   family: string;
   enabled: boolean;
   recommended: boolean;
+  recommendation?: import('../../shared/providers').ModelRecommendation;
   languages: string[];
   description: string;
   mode: string;
