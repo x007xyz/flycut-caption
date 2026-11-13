@@ -8,6 +8,7 @@ import { languageTrackSchema } from './languageTracks';
 import { modelRefSchema } from './providers';
 import { textRecordSchema } from './text/corrections';
 import { subtitleKeywordSchema } from './text/keywords';
+import { cueDubbingArtifactSchema } from './tts/dubbing';
 
 /** Bump together with a migration in `server/projects/migrations.ts` and a note in ADR-0001. */
 export const PROJECT_FORMAT_VERSION = 4;
@@ -61,6 +62,11 @@ export const projectEditsSchema = z.object({
   languageTracks: z.array(languageTrackSchema).optional(),
   /** F-0030: active track whose translation is projected into the legacy chunk.secondText field. */
   activeLanguageTrackId: z.string().min(1).max(128).nullable().optional(),
+  /**
+   * F-0035: per-cue dubbing audio artifacts stored under `videos/<videoId>/dubbing/<id>.<ext>`.
+   * Additive format-4 extension; missing means none.
+   */
+  dubbings: z.array(cueDubbingArtifactSchema).optional(),
 });
 export type ProjectEdits = z.infer<typeof projectEditsSchema>;
 

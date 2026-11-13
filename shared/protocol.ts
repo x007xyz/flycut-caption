@@ -15,6 +15,7 @@ import {
   ttsSettingsSaveInputSchema, ttsSynthesizeInputSchema,
   type TtsSettingsSaveResult, type TtsSettingsSnapshot,
 } from './tts/settings';
+import { dubCueInputSchema } from './tts/dubbing';
 import type { UploadCapabilities } from './uploads';
 import type { JianyingCapabilities, JianyingPreflightInput, JianyingPreflightResult, JianyingStartInput } from './jianying/draft';
 import type {
@@ -162,6 +163,7 @@ export interface RpcMethods {
   'tts.getSettings': { input: void; output: TtsSettingsSnapshot };
   'tts.saveSettings': { input: z.input<typeof ttsSettingsSaveInputSchema>; output: TtsSettingsSaveResult };
   'tts.synthesize': { input: z.input<typeof ttsSynthesizeInputSchema>; output: JobSnapshot };
+  'dubbing.synthesizeCue': { input: z.input<typeof dubCueInputSchema>; output: JobSnapshot };
   'editing.list': { input: void; output: EditorPluginManifest[] };
   'silence.analyze': { input: z.input<typeof silenceAnalyzeInputSchema>; output: JobSnapshot };
   'agent.tools': { input: void; output: Array<{ name: string; description: string }> };
