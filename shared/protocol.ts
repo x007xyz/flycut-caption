@@ -143,8 +143,8 @@ export interface RpcMethods {
   'aiSettings.test': { input: z.input<typeof aiSettingsTestInputSchema>; output: AISettingsTestResult };
   'aiSettings.import': { input: z.input<typeof aiSettingsImportInputSchema>; output: AISettingsImportResult };
   'tts.getSettings': { input: void; output: TtsSettingsSnapshot };
-  'tts.saveSettings': { input: TtsSettingsSaveInput; output: TtsSettingsSaveResult };
-  'tts.synthesize': { input: TtsSynthesizeInput; output: JobSnapshot };
+  'tts.saveSettings': { input: z.input<typeof ttsSettingsSaveInputSchema>; output: TtsSettingsSaveResult };
+  'tts.synthesize': { input: z.input<typeof ttsSynthesizeInputSchema>; output: JobSnapshot };
   'editing.list': { input: void; output: EditorPluginManifest[] };
   'silence.analyze': { input: z.input<typeof silenceAnalyzeInputSchema>; output: JobSnapshot };
   'agent.tools': { input: void; output: Array<{ name: string; description: string }> };
