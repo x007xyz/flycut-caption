@@ -6,6 +6,30 @@ export type TimestampLevel = 'none' | 'segment' | 'word';
 export type ModelStatus = 'ready' | 'download' | 'unavailable';
 export type OptionValue = string | number | boolean;
 
+export type TtsAudioFormat = 'wav' | 'mp3' | 'ogg' | 'flac';
+
+export interface TtsVoice {
+  id: string;
+  name: string;
+  languages?: string[];
+  gender?: 'female' | 'male' | 'neutral';
+  description?: string;
+}
+
+export interface TtsCapabilities {
+  /** Built-in fixed voices; empty when the model uses a single default voice or cloning only. */
+  voices: TtsVoice[];
+  /** Whether reference-audio voice cloning is supported. */
+  voiceCloning: boolean;
+  /** Provider disclosure/retention terms displayed before sending reference audio. */
+  cloningTerms?: string;
+  /** Maximum reference audio duration accepted for cloning, in seconds. */
+  maxReferenceSeconds?: number;
+  streaming?: boolean;
+  durationControl?: boolean;
+  outputFormats?: TtsAudioFormat[];
+}
+
 export interface OptionField {
   type: 'string' | 'number' | 'boolean' | 'select';
   label: string;
@@ -31,6 +55,8 @@ export interface ModelInfo {
   reason?: string;
   recommended?: boolean;
   options?: Record<string, OptionField>;
+  /** Present for `role: 'tts'` models when the Provider declares TTS-specific capabilities. */
+  tts?: TtsCapabilities;
 }
 
 /** The only way callers address a model. */
@@ -45,6 +71,49 @@ export const optionValuesSchema = z.record(z.string(), z.union([z.string(), z.nu
 export const modelRefSchema = z.object({ providerId: z.string().min(1), modelId: z.string().min(1) });
 export const asrRequestSchema = modelRefSchema.extend({ language: z.string().default('auto'), options: optionValuesSchema.optional() });
 export type AsrRequest = z.infer<typeof asrRequestSchema>;
+
+export const TTS_CLONE_AUTH_STATEMENT_ZH = '这是我本人的声音，或我已获得说话人授权';
+export const TTS_CLONE_AUTH_STATEMENT_EN = 'This is my voice, or I have the speaker’s permission';
+
+export const ttsCloneAuthorizationSchema = z.strictObject({
+  confirmed: z.literal(true),
+  statement: z.string().trim().min(1).max(300),
+  confirmedAt: z.iso.datetime(),
+  sourceLabel: z.string().trim().min(1).max(200).optional(),
+});
+export type TtsCloneAuthorization = z.infer<typeof ttsCloneAuthorizationSchema>;
+
+export const ttsAudioFormatSchema = z.enum(['wav', 'mp3', 'ogg', 'flac']);
+
+export const ttsVoiceSchema = z.object({
+  id: z.string().min(1).max(100),
+  name: z.string().min(1).max(200),
+  languages: z.array(z.string().max(20)).max(50).optional(),
+  gender: z.enum(['female', 'male', 'neutral']).optional(),
+  description: z.string().max(500).optional(),
+});
+
+export const ttsCapabilitiesSchema = z.object({
+  voices: z.array(ttsVoiceSchema).max(200).default([]),
+  voiceCloning: z.boolean().default(false),
+  cloningTerms: z.string().max(2000).optional(),
+  maxReferenceSeconds: z.number().finite().positive().max(300).optional(),
+  streaming: z.boolean().optional(),
+  durationControl: z.boolean().optional(),
+  outputFormats: z.array(ttsAudioFormatSchema).max(10).optional(),
+});
+
+export const ttsRequestSchema = modelRefSchema.extend({
+  text: z.string().trim().min(1).max(5000),
+  voiceId: z.string().trim().min(1).max(100).optional(),
+  language: z.string().trim().min(1).max(20).default('auto'),
+  speed: z.number().finite().min(0.25).max(4).optional(),
+  format: ttsAudioFormatSchema.optional(),
+  options: optionValuesSchema.optional(),
+  cloneReferenceAssetId: z.uuid().optional(),
+  cloneAuthorization: ttsCloneAuthorizationSchema.optional(),
+});
+export type TtsRequest = z.infer<typeof ttsRequestSchema>;
 
 /** F-0006: VAD output shared by built-in and HTTP Providers. Segments are seconds. */
 export interface VoiceActivityResult { vadType: 'fsmn' | 'silero'; duration: number; segments: Array<[number, number]> }
@@ -78,6 +147,7 @@ export const modelInfoSchema = z.object({
   languages: z.array(z.string().max(20)).max(200).optional(), timestampLevel: z.enum(['none', 'segment', 'word']).optional(),
   size: z.string().max(50).optional(), status: z.enum(['ready', 'download', 'unavailable']), reason: z.string().max(1000).optional(),
   recommended: z.boolean().optional(), options: z.record(z.string(), optionFieldSchema).optional(),
+  tts: ttsCapabilitiesSchema.optional(),
 });
 
 /** Rejects option keys the model did not declare, and values of the wrong type. */
@@ -91,5 +161,29 @@ export function checkOptions(model: ModelInfo, options: Record<string, OptionVal
     if (typeof value === 'number' && ((field.min !== undefined && value < field.min) || (field.max !== undefined && value > field.max))) {
       throw new Error(`选项 ${key} 超出范围`);
     }
+  }
+}
+
+/** Validates a TTS request against the target model's declared capabilities and cloning gate. */
+export function checkTtsRequest(model: ModelInfo, request: TtsRequest) {
+  if (model.role !== 'tts') throw new Error(`${model.name} 不是语音合成（TTS）模型`);
+  if (model.status === 'download') throw new Error(`模型未下载：${model.name}`);
+  if (model.status === 'unavailable') throw new Error(`${model.name} 不可用：${model.reason ?? '未知原因'}`);
+  checkOptions(model, request.options);
+  const isCloning = Boolean(request.cloneReferenceAssetId || request.cloneAuthorization);
+  if (isCloning) {
+    if (!model.tts?.voiceCloning) throw new Error(`模型 ${model.name} 不支持声音克隆`);
+    if (!request.cloneReferenceAssetId) throw new Error('声音克隆必须提供参考音频样本');
+    if (!request.cloneAuthorization?.confirmed || !request.cloneAuthorization.statement.trim()) {
+      throw new Error('声音克隆必须先完成本人或说话人授权确认');
+    }
+  } else if (request.voiceId && model.tts?.voices?.length && !model.tts.voices.some(v => v.id === request.voiceId)) {
+    throw new Error(`模型 ${model.name} 不支持音色 ${request.voiceId}`);
+  }
+  if (request.language !== 'auto' && model.languages?.length && !model.languages.includes('auto') && !model.languages.includes(request.language)) {
+    throw new Error(`模型 ${model.name} 不支持语言 ${request.language}`);
+  }
+  if (request.format && model.tts?.outputFormats?.length && !model.tts.outputFormats.includes(request.format)) {
+    throw new Error(`模型 ${model.name} 不支持输出格式 ${request.format}`);
   }
 }

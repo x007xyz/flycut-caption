@@ -10,6 +10,10 @@ import {
   aiSettingsTestInputSchema, type AISettingsImportResult, type AISettingsMutationResult, type AISettingsRemoveResult,
   type AISettingsSaveResult, type AISettingsSnapshot, type AISettingsTestResult,
 } from './aiSettings';
+import {
+  ttsSettingsSaveInputSchema, ttsSynthesizeInputSchema,
+  type TtsSettingsSaveInput, type TtsSettingsSaveResult, type TtsSettingsSnapshot, type TtsSynthesizeInput,
+} from './tts/settings';
 import type { UploadCapabilities } from './uploads';
 import type { JianyingCapabilities, JianyingPreflightInput, JianyingPreflightResult, JianyingStartInput } from './jianying/draft';
 import type { ProjectFile, ProjectListItem, ProjectOpenResult, SaveResult, projectCreateSchema, projectOpenSchema, saveTranscriptSchema,
@@ -87,7 +91,13 @@ export const endpointInputSchema = z.object({
   baseUrl: z.string().url(),
   apiKey: z.string().max(4096).optional(),
   /** OpenAI-compatible endpoints only: model names and their timestamp level. */
-  models: z.array(z.object({ id: z.string().min(1).max(100), timestamps: z.enum(['none', 'segment', 'word']) })).max(50).optional(),
+  models: z.array(z.object({
+    id: z.string().min(1).max(100),
+    role: z.enum(['asr', 'tts']).optional(),
+    timestamps: z.enum(['none', 'segment', 'word']).default('segment'),
+    voices: z.array(z.string().min(1).max(100)).max(100).optional(),
+    languages: z.array(z.string().max(20)).max(50).optional(),
+  })).max(50).optional(),
   timeoutSeconds: z.number().min(10).max(600).default(120),
 });
 export type EndpointInput = z.input<typeof endpointInputSchema>;
@@ -132,6 +142,9 @@ export interface RpcMethods {
   'aiSettings.select': { input: z.input<typeof aiSettingsSelectInputSchema>; output: AISettingsMutationResult };
   'aiSettings.test': { input: z.input<typeof aiSettingsTestInputSchema>; output: AISettingsTestResult };
   'aiSettings.import': { input: z.input<typeof aiSettingsImportInputSchema>; output: AISettingsImportResult };
+  'tts.getSettings': { input: void; output: TtsSettingsSnapshot };
+  'tts.saveSettings': { input: TtsSettingsSaveInput; output: TtsSettingsSaveResult };
+  'tts.synthesize': { input: TtsSynthesizeInput; output: JobSnapshot };
   'editing.list': { input: void; output: EditorPluginManifest[] };
   'silence.analyze': { input: z.input<typeof silenceAnalyzeInputSchema>; output: JobSnapshot };
   'agent.tools': { input: void; output: Array<{ name: string; description: string }> };
