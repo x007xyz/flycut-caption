@@ -1,28 +1,82 @@
 name: release
 
-# 触发条件：推送 v* 标签自动打包发布；或在 Actions 页面手动触发
+# 触发条件：推送 v* 标签自动打包并签名公证发布；或在 Actions 页面手动触发候选包构建
 on:
   push:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      allow_unsigned_candidate:
+        description: 'Allow unsigned test candidate build (never publishes a GitHub Release)'
+        type: boolean
+        default: false
 
 permissions:
   contents: write # 创建 Release 需要写权限
 
 jobs:
+  preflight:
+    name: Signing & Release Preflight
+    runs-on: ubuntu-latest
+    outputs:
+      mode: ${{ steps.mode.outputs.mode }}
+      signed: ${{ steps.mode.outputs.signed }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Determine release signing mode
+        id: mode
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            MODE="release"
+            SIGNED="true"
+          elif [[ "${{ inputs.allow_unsigned_candidate }}" == "true" ]]; then
+            MODE="candidate-unsigned"
+            SIGNED="false"
+          else
+            MODE="candidate-signed"
+            SIGNED="true"
+          fi
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+          echo "signed=$SIGNED" >> "$GITHUB_OUTPUT"
+
+      - name: Verify signing credentials
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: node scripts/release-signing.mjs preflight --platform all --mode "${{ steps.mode.outputs.mode }}"
+
   build:
-    name: Build (${{ matrix.label }})
+    name: Build & Sign (${{ matrix.label }})
+    needs: [preflight]
     strategy:
-      fail-fast: false # 单个平台失败不影响其他平台继续构建
+      fail-fast: false # 单个平台失败不影响其他平台继续构建并留存错误证据
       matrix:
         include:
           # macOS arm64（Apple Silicon）
           - os: macos-14
             label: macos-arm64
+            signing_platform: macos
           # Windows x86_64
           - os: windows-latest
             label: windows-x86_64
+            signing_platform: windows
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -63,6 +117,11 @@ jobs:
           restore-keys: |
             assets-${{ matrix.label }}-
 
+      - name: Build Core and package Host
+        run: |
+          pnpm build:core
+          pnpm package:host
+
       - name: Build funasr sidecar
         shell: bash
         run: |
@@ -87,34 +146,101 @@ jobs:
         shell: bash
         run: pnpm fetch:subtitle-fonts
 
-      - name: Build Tauri app
+      - name: Build, sign & notarize (macOS)
+        if: matrix.signing_platform == 'macos'
         shell: bash
-        run: pnpm exec tauri build
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_EXPECTED_TEAM_ID: ${{ secrets.APPLE_EXPECTED_TEAM_ID }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          FLYCUT_NOTARY_SUBMISSION_ID: ${{ secrets.FLYCUT_NOTARY_SUBMISSION_ID }}
+        run: |
+          pnpm exec tauri build --bundles app --no-sign
+          VERSION=$(node -e "console.log(JSON.parse(require('fs').readFileSync('package.json','utf8')).version)")
+          node scripts/release-signing.mjs macos --mode "${{ needs.preflight.outputs.mode }}" \
+            --app "src-tauri/target/release/bundle/macos/FlyCut Caption.app" \
+            --dmg "src-tauri/target/release/bundle/dmg/FlyCut Caption_${VERSION}_aarch64.dmg" \
+            --output-dir "release-artifacts/${{ matrix.label }}"
 
-      - name: Upload artifacts
+      - name: Build, sign & verify (Windows)
+        if: matrix.signing_platform == 'windows'
+        shell: bash
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          WINDOWS_TIMESTAMP_URL: ${{ secrets.WINDOWS_TIMESTAMP_URL }}
+          WINDOWS_EXPECTED_PUBLISHER: ${{ secrets.WINDOWS_EXPECTED_PUBLISHER }}
+        run: |
+          node scripts/release-signing.mjs windows --mode "${{ needs.preflight.outputs.mode }}" \
+            --output-dir "release-artifacts/${{ matrix.label }}"
+
+      - name: Cleanup fallback temporary signing artifacts (macOS)
+        if: always() && matrix.signing_platform == 'macos'
+        shell: bash
+        run: |
+          rm -rf "${RUNNER_TEMP:-/tmp}"/flycut-kc-* "${RUNNER_TEMP:-/tmp}"/flycut-notary-key-* 2>/dev/null || true
+
+      - name: Upload signing error evidence on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flycut-caption-signing-errors-${{ matrix.label }}
+          path: |
+            release-artifacts/**/signing-error-*.json
+            release-artifacts/**/notary-submission.json
+          if-no-files-found: ignore
+
+      - name: Upload signed release artifacts
+        if: needs.preflight.outputs.signed == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: flycut-caption-${{ matrix.label }}
           path: |
-            src-tauri/target/release/bundle/**/*.dmg
-            src-tauri/target/release/bundle/**/*.app
-            src-tauri/target/release/bundle/**/*.msi
-            src-tauri/target/release/bundle/nsis/*.exe
-            src-tauri/target/release/bundle/**/*.deb
-            src-tauri/target/release/bundle/**/*.AppImage
+            release-artifacts/${{ matrix.label }}/**/*.dmg
+            release-artifacts/${{ matrix.label }}/**/*.msi
+            release-artifacts/${{ matrix.label }}/**/*.exe
+            release-artifacts/${{ matrix.label }}/SHA256SUMS-*.txt
+            release-artifacts/${{ matrix.label }}/signing-evidence-*.json
+          if-no-files-found: error
+
+      - name: Upload unsigned candidate artifacts (not for public release)
+        if: needs.preflight.outputs.signed != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: flycut-caption-unsigned-candidate-${{ matrix.label }}
+          path: |
+            release-artifacts/${{ matrix.label }}/**/*
           if-no-files-found: error
 
   release:
     name: Publish Release
-    needs: [build]
-    # 仅在 tag 触发时发布到 Release；手动触发只产出 artifact
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [preflight, build]
+    # 仅在 tag 触发且正式签名模式全绿时才允许发布到 GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v') && needs.preflight.outputs.mode == 'release'
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+
+      - name: Verify release signatures, notarization, and SHA-256 checksums
+        run: node scripts/release-signing.mjs verify-release-artifacts --dir artifacts
 
       - name: Publish to GitHub Release
         uses: softprops/action-gh-release@v2
@@ -123,6 +249,6 @@ jobs:
             artifacts/**/*.dmg
             artifacts/**/*.msi
             artifacts/**/*.exe
-            artifacts/**/*.deb
-            artifacts/**/*.AppImage
+            artifacts/**/SHA256SUMS-*.txt
+            artifacts/**/signing-evidence-*.json
           generate_release_notes: true

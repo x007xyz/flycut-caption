@@ -5,88 +5,136 @@
 //   pnpm release            检查并打 tag、推送
 //   pnpm release --dry-run  只检查，不打 tag
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 
-const dryRun = process.argv.includes('--dry-run');
-const failures = [];
-
-function run(cmd, args, options = {}) {
-  return execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], ...options }).trim();
-}
-
-function check(name, fn) {
-  try {
-    const detail = fn();
-    console.log(`✅ ${name}${detail ? `：${detail}` : ''}`);
-  } catch (error) {
-    // 子进程失败时优先显示它的 stderr，而不是整条命令行
-    console.log(`❌ ${name}：${error.stderr?.trim() || error.message}`);
-    failures.push(name);
+export function validateReleasePipelineConfig(repoRoot = process.cwd()) {
+  const rootDir = resolve(repoRoot);
+  const tauriConfPath = join(rootDir, 'src-tauri/tauri.conf.json');
+  const tauriConf = JSON.parse(readFileSync(tauriConfPath, 'utf8'));
+  const mac = tauriConf.bundle?.macOS;
+  if (mac?.hardenedRuntime !== true) {
+    throw new Error('src-tauri/tauri.conf.json bundle.macOS.hardenedRuntime must be true');
   }
+  if (!mac?.entitlements) {
+    throw new Error('src-tauri/tauri.conf.json bundle.macOS.entitlements must be configured');
+  }
+  const appPlist = join(rootDir, 'src-tauri', mac.entitlements);
+  const hostNodePlist = join(rootDir, 'src-tauri/entitlements/host-node.plist');
+  if (!existsSync(appPlist)) throw new Error('Missing macOS entitlements file: ' + mac.entitlements);
+  if (!existsSync(hostNodePlist)) throw new Error('Missing host-node entitlements file: src-tauri/entitlements/host-node.plist');
+
+  const win = tauriConf.bundle?.windows;
+  if (win?.digestAlgorithm !== 'sha256' || win?.tsp !== true) {
+    throw new Error('src-tauri/tauri.conf.json bundle.windows must enable sha256 and RFC 3161 tsp');
+  }
+
+  const workflowPath = join(rootDir, '.github/workflows/release.yml');
+  const workflow = readFileSync(workflowPath, 'utf8');
+  for (const required of ['scripts/release-signing.mjs', 'verify-release-artifacts', 'pnpm package:host']) {
+    if (!workflow.includes(required)) {
+      throw new Error('.github/workflows/release.yml is missing required step: ' + required);
+    }
+  }
+  for (const forbidden of ['spctl --master-disable', 'xattr -cr']) {
+    if (workflow.includes(forbidden)) {
+      throw new Error('.github/workflows/release.yml must not weaken OS security checks: ' + forbidden);
+    }
+  }
+  return { macEntitlements: mac.entitlements, windowsDigest: win.digestAlgorithm };
 }
 
-const version = JSON.parse(readFileSync('package.json', 'utf8')).version;
-const tag = `v${version}`;
-const sha = run('git', ['rev-parse', 'HEAD']);
-console.log(`发版 ${tag} @ ${sha.slice(0, 8)}${dryRun ? '（dry run）' : ''}\n`);
+function main() {
+  const dryRun = process.argv.includes('--dry-run');
+  const failures = [];
 
-check('在 main 分支', () => {
-  const branch = run('git', ['rev-parse', '--abbrev-ref', 'HEAD']);
-  if (branch !== 'main') throw new Error(`当前分支是 ${branch}`);
-});
+  function run(cmd, args, options = {}) {
+    return execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], ...options }).trim();
+  }
 
-check('工作区干净', () => {
-  const status = run('git', ['status', '--porcelain']);
-  if (status) throw new Error(`有 ${status.split('\n').length} 个未提交的改动`);
-});
+  function check(name, fn) {
+    try {
+      const detail = fn();
+      console.log(`✅ ${name}${detail ? `：${detail}` : ''}`);
+    } catch (error) {
+      // 子进程失败时优先显示它的 stderr，而不是整条命令行
+      console.log(`❌ ${name}：${error.stderr?.trim() || error.message}`);
+      failures.push(name);
+    }
+  }
 
-check('HEAD 已推送到 origin/main', () => {
-  run('git', ['fetch', 'origin', 'main', '--quiet']);
-  const remote = run('git', ['rev-parse', 'origin/main']);
-  if (remote !== sha) throw new Error(`origin/main 是 ${remote.slice(0, 8)}`);
-});
+  const version = JSON.parse(readFileSync('package.json', 'utf8')).version;
+  const tag = `v${version}`;
+  const sha = run('git', ['rev-parse', 'HEAD']);
+  console.log(`发版 ${tag} @ ${sha.slice(0, 8)}${dryRun ? '（dry run）' : ''}\n`);
 
-check(`tag ${tag} 尚不存在`, () => {
-  if (run('git', ['tag', '--list', tag])) throw new Error('本地已有该 tag');
-  if (run('git', ['ls-remote', '--tags', 'origin', tag])) throw new Error('远端已有该 tag');
-});
+  check('在 main 分支', () => {
+    const branch = run('git', ['rev-parse', '--abbrev-ref', 'HEAD']);
+    if (branch !== 'main') throw new Error(`当前分支是 ${branch}`);
+  });
 
-// src/index.ts 的 version 由 vite.config.ts 从 package.json 注入，不需要单独检查
-check('版本号一致', () => {
-  const versions = {
-    'src-tauri/tauri.conf.json': JSON.parse(readFileSync('src-tauri/tauri.conf.json', 'utf8')).version,
-    'src-tauri/Cargo.toml': readFileSync('src-tauri/Cargo.toml', 'utf8').match(/^version\s*=\s*"([^"]+)"/m)?.[1],
-  };
-  const mismatched = Object.entries(versions).filter(([, v]) => v !== version);
-  if (mismatched.length) throw new Error(mismatched.map(([file, v]) => `${file} 是 ${v ?? '未找到'}`).join('，') + `，package.json 是 ${version}`);
-  return version;
-});
+  check('工作区干净', () => {
+    const status = run('git', ['status', '--porcelain']);
+    if (status) throw new Error(`有 ${status.split('\n').length} 个未提交的改动`);
+  });
 
-// Cargo.toml 写坏只会在构建时暴露（见 LESSONS.md），这里提前解析一次
-check('Cargo.toml 可解析', () => {
-  run('cargo', ['metadata', '--no-deps', '--format-version', '1', '--manifest-path', 'src-tauri/Cargo.toml']);
-});
+  check('HEAD 已推送到 origin/main', () => {
+    run('git', ['fetch', 'origin', 'main', '--quiet']);
+    const remote = run('git', ['rev-parse', 'origin/main']);
+    if (remote !== sha) throw new Error(`origin/main 是 ${remote.slice(0, 8)}`);
+  });
 
-check('该 commit 的 CI 已完成且全绿', () => {
-  const runs = JSON.parse(run('gh', ['run', 'list', '--workflow', 'ci.yml', '--commit', sha,
-    '--json', 'status,conclusion,url', '--limit', '20']));
-  const passed = runs.find((r) => r.status === 'completed' && r.conclusion === 'success');
-  if (passed) return passed.url;
-  if (!runs.length) throw new Error('没有找到 ci.yml 的运行');
-  // 被取消的运行不算通过
-  throw new Error(runs.map((r) => `${r.status}/${r.conclusion || '-'}`).join('，'));
-});
+  check(`tag ${tag} 尚不存在`, () => {
+    if (run('git', ['tag', '--list', tag])) throw new Error('本地已有该 tag');
+    if (run('git', ['ls-remote', '--tags', 'origin', tag])) throw new Error('远端已有该 tag');
+  });
 
-if (failures.length) {
-  console.log(`\n${failures.length} 项检查未通过，不打 tag。`);
-  process.exit(1);
+  // src/index.ts 的 version 由 vite.config.ts 从 package.json 注入，不需要单独检查
+  check('版本号一致', () => {
+    const versions = {
+      'src-tauri/tauri.conf.json': JSON.parse(readFileSync('src-tauri/tauri.conf.json', 'utf8')).version,
+      'src-tauri/Cargo.toml': readFileSync('src-tauri/Cargo.toml', 'utf8').match(/^version\s*=\s*"([^"]+)"/m)?.[1],
+    };
+    const mismatched = Object.entries(versions).filter(([, v]) => v !== version);
+    if (mismatched.length) throw new Error(mismatched.map(([file, v]) => `${file} 是 ${v ?? '未找到'}`).join('，') + `，package.json 是 ${version}`);
+    return version;
+  });
+
+  // Cargo.toml 写坏只会在构建时暴露（见 LESSONS.md），这里提前解析一次
+  check('Cargo.toml 可解析', () => {
+    run('cargo', ['metadata', '--no-deps', '--format-version', '1', '--manifest-path', 'src-tauri/Cargo.toml']);
+  });
+
+  check('签名与发版流水线配置完整', () => {
+    const info = validateReleasePipelineConfig();
+    return `${info.macEntitlements} / win:${info.windowsDigest}`;
+  });
+
+  check('该 commit 的 CI 已完成且全绿', () => {
+    const runs = JSON.parse(run('gh', ['run', 'list', '--workflow', 'ci.yml', '--commit', sha,
+      '--json', 'status,conclusion,url', '--limit', '20']));
+    const passed = runs.find((r) => r.status === 'completed' && r.conclusion === 'success');
+    if (passed) return passed.url;
+    if (!runs.length) throw new Error('没有找到 ci.yml 的运行');
+    // 被取消的运行不算通过
+    throw new Error(runs.map((r) => `${r.status}/${r.conclusion || '-'}`).join('，'));
+  });
+
+  if (failures.length) {
+    console.log(`\n${failures.length} 项检查未通过，不打 tag。`);
+    process.exit(1);
+  }
+
+  if (dryRun) {
+    console.log(`\n全部通过。去掉 --dry-run 即可创建并推送 ${tag}。`);
+    process.exit(0);
+  }
+
+  run('git', ['tag', '-a', tag, '-m', tag]);
+  run('git', ['push', 'origin', tag], { stdio: 'inherit' });
+  console.log(`\n已推送 ${tag}，release.yml 开始打包。`);
 }
 
-if (dryRun) {
-  console.log(`\n全部通过。去掉 --dry-run 即可创建并推送 ${tag}。`);
-  process.exit(0);
+if (import.meta.url === new URL(process.argv[1], 'file:').href) {
+  main();
 }
-
-run('git', ['tag', '-a', tag, '-m', tag]);
-run('git', ['push', 'origin', tag], { stdio: 'inherit' });
-console.log(`\n已推送 ${tag}，release.yml 开始打包。`);
