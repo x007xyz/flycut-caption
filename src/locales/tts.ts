@@ -123,4 +123,4 @@ const zh: typeof en = {
 
 export const ttsCopy = (language: string) => (language.startsWith('zh') ? zh : en);
 export const fillTtsCopy = (template: string, values: Record<string, string | number>) =>
-  template.replace(/{(w+)}/g, (_, key: string) => String(values[key] ?? ''));
+  template.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key] ?? ''));

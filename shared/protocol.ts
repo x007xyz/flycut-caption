@@ -12,7 +12,7 @@ import {
 } from './aiSettings';
 import {
   ttsSettingsSaveInputSchema, ttsSynthesizeInputSchema,
-  type TtsSettingsSaveInput, type TtsSettingsSaveResult, type TtsSettingsSnapshot, type TtsSynthesizeInput,
+  type TtsSettingsSaveResult, type TtsSettingsSnapshot,
 } from './tts/settings';
 import type { UploadCapabilities } from './uploads';
 import type { JianyingCapabilities, JianyingPreflightInput, JianyingPreflightResult, JianyingStartInput } from './jianying/draft';

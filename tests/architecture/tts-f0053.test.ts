@@ -509,6 +509,32 @@ test('F-0053/AC-2 AC-4 reference HTTP TTS server contract is reproducible end-to
     const checked = validateTtsAudio(audioBytes, 'audio/wav');
     assert.equal(checked.format, 'wav');
     assert.ok((checked.durationSeconds ?? 0) > 0.2);
+
+    // Second independent client connected to the same live Host reads consistent settings & audition
+    const initialSettings = await host.call('tts.getSettings');
+    const saveRes = await host.call('tts.saveSettings', {
+      hostId: initialSettings.hostId,
+      expectedRevision: initialSettings.revision,
+      settings: {
+        selectedModel: { providerId: 'flycut:example-tts', modelId: 'kokoro-demo' },
+        voiceId: 'zf_xiaobei',
+        language: 'zh',
+        speed: 1.0,
+        options: {},
+      },
+    });
+    assert.equal(saveRes.status, 'saved');
+
+    const secondClientRes = await fetch(`${host.base}/rpc`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer f0053-token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'client-request', rpcId: 'client-2', method: 'tts.getSettings', payload: {} }),
+    });
+    const client2Snapshot = (await secondClientRes.json()).result.value;
+    assert.deepEqual(client2Snapshot.selectedModel, { providerId: 'flycut:example-tts', modelId: 'kokoro-demo' });
+    assert.equal(client2Snapshot.voiceId, 'zf_xiaobei');
+    assert.equal(client2Snapshot.revision, saveRes.snapshot.revision);
+    assert.equal(client2Snapshot.lastAudition.assetId, (synth.result as any).assetId);
   } finally {
     await host.close();
     await example.close();

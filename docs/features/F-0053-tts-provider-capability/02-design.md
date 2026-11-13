@@ -112,12 +112,12 @@ approved_at: 2026-11-13
 
 ## 实现清单
 
-- [ ] 1. 共享契约与音频校验：扩展 `shared/providers.ts`（`TtsCapabilities`、`TtsVoice`、`TtsRequest`、`TtsCloneAuthorization`）与 `shared/protocol.ts`，新增 `shared/tts/audio.ts` 与 `shared/tts/settings.ts` 及单元测试。
-- [ ] 2. Provider 注册表与 HTTP TTS 协议：更新 `server/services.ts`、`server/plugins/providers.ts`、`server/providers/httpProvider.ts` 与 `server/plugins/endpoints.ts`，支持 `capabilities: ["tts"]`、`/v1/tts/jobs`（含克隆授权头、鉴权、超时、取消、同源音频下载与损坏音频拒绝）及单 Provider 多能力共存。
-- [ ] 3. Host TTS 插件与持久化：实现 `server/plugins/tts.ts` 并在 `server/profile.ts` 注册，完成 `tts.getSettings` / `tts.saveSettings`（`hostId` + `revision` + `operationId`）/ `tts.synthesize`（资产存储与权限/授权校验），并补全 `tests/architecture/tts-f0053.test.ts`。
-- [ ] 4. 协议文档与可复现示例服务端：更新 `docs/provider-http-protocol.md` 与 `docs/subsystems/providers.md`，新增可独立运行与复现的示例 HTTP TTS Provider `scripts/examples/tts-provider-server.mjs` 并通过架构测试验证。
-- [ ] 5. 设置页独立 TTS 面板与客户端闭环：新增 `src/locales/tts.ts`、`src/services/ttsService.ts` 与 `src/components/TTS/TTSSettingsPanel.tsx`，接入 `SettingsDialog.tsx`，实现空态跳转、模型与音色/参数选择、能力限制提示、本人授权克隆测试、加载/处理中/取消、重开与多端一致、失败重试/先查后发与版本冲突处理。
-- [ ] 6. 端到端界面验收与静态/架构全量检查：编写 `tests/e2e/features/F-0053.spec.ts`（覆盖中英文、明暗主题与 AC-3/4/5/6/7/8 全状态），用 `PW_PORT=5194 pnpm e2e:evidence F-0053` 生成截图与录屏，并执行全量静态检查与真实 Host 验证。
+- [x] 1. 共享契约与音频校验：扩展 `shared/providers.ts`（`TtsCapabilities`、`TtsVoice`、`TtsRequest`、`TtsCloneAuthorization`）与 `shared/protocol.ts`，新增 `shared/tts/audio.ts` 与 `shared/tts/settings.ts` 及单元测试。
+- [x] 2. Provider 注册表与 HTTP TTS 协议：更新 `server/services.ts`、`server/plugins/providers.ts`、`server/providers/httpProvider.ts` 与 `server/plugins/endpoints.ts`，支持 `capabilities: ["tts"]`、`/v1/tts/jobs`（含克隆授权头、鉴权、超时、取消、同源音频下载与损坏音频拒绝）及单 Provider 多能力共存。
+- [x] 3. Host TTS 插件与持久化：实现 `server/plugins/tts.ts` 并在 `server/profile.ts` 注册，完成 `tts.getSettings` / `tts.saveSettings`（`hostId` + `revision` + `operationId`）/ `tts.synthesize`（资产存储与权限/授权校验），并补全 `tests/architecture/tts-f0053.test.ts`。
+- [x] 4. 协议文档与可复现示例服务端：更新 `docs/provider-http-protocol.md` 与 `docs/subsystems/providers.md`，新增可独立运行与复现的示例 HTTP TTS Provider `scripts/examples/tts-provider-server.mjs` 并通过架构测试验证。
+- [x] 5. 设置页独立 TTS 面板与客户端闭环：新增 `src/locales/tts.ts`、`src/services/ttsService.ts` 与 `src/components/TTS/TTSSettingsPanel.tsx`，接入 `SettingsDialog.tsx`，实现空态跳转、模型与音色/参数选择、能力限制提示、本人授权克隆测试、加载/处理中/取消、重开与多端一致、失败重试/先查后发与版本冲突处理。
+- [x] 6. 端到端界面验收与静态/架构全量检查：编写 `tests/e2e/features/F-0053.spec.ts`（覆盖中英文、明暗主题与 AC-3/4/5/6/7/8 全状态），用 `PW_PORT=5194 pnpm e2e:evidence F-0053` 生成截图与录屏，并执行全量静态检查与真实 Host 验证。
 
 ## 验证计划
 
