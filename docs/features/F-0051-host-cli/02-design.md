@@ -68,7 +68,7 @@ E2E 测试 `tests/e2e/features/F-0051.spec.ts` 覆盖中英文与明暗主题下
 
 ## 架构决策
 
-- [ADR-0012：Host CLI 应用服务与客户端确认边界](../../20-architecture/adr/0012-cli-host-confirmations.md)（`proposed`，待维护者验收确认）。
+- [ADR-0012：Host CLI 应用服务与客户端确认边界](../../20-architecture/adr/0012-cli-host-confirmations.md)（`accepted`，维护者 2026-11-13 确认本需求时一并接受）。
 
 ## 自行决定的事项
 
