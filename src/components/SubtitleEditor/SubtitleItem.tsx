@@ -1,6 +1,6 @@
 // 字幕项组件 - Aimu 风格
 
-import { useCallback, useState, useEffect, useRef, type ReactNode } from 'react';
+import { useCallback, useMemo, useState, useEffect, useRef, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import type { SubtitleChunk } from '@/types/subtitle';
 import { Trash2, RotateCcw, Plus, SplitSquareHorizontal } from 'lucide-react';
@@ -13,6 +13,9 @@ import type { FindMatch } from '../../../shared/text/findReplace';
 import { markTextDiff, type CorrectionSuggestion } from '../../../shared/text/corrections';
 import { isTranslationOutdated } from '../../../shared/languageTracks';
 import { languageTrackCopy } from '@/locales/languageTracks';
+import { keywordCopy } from '@/locales/keywords';
+import { removeChunkKeyword, toggleChunkKeyword, tokenizeSubtitleForKeywords } from '../../../shared/text/keywords';
+import { Tag } from 'lucide-react';
 
 interface SubtitleItemProps {
   chunk: SubtitleChunk;
@@ -80,6 +83,7 @@ export function SubtitleItem(props: SubtitleItemProps) {
   const update = useUpdate();
   const deleteChunk = useDelete();
   const displayMode = useAppStore(state => state.display);
+  const setChunkKeywords = useHistoryStore(state => state.setChunkKeywords);
   const setDisplayMode = useAppStore(state => state.setDisplay);
   const activeTrack = useHistoryStore(state => state.languageTracks.find(track => track.id === state.activeLanguageTrackId));
   const keepTranslation = useHistoryStore(state => state.keepLanguageTranslation);
@@ -91,6 +95,9 @@ export function SubtitleItem(props: SubtitleItemProps) {
   const [secondText, setSecondText] = useState(() => draft?.secondText ?? (chunk.secondText || ''));
   const [isExpanded, setIsExpanded] = useState(() => draft?.isExpanded ?? false);
   const [hasOverflowText, setHasOverflowText] = useState(false);
+  const [keywordPickerOpen, setKeywordPickerOpen] = useState(false);
+  const [keywordSelection, setKeywordSelection] = useState<{ start: number; end: number } | null>(null);
+  const [keywordAnchor, setKeywordAnchor] = useState<number | null>(null);
   const previousDisplayTextRef = useRef(displayText);
   const previousSecondTextRef = useRef(chunk.secondText || '');
   const mainTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -137,6 +144,39 @@ export function SubtitleItem(props: SubtitleItemProps) {
     const offset = Math.min(0.001, (end - start) * 0.01);
     onSeekTo(start + offset);
   }, [chunk.timestamp, onSeekTo]);
+
+  const keywords = useMemo(() => chunk.keywords ?? [], [chunk.keywords]);
+  const kwCopy = keywordCopy(language);
+  const keywordTokens = keywordPickerOpen ? tokenizeSubtitleForKeywords(mainText) : [];
+
+  const commitKeywords = useCallback((next: ReturnType<typeof toggleChunkKeyword>) => {
+    setChunkKeywords(chunk.id, next);
+  }, [chunk.id, setChunkKeywords]);
+
+  const handleKeywordSelection = useCallback(() => {
+    const textarea = mainTextareaRef.current;
+    if (!textarea) { setKeywordSelection(null); return; }
+    const { selectionStart, selectionEnd } = textarea;
+    setKeywordSelection(selectionEnd > selectionStart ? { start: selectionStart, end: selectionEnd } : null);
+  }, []);
+
+  const toggleSelectionKeyword = useCallback((event: React.MouseEvent) => {
+    event.stopPropagation();
+    if (!keywordSelection) return;
+    commitKeywords(toggleChunkKeyword(keywords, mainText, keywordSelection.start, keywordSelection.end, 'manual'));
+    setKeywordSelection(null);
+  }, [commitKeywords, keywordSelection, keywords, mainText]);
+
+  const toggleTokenKeyword = useCallback((tokenStart: number, tokenEnd: number, shift: boolean) => {
+    const start = shift && keywordAnchor !== null ? Math.min(keywordAnchor, tokenStart) : tokenStart;
+    const end = shift && keywordAnchor !== null ? Math.max(keywordAnchor, tokenEnd) : tokenEnd;
+    commitKeywords(toggleChunkKeyword(keywords, mainText, start, end, 'manual'));
+    setKeywordAnchor(tokenStart);
+  }, [commitKeywords, keywordAnchor, keywords, mainText]);
+
+  const removeKeyword = useCallback((start: number, end: number) => {
+    commitKeywords(removeChunkKeyword(keywords, mainText, start, end));
+  }, [commitKeywords, keywords, mainText]);
 
   const handleDeleteClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -295,6 +335,14 @@ export function SubtitleItem(props: SubtitleItemProps) {
             <button className="p-1 rounded transition-colors text-aimu-text-muted hover:text-aimu-text-primary" title={t('components.subtitleEditor.addSubtitle')}>
               <Plus className="w-3.5 h-3.5" />
             </button>
+            <button
+              data-testid="keyword-picker-toggle"
+              onClick={(e) => { e.stopPropagation(); setKeywordPickerOpen(open => !open); }}
+              className={cn('p-1 rounded transition-colors', keywordPickerOpen ? 'text-aimu-purple' : 'text-aimu-text-muted hover:text-aimu-text-primary')}
+              title={kwCopy.keywordsButton}
+            >
+              <Tag className="w-3.5 h-3.5" />
+            </button>
           </>
         )}
       </div>
@@ -344,6 +392,7 @@ export function SubtitleItem(props: SubtitleItemProps) {
               }}
               onBlur={handleMainBlur}
               onKeyDown={handleKeyDown}
+              onSelect={handleKeywordSelection}
               onClick={(e) => e.stopPropagation()}
               className={cn(
                 'w-full bg-transparent border-none focus:outline-none focus:ring-0 text-sm leading-6 p-1 text-aimu-text-primary resize-none overflow-hidden whitespace-pre-wrap break-words cursor-text',
@@ -354,6 +403,59 @@ export function SubtitleItem(props: SubtitleItemProps) {
               rows={1}
               style={{ minHeight: '24px' }}
             />
+          </div>
+        )}
+
+        {isActive && (keywordSelection || keywords.length > 0 || keywordPickerOpen) && (
+          <div className="mt-1 flex flex-col gap-1" data-testid="keyword-row-tools">
+            {keywordSelection && (
+              <button
+                type="button"
+                data-testid="keyword-mark-selection"
+                onClick={toggleSelectionKeyword}
+                className="self-start rounded border border-aimu-purple/40 bg-aimu-purple/10 px-2 py-0.5 text-[10px] font-medium text-aimu-purple"
+              >
+                {keywords.some(kw => kw.start === keywordSelection.start && kw.end === keywordSelection.end)
+                  ? kwCopy.unmarkKeyword : kwCopy.markKeyword}
+              </button>
+            )}
+            {keywordPickerOpen && (
+              <div data-testid="keyword-token-picker" className="flex flex-wrap items-center gap-1 rounded border border-aimu-border-light bg-aimu-input/40 px-2 py-1">
+                <span className="text-[10px] text-aimu-text-muted">{kwCopy.pickerHint}</span>
+                {keywordTokens.filter(token => token.selectable).map(token => {
+                  const active = keywords.some(kw => kw.start === token.start && kw.end === token.end);
+                  return (
+                    <button
+                      key={`${token.start}-${token.end}`}
+                      type="button"
+                      data-testid="keyword-token"
+                      data-active={active ? 'true' : undefined}
+                      onClick={(event) => { event.stopPropagation(); toggleTokenKeyword(token.start, token.end, event.shiftKey); }}
+                      className={cn('rounded px-1 text-[11px] transition-colors',
+                        active ? 'bg-aimu-purple text-white' : 'bg-aimu-panel text-aimu-text-secondary hover:text-aimu-text-primary')}
+                    >
+                      {token.text}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {keywords.length > 0 && (
+              <div data-testid="keyword-chips" className="flex flex-wrap items-center gap-1">
+                {keywords.map(kw => (
+                  <span key={`${kw.start}-${kw.end}`} className="inline-flex items-center gap-1 rounded bg-amber-300/20 px-1.5 py-0.5 text-[10px] text-amber-800 dark:text-amber-200">
+                    {kw.text}
+                    <button
+                      type="button"
+                      data-testid="keyword-remove"
+                      aria-label={kwCopy.removeKeyword.replace('{text}', kw.text)}
+                      onClick={(event) => { event.stopPropagation(); removeKeyword(kw.start, kw.end); }}
+                      className="text-aimu-text-muted hover:text-aimu-coral"
+                    >×</button>
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
