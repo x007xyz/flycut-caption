@@ -67,7 +67,11 @@ export class ProjectStore {
   /** Finishes permanent deletes a crash or shutdown interrupted (F-0003 AC-5). */
   async finishPurges() {
     const names = await readdir(this.root).catch(() => [] as string[]);
-    await Promise.all(names.filter(name => name.startsWith('.purge-')).map(name => rm(join(this.root, name), { recursive: true, force: true })));
+    await Promise.all(
+      names
+        .filter(name => name.startsWith('.purge-') || name.startsWith('.import-'))
+        .map(name => rm(join(this.root, name), { recursive: true, force: true })),
+    );
   }
 
   /**
