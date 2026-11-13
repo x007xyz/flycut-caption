@@ -296,18 +296,25 @@ export function FlyCutCaptionContent(props: FlyCutCaptionProps) {
   // 否则由字幕区展示推荐模型下载与验证引导，校验完成前不能识别。
   const { isASRLoading, asrProgress, startASR } = useASR({ onSubtitleGenerated });
   const asrStartedRef = useRef(false);
+  const guidedInTranscribeRef = useRef(false);
 
   useEffect(() => {
     if (stage === 'transcribe' && videoFile && !isASRLoading && !asrStartedRef.current) {
-      if (!canAutoStartASR) return;
+      if (modelsLoading) return;
+      if (!canAutoStartASR) {
+        guidedInTranscribeRef.current = true;
+        return;
+      }
+      if (guidedInTranscribeRef.current) return;
       asrStartedRef.current = true;
       void startASR(videoFile);
     }
     // 进入非 transcribe 阶段时重置标记，允许下次重新触发
     if (stage !== 'transcribe') {
       asrStartedRef.current = false;
+      guidedInTranscribeRef.current = false;
     }
-  }, [stage, videoFile, isASRLoading, canAutoStartASR, startASR]);
+  }, [stage, videoFile, isASRLoading, modelsLoading, canAutoStartASR, startASR]);
 
   // Component ready effect
   useEffect(() => {

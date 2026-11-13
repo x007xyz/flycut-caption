@@ -25,7 +25,7 @@ import { notifyProviderModelsChanged, useModelDownloads, useProviderModels } fro
 import { useClientRuntime } from '@/runtime/context';
 import { useTranslation } from '@/contexts/LocaleProvider';
 import { asrModelsCopy, formatModelsText } from '@/locales/models';
-import { formatByteSize, modelStateSignature, shouldPreserveUserSelection } from '@/utils/modelRecommendation';
+import { formatByteSize, modelStateSignature, pickDefaultOfflineAsrModel, shouldPreserveUserSelection } from '@/utils/modelRecommendation';
 import { RecommendedModelCard } from './RecommendedModelCard';
 
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error);
@@ -38,6 +38,14 @@ export function ModelsPanel() {
   const asrModel = useAppStore(state => state.asrModel);
   const { groups, loading, error, refresh } = useProviderModels();
   const downloads = useModelDownloads();
+
+  useEffect(() => {
+    if (loading || !groups.length) return;
+    const current = app.getState().asrModel;
+    if (shouldPreserveUserSelection(groups, current)) return;
+    const pick = pickDefaultOfflineAsrModel(groups);
+    if (pick) app.getState().setASRModel({ providerId: pick.provider.id, modelId: pick.model.id });
+  }, [loading, groups, app]);
 
   const download = async (ref: ModelRef, model: ModelInfo) => {
     try {

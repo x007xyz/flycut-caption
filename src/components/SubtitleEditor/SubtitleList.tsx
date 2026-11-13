@@ -32,6 +32,7 @@ import { languageTrackCopy } from '@/locales/languageTracks';
 import type { ProviderModels } from '../../../shared/providers';
 import { RecommendedModelCard } from '@/components/ASR/RecommendedModelCard';
 import { asrModelsCopy } from '@/locales/models';
+import { findModel } from '@/hooks/useProviderModels';
 
 interface StoredSubtitleDraft extends SubtitleItemDraft {
   baseMainText: string;
@@ -117,6 +118,7 @@ export function SubtitleList({
   );
   
   const videoFile = useAppStore(state => state.videoFile);
+  const asrModel = useAppStore(state => state.asrModel);
   const currentTime = useAppStore(state => state.currentTime);
   const setCurrentTime = useAppStore(state => state.setCurrentTime);
   const displayMode = useAppStore(state => state.display);
@@ -427,12 +429,13 @@ export function SubtitleList({
   if (!transcript.chunks || transcript.chunks.length === 0) {
     if (videoFile) {
       const mc = asrModelsCopy(uiLanguage);
+      const selectedReady = findModel(modelGroups ?? [], asrModel)?.model.status === 'ready';
       return (
         <div data-testid="subtitle-model-guide" className={cn('flex flex-col items-center justify-center overflow-y-auto p-6 bg-aimu-panel h-full', className)}>
           <div className="w-full max-w-xl space-y-3">
             <div className="space-y-1">
-              <h2 className="text-sm font-semibold text-aimu-text-primary">{mc.missingTitle}</h2>
-              <p className="text-xs text-aimu-text-muted">{mc.missingDesc}</p>
+              <h2 className="text-sm font-semibold text-aimu-text-primary">{selectedReady ? mc.readyToTranscribeTitle : mc.missingTitle}</h2>
+              <p className="text-xs text-aimu-text-muted">{selectedReady ? mc.readyToTranscribeDesc : mc.missingDesc}</p>
             </div>
             <RecommendedModelCard
               showTranscribeAction

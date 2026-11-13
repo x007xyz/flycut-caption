@@ -219,7 +219,7 @@ export function RecommendedModelCard({
       </div>
 
       {/* Metadata pills (AC-1) */}
-      <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 rounded-md bg-muted/40 p-2 text-[11px] sm:grid-cols-4">
+      <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 rounded-md bg-muted/40 p-2 text-[11px] sm:grid-cols-2">
         <div>
           <dt className="text-muted-foreground">{mc.providerLabel}</dt>
           <dd className="mt-0.5 flex items-center gap-1 font-medium text-foreground truncate" title={`${provider.name} (${provider.id})`}>
@@ -243,7 +243,7 @@ export function RecommendedModelCard({
         </div>
         <div>
           <dt className="text-muted-foreground">{mc.timestampLabel}</dt>
-          <dd className="mt-0.5 font-medium text-foreground truncate" title={timestampText}>{timestampText}</dd>
+          <dd className="mt-0.5 font-medium text-foreground">{timestampText}</dd>
         </div>
       </dl>
 
