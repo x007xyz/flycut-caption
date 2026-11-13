@@ -24,6 +24,7 @@ approved_at:
 | 2026-11-13 | 2. Host 备份导出/预检/导入服务与安全隔离 | ac00a52 | pnpm check:host, pnpm tsc -b --noEmit, pnpm eslint, projects-f0023.test.ts (2/2) |
 | 2026-11-13 | 3. Tauri 桌面外壳对话框与流式暂存桥接 | 0048dfc | cargo test backup::tests (2/2) |
 | 2026-11-13 | 4–5. 前端备份服务、任务追踪、双语与导出/导入 UI | 8d79092 | pnpm tsc -b --noEmit, pnpm check:host, pnpm eslint |
+| 2026-11-13 | 6. E2E 回归与视觉证据 | af6b3dd | PW_PORT=5302 pnpm e2e:evidence F-0023 (8/8) |
 
 ## 自行决定的事项
 
