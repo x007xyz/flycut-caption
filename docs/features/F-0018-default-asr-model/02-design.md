@@ -123,7 +123,7 @@ approved_at: 2026-11-13
 - [x] 2. **Host 下载进度、磁盘检查、SHA-256 校验与取消**：完善 `server/plugins/models.ts` 与 `server/plugins/providers.ts`（字节进度、`statfs` 磁盘不足/ENOSPC 处理、取消清理、校验完成后才就绪、并发去重），补充 `tests/architecture/default-asr-model.test.ts` 含真实本地 HTTP 下载校验 + `funasr-asr` 中文口播识别与重启保持验证。
 - [x] 3. **前端安全选型、下载状态管理与过期防护**：实现 `src/utils/modelRecommendation.ts`（含单元测试）、完善 `src/services/asrService.ts`、`src/hooks/useProviderModels.ts`、`src/hooks/useASR.ts` 与 `src/locales/models.ts`。
 - [x] 4. **推荐引导卡片与三大入口集成**：新增 `src/components/ASR/RecommendedModelCard.tsx`，改造 `ModelsPanel.tsx`、`ASRSettingsPanel.tsx`、`SettingsDialog.tsx`、`SubtitleList.tsx`、`SubtitleEditorPanel.tsx` 与 `FlyCutCaption.tsx`，覆盖中英文与明暗主题的全部生命周期状态。
-- [ ] 5. **端到端验收与全量回归**：编写 `tests/e2e/features/F-0018.spec.ts`（带 `F-0018/AC-n`），使用 `PW_PORT=5196 pnpm e2e:evidence F-0018` 生成中英文及明暗主题截图，完成全部静态检查、架构测试与真实闭环验证。
+- [x] 5. **端到端验收与全量回归**：编写 `tests/e2e/features/F-0018.spec.ts`（带 `F-0018/AC-n`），使用 `PW_PORT=5196 pnpm e2e:evidence F-0018` 生成中英文及明暗主题截图，完成全部静态检查、架构测试与真实闭环验证。
 
 ## 验证计划
 
