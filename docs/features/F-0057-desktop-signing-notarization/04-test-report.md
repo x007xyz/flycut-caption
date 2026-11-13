@@ -1,9 +1,9 @@
 ---
 id: F-0057
 stage: 04-test-report
-status: review
-approved_by:
-approved_at:
+status: approved
+approved_by: zhangxiang.chen
+approved_at: 2026-11-13
 ---
 
 # F-0057 桌面安装包签名与公证：测试与验收
@@ -21,7 +21,7 @@ approved_at:
 - **幂等公证状态机（`scripts/signing/macos-notarize.mjs`）**：支持 App Store Connect API Key（`.p8` 临时 `0600` 写入）或 Apple ID。已有 `submissionId`（`FLYCUT_NOTARY_SUBMISSION_ID` 或状态文件）时先调 `xcrun notarytool info` 查询；新提交使用 `--no-wait` 立即落盘 `submissionId`；超时保留 `submissionId` 并阻断发布；拒绝拉取脱敏日志留证并阻断；通过后对 `.dmg` 与 `.app` 执行 `stapler staple`、`stapler validate` 与 `spctl` 评估。
 - **Windows 签名与验签（`scripts/signing/windows.mjs`）**：通过 PowerShell `Import-PfxCertificate` 将证书导入临时 `Cert:\CurrentUser\My`（密码经环境变量 `SecureString` 传入，不进命令行），先签 `binaries/*.exe` 与 `host/**/*.{node,dll}`，再通过临时 Tauri 配置覆写签主程序及 `.msi`/`-setup.exe`，并用 `signtool verify /pa /v` 与 `Get-AuthenticodeSignature` 核验 `Status == Valid`、RFC 3161 时间戳和发布者主题，最后在 `finally` 清除证书。
 - **发版流水线、本地闸门与运维手册**：`scripts/release-signing.mjs` 统一承接 `preflight`、`macos`、`windows` 与 `verify-release-artifacts`；`.github/workflows/release.yml` 补齐 `pnpm build:core` 与 `pnpm package:host`，并在 `release` 作业发布前校验双平台证据与 `SHA256SUMS`；`scripts/release.mjs` 打 tag 前先校验发版配置完整性；`docs/40-ops/runbooks/desktop-signing-notarization.md` 记录 Secrets 配置、超时续接及禁止绕过系统安全检查的运维边界。
-- **新增 proposed ADR**：[ADR-0012 桌面安装包签名、公证与发版门禁边界](../../20-architecture/adr/0012-desktop-signing-notarization.md)（`status: proposed`，待维护者确认本报告时一并改为 `accepted`）。
+- **新增 ADR**：[ADR-0014 桌面安装包签名、公证与发版门禁边界](../../20-architecture/adr/0014-desktop-signing-notarization.md)（`status: accepted`，维护者 2026-11-13 确认）。
 - **与设计的偏差**：无重大偏差。本机无签发证书与 Windows 环境，因此在真实构建的 `FlyCut Caption.app` 上实测了 Mach-O/原生模块扫描、本地自包含检查与 `preflight` 阻断，并把真实签发、公证装订及干净系统安装验证如实记为 `⏸ Not run`。
 
 ## 自行决定的事项

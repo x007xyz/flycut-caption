@@ -1,13 +1,13 @@
 ---
-id: ADR-0012
-status: proposed     # proposed → accepted → superseded / deprecated
+id: ADR-0014
+status: accepted     # proposed → accepted → superseded / deprecated
 date: 2026-11-13
-deciders:
+deciders: zhangxiang.chen
 feature: F-0057
 superseded_by:
 ---
 
-# ADR-0012 桌面安装包签名、公证与发版门禁边界
+# ADR-0014 桌面安装包签名、公证与发版门禁边界
 
 ## 背景
 
@@ -43,4 +43,4 @@ Tauri 默认打包不会为 `bundle.resources` 下的嵌套二进制和 `.node` 
 
 - 正式版本发版前必须配置 Apple Developer 签名/公证凭据与 Windows 代码签名凭据，否则 `release.yml` 会在前置阶段阻断发布。
 - `scripts/release.mjs` 在本地打 tag 前校验发版流水线与 entitlements 配置完整性，CI 侧则负责持密签名、公证、验签与生成校验和/证据清单。
-- 本 ADR 在维护者完成 F-0057 验收前保持 `proposed`。
+- 本 ADR 已随 F-0057 验收确认转为 `accepted`（2026-11-13）。

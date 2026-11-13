@@ -70,7 +70,7 @@ approved_at: 2026-11-13
 
 ## 架构决策
 
-- [ADR-0012 桌面安装包签名、公证与发版门禁边界](../../20-architecture/adr/0012-desktop-signing-notarization.md)（status: `proposed`，待维护者验收时确认）
+- [ADR-0014 桌面安装包签名、公证与发版门禁边界](../../20-architecture/adr/0014-desktop-signing-notarization.md)（`accepted`，维护者 2026-11-13 确认本需求时一并接受）
 
 ## 自行决定的事项
 
