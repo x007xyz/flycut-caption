@@ -1,9 +1,9 @@
 ---
 id: F-0025
 stage: 03-implementation
-status: draft
-approved_by:
-approved_at:
+status: approved
+approved_by: auto
+approved_at: 2026-11-13
 ---
 
 # F-0025 字幕关键词强调：开发记录
