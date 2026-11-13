@@ -96,7 +96,7 @@ approved_at: 2026-11-13
 
 ## 架构决策
 
-- [ADR-0012 TTS Provider 能力声明与 HTTP 协议契约](../../20-architecture/adr/0012-tts-provider-contract.md)（`proposed`，验收时一并审阅确认）
+- [ADR-0013 TTS Provider 能力声明与 HTTP 协议契约](../../20-architecture/adr/0013-tts-provider-contract.md)（`accepted`，维护者 2026-11-13 确认本需求时一并接受）
 
 ## 自行决定的事项
 

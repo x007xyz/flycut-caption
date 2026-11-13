@@ -1,13 +1,13 @@
 ---
-id: ADR-0012
-status: proposed     # proposed → accepted → superseded / deprecated
+id: ADR-0013
+status: accepted     # proposed → accepted → superseded / deprecated
 date: 2026-11-13
-deciders:
+deciders: zhangxiang.chen
 feature: F-0053
 superseded_by:
 ---
 
-# ADR-0012 TTS Provider 能力声明与 HTTP 协议契约
+# ADR-0013 TTS Provider 能力声明与 HTTP 协议契约
 
 ## 背景
 
@@ -39,4 +39,4 @@ F-0034 调研确认了本地固定音色（Kokoro、MeloTTS）与支持克隆的
 - 后续 F-0035（单条配音）、F-0036（对齐）、F-0038（项目说话人克隆）直接复用 `tts` 能力声明、`ProviderRegistry.synthesize` 与 `cloneAuthorization` 契约，不需改写底层 Provider 与协议。
 - 任何不支持 TTS 或不支持克隆的 Provider/模型都不会伪造能力或暴露空实现。
 - `tts-settings.json` 与 `endpoints.json` 各自遵守 Host 存储边界，API Key 不落盘进普通配置。
-- 本 ADR 在维护者验收 F-0053 前保持 `proposed`。
+- 本 ADR 已随 F-0053 验收确认转为 `accepted`（2026-11-13）。

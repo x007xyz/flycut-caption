@@ -1,9 +1,9 @@
 ---
 id: F-0053
 stage: 04-test-report
-status: review
-approved_by:
-approved_at:
+status: approved
+approved_by: zhangxiang.chen
+approved_at: 2026-11-13
 ---
 
 # F-0053 TTS Provider能力与接入：测试与验收
@@ -21,7 +21,7 @@ approved_at:
 - **Host 侧**（`server/plugins/tts.ts`）：`tts.getSettings` / `tts.saveSettings`（`hostId` + `revision` + `operationId` 幂等）/ `tts.synthesize`。合成结果走资产存储并校验音频头，密钥只在 Host 解析、不回传。
 - **客户端**（`src/services/ttsService.ts`、`src/components/TTS/TTSSettingsPanel.tsx`）：独立 TTS 设置面板接入 `SettingsDialog`，含空态跳转、模型/音色/参数选择、能力限制提示、授权克隆、加载/处理中/取消、失败重试/返回、不确定保存先查后发、版本冲突需重新检查。
 - **示例服务端**：`scripts/examples/tts-provider-server.mjs` 可独立运行，架构测试真实启动它验证全链路，保证第三方能按文档复现。
-- 新增 proposed [ADR-0012 TTS Provider 能力声明与 HTTP 协议契约](../../20-architecture/adr/0012-tts-provider-contract.md)（`status: proposed`，待维护者确认本报告时一并决定是否 accepted）。
+- 新增 [ADR-0013 TTS Provider 能力声明与 HTTP 协议契约](../../20-architecture/adr/0013-tts-provider-contract.md)（`status: accepted`，维护者 2026-11-13 确认）。
 
 ## 自行决定的事项
 
@@ -84,7 +84,7 @@ approved_at:
 
 ## 结论
 
-协议、Host 插件、注册表、客户端面板与示例服务端的自动化验证全部通过（AC-1 至 AC-8 与 AC-9 的 Web 部分）；真实第三方 TTS 服务试听与 Tauri 桌面实机受环境缺少本地运行时/云端凭据/桌面构建限制，如实记为 `⏸ Not run`。ADR-0012 仍为 proposed，请维护者在确认本报告时一并决定。
+协议、Host 插件、注册表、客户端面板与示例服务端的自动化验证全部通过（AC-1 至 AC-8 与 AC-9 的 Web 部分）；真实第三方 TTS 服务试听与 Tauri 桌面实机受环境缺少本地运行时/云端凭据/桌面构建限制，如实记为 `⏸ Not run`。ADR-0013 已随本次确认转为 accepted。
 
 本报告等待维护者审阅确认；未自行执行 `pnpm feature approve`。
 
