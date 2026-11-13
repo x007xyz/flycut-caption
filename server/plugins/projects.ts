@@ -581,5 +581,4 @@ export const projectsPlugin = { name: 'flycut-projects', inject: ['hostConfig', 
 
   ctx.effect(() => ctx.rpc.capability('projects'));
   ctx.effect(() => ctx.rpc.capability('projects.linkedMedia', linkedMedia));
-  ctx.effect(() => ctx.rpc.capability('projects.backup'));
 } };
