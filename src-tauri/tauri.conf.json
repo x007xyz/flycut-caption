@@ -44,6 +44,14 @@
       "binaries/*",
       "shared_assets/**/*",
       "host/**/*"
-    ]
+    ],
+    "macOS": {
+      "hardenedRuntime": true,
+      "entitlements": "entitlements/app.plist"
+    },
+    "windows": {
+      "digestAlgorithm": "sha256",
+      "tsp": true
+    }
   }
 }
