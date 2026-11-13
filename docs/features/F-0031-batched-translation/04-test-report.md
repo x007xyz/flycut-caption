@@ -1,7 +1,7 @@
 ---
 id: F-0031
 stage: 04-test-report
-status: draft
+status: review
 approved_by:
 approved_at:
 ---
