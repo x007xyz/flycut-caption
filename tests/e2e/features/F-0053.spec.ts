@@ -207,7 +207,7 @@ for (const theme of ['light', 'dark'] as const) for (const lang of ['zh', 'en'] 
       await shot(page, 'F-0053', 'tts-empty-' + theme + '-' + lang);
 
       await panel.getByTestId('tts-go-models').click();
-      await expect(page.getByRole('heading', { name: '添加服务' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: lang === 'zh' ? '添加服务' : 'Add endpoint' })).toBeVisible();
 
       state.host.set('tts.getSettings', () => pending());
       await page.getByTestId('settings-tab-tts').click();

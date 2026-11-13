@@ -1,8 +1,9 @@
-import { test } from 'node:test';
+import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { Context, Plugin } from '@deepseek-ai/cordis';
@@ -12,6 +13,14 @@ import type { JobSnapshot } from '../../shared/protocol';
 
 const FFMPEG = process.env.FFMPEG_PATH ?? resolve('src-tauri/binaries/ffmpeg');
 const CLI_BIN = resolve('dist-cli/flycut.mjs');
+
+// The CLI bundle is a build artifact (dist-cli/ is gitignored), so build it once when it is missing.
+before(() => {
+  if (existsSync(CLI_BIN)) return;
+  const build = spawnSync('pnpm', ['build:cli'], { encoding: 'utf8', stdio: 'pipe' });
+  assert.equal(build.status, 0, build.stderr ?? 'pnpm build:cli failed');
+  assert.ok(existsSync(CLI_BIN), 'dist-cli/flycut.mjs should exist after build:cli');
+});
 
 function runCli(args: string[], env: Record<string, string | undefined> = {}) {
   return spawnSync(process.execPath, [CLI_BIN, ...args], {

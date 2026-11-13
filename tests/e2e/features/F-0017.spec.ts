@@ -161,6 +161,11 @@ for (const theme of ['light', 'dark'] as const) {
     let workflowOpId: unknown;
     const host = await mockHost(page, {
       'projects.list': () => [projectItem(P, NAME, { durationSeconds: 3600, videoId: LONG })],
+      // F-0018 gates auto-transcription on a known ready model, so the fixture provider must list one.
+      'providers.models': () => [{
+        provider: { id: 'test-provider', name: 'Test Provider', kind: 'http' },
+        models: [{ id: 'long-video', name: 'Long video', role: 'asr', languages: ['zh'], timestampLevel: 'segment', status: 'ready' }],
+      }],
       'projects.open': () => ({
         ...openResult(LONG, undefined, {}, true),
         video: { ...video(LONG, '六十分钟.mp4', 3600), hasTranscript: false },
@@ -247,7 +252,7 @@ test('F-0017/AC-4 AC-5 AC-6 AC-7 AC-10 offscreen selection, delete, restore, edi
   await scroll.evaluate(element => { element.scrollTop = element.scrollHeight; });
   await expect(page.locator('[data-chunk-id="row-1172"]')).toBeVisible();
   await page.getByRole('button', { name: '清除选择' }).click();
-  await page.getByRole('checkbox').first().check();
+  await scroll.getByRole('checkbox').first().check();
   await scroll.evaluate(element => { element.scrollTop = element.scrollHeight; });
   await page.getByRole('button', { name: '删除选中 (1)' }).click();
   await expect(page.getByText(/总计: 1173 \| 有效: 1172/)).toBeVisible();

@@ -87,7 +87,7 @@ for (const theme of ['light', 'dark'] as const) {
   for (const lang of ['zh', 'en'] as const) {
     test.describe(F + ' ' + theme + '-' + lang, () => {
       test('F-0025/AC-1 AC-5 AC-6 inline token marking persists without changing text or timestamps', async ({ page }) => {
-        const { host, state } = await openEditor(page, theme, lang);
+        const { host } = await openEditor(page, theme, lang);
         const row = page.locator('[data-chunk-id="k1"]');
         await row.getByTestId('keyword-picker-toggle').click();
         const picker = row.getByTestId('keyword-token-picker');
