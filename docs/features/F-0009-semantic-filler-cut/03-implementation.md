@@ -22,7 +22,7 @@ approved_at: 2026-11-12
 | 2026-11-12 | 1. 规则保留与语义入口 | f9a1232 | lint、tsc、check:host；规则候选与来源 UI；Playwright 状态矩阵随代码提交 |
 | 2026-11-12 | 3. 批次进度、取消、失败重试与过期 | b17b2dd | semantic-filler-queue 2/2；成功批次在取消/部分失败后保留，failed/invalid 独立可重试 |
 | 2026-11-12 | 4. 候选展示与人工确认闭环 | 84465a1 | semantic-fillers 7/7；F-0009 architecture 3/3；pending/preview 不改正式 EDL；确认一次写 EDL 与历史 |
-| 2026-11-12 | 5. 历史、隐私与真实环境验收 | bd12520 | 全量 test 101 通过/11 跳过；architecture 100/100；build/cargo check 通过；F-0009 中文明暗 E2E 通过，但英文用例最初只传 URL 参数、截图仍是中文，已改为真实语言菜单切换；最终中英文 12 例与 evidence 由父代理在 5173 串行复跑 |
+| 2026-11-12 | 5. 历史、隐私与真实环境验收 | bd12520 | 全量 test 101 通过/11 跳过；architecture 100/100；build/cargo check 通过；父代理串行 E2E 12/12（15.8s，36 截图/12 录屏）；修正 reload 后语言回退并完成最终 evidence 12/12（15.2s，36 截图/12 录屏） |
 
 ## 自行决定的事项
 
@@ -45,6 +45,6 @@ approved_at: 2026-11-12
 ## 遗留问题
 
 - 外部真实用户模型的质量、误删率、成本和默认类别（AC-10）未运行：本 worker 没有获得可外发的用户模型与测试授权；本地真实 HTTP OpenAI 兼容 fixture 只验证接线、配置解析、脱敏和校验，不代表模型质量。
-- 最终 F-0009 Playwright 与 e2e:evidence 未在最后一条英文断言修复后执行：父代理要求暂停 5173，供 F-0024 修复；仓库内当前保留 18 张中文明暗状态截图，英文明暗截图待串行复跑生成。
+- F-0009 E2E/evidence 最终为 12/12，36 张截图覆盖中英文与明暗主题；录屏 12 段只在本地 recordings/，按约定不提交。
 - Tauri GUI 实机未运行；本需求无 Tauri/原生路径改动，浏览器与 Host 共用业务已完成 E2E。
 
