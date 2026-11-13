@@ -21,7 +21,8 @@ approved_at:
 
 | 日期 | 清单项 | 提交 | 检查 |
 |---|---|---|---|
-| 2026-11-13 | 1. 共用平台预设目录与安全区模型 | 待提交 | pnpm lint ✅, pnpm tsc -b --noEmit ✅, pnpm check:host ✅, pnpm test ✅, platform-presets-f0026.test.ts ✅ |
+| 2026-11-13 | 1. 共用平台预设目录与安全区模型 | 5048c3c | pnpm lint ✅, pnpm tsc -b --noEmit ✅, pnpm check:host ✅, pnpm test ✅, platform-presets-f0026.test.ts ✅ |
+| 2026-11-13 | 2. Host 持久化恢复与冲突回退辅助 | 待提交 | pnpm lint ✅, pnpm tsc -b --noEmit ✅, pnpm check:host ✅, platform-presets-f0026.test.ts ✅ (5 pass) |
 
 ## 自行决定的事项
 

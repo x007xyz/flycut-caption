@@ -93,6 +93,10 @@ const aspectOf = (pair: SubtitleStylePair) => pair.primary.aspectPreset;
 const styleKey = (pair: SubtitleStylePair) => JSON.stringify({ primary: { ...pair.primary, aspectPreset: undefined }, secondary: { ...pair.secondary, aspectPreset: undefined } });
 const withAspect = (pair: SubtitleStylePair, aspect: SubtitleStylePair['primary']['aspectPreset']): SubtitleStylePair =>
   pair.primary.aspectPreset === aspect ? pair : { ...pair, primary: { ...pair.primary, aspectPreset: aspect } };
+const cloneStylePair = (pair: SubtitleStylePair): SubtitleStylePair => ({
+  primary: { ...pair.primary, ...(pair.primary.safeZoneInsets ? { safeZoneInsets: { ...pair.primary.safeZoneInsets } } : {}) },
+  secondary: { ...pair.secondary, ...(pair.secondary.safeZoneInsets ? { safeZoneInsets: { ...pair.secondary.safeZoneInsets } } : {}) },
+});
 const toProjectStyle = (pair: SubtitleStylePair): ProjectStyle => ({ primary: { ...pair.primary }, secondary: { ...pair.secondary } } as unknown as ProjectStyle);
 /** Host 上的样式是不透明的：缺的字段用默认值补上（旧版本保存的样式也能用）。 */
 const fromProjectStyle = (style: ProjectStyle | Record<string, unknown> | undefined): SubtitleStylePair | undefined => {
@@ -159,6 +163,8 @@ export class ProjectService {
   private owners = new WeakMap<VideoFile, { projectId: string; videoId: string }>();
   /** 最后一次写到 Host（或刚载入）的内容；字幕数组按引用比较，样式按内容比较。 */
   private baseline: Baseline | null = null;
+  /** 最近一次与 Host 同步的生效样式对（用于取消或回退未保存的样式修改，不触碰字幕正文与 EDL）。 */
+  private baselineStyle: SubtitleStylePair | null = null;
   /** 当前视频的转写结果（另存为新项目时带上，F-0003 AC-32） */
   private transcriptRecord: TranscriptRecord | undefined;
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -1022,19 +1028,107 @@ export class ProjectService {
     const snap = this.snapshot();
     try {
       const result = await this.connection.call('projects.open', { projectId: current.projectId, videoId: current.videoId });
-      if (this.state.current !== current || result.status !== 'ok') return false;
+      const latest = this.state.current;
+      if (!latest || latest.projectId !== current.projectId || latest.videoId !== current.videoId || result.status !== 'ok') return false;
       const content: RecoveryContent = { editing: snap.editing, chunks: snap.chunks as unknown as RecoveryContent['chunks'],
         deletedWordIds: snap.wordChunks.filter(word => word.deleted).map(word => word.id), textHistory: snap.textHistory,
         languageTracks: snap.languageTracks, activeLanguageTrackId: snap.activeLanguageTrackId, styleSource: snap.styleSource,
         stylePair: snap.style as unknown as RecoveryContent['stylePair'] };
-      if (!diffWithHost(content, this.hostContent(result)).same) return false;
-      this.applySaved([['video', { status: 'saved', revision: result.video.revision,
-        projectRevision: result.project.revision, updatedAt: result.project.updatedAt }]], snap);
+      const diff = diffWithHost(content, this.hostContent(result));
+      const savedParts: Array<['video' | 'style', SaveResultV2]> = [];
+      if (!diff.video) {
+        savedParts.push(['video', { status: 'saved', revision: result.video.revision,
+          projectRevision: result.project.revision, updatedAt: result.video.updatedAt ?? result.project.updatedAt }]);
+      }
+      if (!diff.style && snap.styleSource === 'project') {
+        savedParts.push(['style', { status: 'saved', revision: result.project.styleRevision,
+          projectRevision: result.project.revision, updatedAt: result.project.updatedAt }]);
+      }
+      if (savedParts.length) this.applySaved(savedParts, snap);
+      if (!diff.same) return false;
       clearTimeout(this.retryTimer); this.failures = 0;
-      this.state.setSave({ status: this.isDirty() ? 'pending' : 'saved', error: undefined });
+      this.state.setSave({ status: this.isDirty() ? 'pending' : 'saved', error: undefined, conflictAt: undefined });
       this.session?.recorder.changed(true);
       return !this.isDirty();
     } catch { return false; }
+  }
+
+  /** F-0026 AC-6: 取消尚未提交的样式修改，恢复到上次 Host 确认的样式快照而不抹除字幕正文编辑。 */
+  revertUnsavedStyle(): boolean {
+    clearTimeout(this.timer);
+    clearTimeout(this.retryTimer);
+    const current = this.state.current;
+    if (!current || !this.baselineStyle) return false;
+    this.stores.app.getState().setSubtitleStylePair(cloneStylePair(this.baselineStyle), true);
+    const dirty = this.isDirty();
+    this.failures = 0;
+    this.state.setSave({ status: dirty ? 'pending' : 'saved', error: undefined, conflictAt: undefined });
+    if (current.hasTranscript) this.session?.recorder.changed(true);
+    return true;
+  }
+
+  /** F-0026 AC-8: 保存不确定失败后先向 Host 核对是否已落盘，确认未落盘时再补写。 */
+  async retryStyleSave(): Promise<boolean> {
+    const current = this.state.current;
+    if (!current?.hasTranscript) return false;
+    if (await this.verifyCurrentEditsSaved()) return true;
+    return this.flush();
+  }
+
+  /** F-0026 AC-8: 版本冲突时读取 Host 最新样式与修订号，保留用户当前输入并解除冲突锁定以便重新核对后提交。 */
+  async recheckStyleConflict(): Promise<
+    | { status: 'reviewed'; same: boolean; hostUpdatedAt?: string; hostStyle: SubtitleStylePair; hostProjectStyle: SubtitleStylePair }
+    | { status: 'stale' | 'missing' | 'error'; error?: string }
+  > {
+    const current = this.state.current;
+    if (!current) return { status: 'stale' };
+    try {
+      const opened = await this.connection.call('projects.open', { projectId: current.projectId, videoId: current.videoId });
+      const latest = this.state.current;
+      if (!latest || latest.projectId !== current.projectId || latest.videoId !== current.videoId) return { status: 'stale' };
+      if (opened.status === 'trashed') {
+        this.state.set({ projectDeleted: { state: 'trashed', busy: false } });
+        return { status: 'missing' };
+      }
+      if (opened.status !== 'ok') return { status: 'missing' };
+      const hostProjectStyle = fromProjectStyle(opened.projectStyle) ?? withAspect(defaultSubtitleStylePair, aspectOf(this.snapshot().style));
+      const hostEffectiveStyle = effectiveStyle(opened.video.styleSource, opened.edits, fromProjectStyle(opened.projectStyle)).pair;
+      const snap = this.snapshot();
+      this.state.set({
+        current: {
+          ...latest,
+          revision: opened.project.revision,
+          videoRevision: opened.video.revision,
+          styleRevision: opened.project.styleRevision,
+          styleSource: opened.video.styleSource,
+          projectStyle: cloneStylePair(hostProjectStyle),
+        },
+      });
+      if (this.baseline) {
+        this.baseline = {
+          ...this.baseline,
+          aspect: aspectOf(hostEffectiveStyle),
+          styleSource: opened.video.styleSource,
+          customKey: styleKey(hostEffectiveStyle),
+          projectKey: styleKey(hostProjectStyle),
+        };
+      } else {
+        this.baseline = this.baselineOf(snap, hostProjectStyle);
+      }
+      this.baselineStyle = cloneStylePair(hostEffectiveStyle);
+      const same = !this.isDirty();
+      this.state.setSave({ status: same ? 'saved' : 'pending', conflictAt: undefined, error: undefined });
+      return {
+        status: 'reviewed',
+        same,
+        hostUpdatedAt: opened.video.updatedAt ?? opened.project.updatedAt,
+        hostStyle: hostEffectiveStyle,
+        hostProjectStyle,
+      };
+    } catch (error) {
+      if (isMissingTarget(error)) return { status: 'missing', error: error instanceof Error ? error.message : String(error) };
+      return { status: 'error', error: error instanceof Error ? error.message : String(error) };
+    }
   }
 
   /** 把保存成功的部分记进修订号和保存起点；返回最后一次保存时间。 */
@@ -1049,9 +1143,13 @@ export class ProjectService {
           languageTracks: snap.languageTracks, activeLanguageTrackId: snap.activeLanguageTrackId,
           aspect: aspectOf(snap.style), styleSource: snap.styleSource,
           customKey: styleKey(snap.style) };
+        this.baselineStyle = snap.styleSource === 'custom'
+          ? cloneStylePair(snap.style)
+          : cloneStylePair(withAspect(this.baselineStyle ?? snap.style, aspectOf(snap.style)));
         this.state.set({ current: { ...current, revision: result.projectRevision, videoRevision: result.revision } });
       } else {
         this.baseline = { ...this.baseline, projectKey: styleKey(snap.style) };
+        this.baselineStyle = cloneStylePair(withAspect(snap.style, this.baselineStyle ? aspectOf(this.baselineStyle) : aspectOf(snap.style)));
         this.state.set({ current: { ...current, revision: result.projectRevision, styleRevision: result.revision, projectStyle: snap.style } });
       }
     }
@@ -1325,6 +1423,7 @@ export class ProjectService {
         styleRevision: opened.project.styleRevision, projectStyle } });
       if (diff.same) {
         this.baseline = this.baselineOf(snap, projectStyle);
+        this.baselineStyle = cloneStylePair(snap.style);
         this.state.setSave({ status: 'saved', error: undefined, conflictAt: undefined });
       } else {
         // Host 内容与本地不同：保留修改并走既有冲突流程，绝不静默覆盖。
@@ -1655,7 +1754,7 @@ export class ProjectService {
     this.endSession(true);
     this.openGeneration += 1;
     this.state.set({ recoveryHealth: 'ok' });
-    clearTimeout(this.timer); clearTimeout(this.retryTimer); this.failures = 0; this.baseline = null;
+    clearTimeout(this.timer); clearTimeout(this.retryTimer); this.failures = 0; this.baseline = null; this.baselineStyle = null;
     this.transcriptRecord = undefined;
     this.state.set({ current: null, save: { status: 'saved' }, conflictDialog: false, projectDeleted: null });
     this.stores.history.getState().reset();
@@ -1671,6 +1770,7 @@ export class ProjectService {
     history.reset(); app.clearASRProgress();
     // 切换视频：先把当前项目设为目标视频，样式的变化才不会被当成上一个视频的修改
     this.baseline = null;
+    this.baselineStyle = null;
     this.state.set({ current, projectDeleted: null });
     app.setSubtitleStylePair(stylePair ?? defaultSubtitleStylePair, restored);
     app.setVideoFile(videoFile);
@@ -1684,6 +1784,7 @@ export class ProjectService {
     if (transcript || !videoFile) app.setStage('edit');
     this.state.set({ current, save: { status: 'saved' }, conflictDialog: false, detail: null });
     this.baseline = this.baselineOf(this.snapshot(), current.projectStyle);
+    this.baselineStyle = cloneStylePair(this.snapshot().style);
     this.startSession();
     this.navigate({ name: 'editor', projectId: current.projectId, videoId: current.videoId });
   }

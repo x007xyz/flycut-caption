@@ -1,6 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { createCanvas, GlobalFonts } from '@napi-rs/canvas';
+import { Context } from '@deepseek-ai/cordis';
+import { createHost } from '../../server/app.ts';
+import { ProjectService } from '../../src/services/projectService.ts';
+import { storesPlugin } from '../../src/runtime/client.ts';
+import type { RemoteConnection } from '../../src/runtime/connection.ts';
+import type { RecoveryStorage } from '../../src/recovery/storage.ts';
 import {
   PLATFORM_PRESETS,
   clampSafeZoneInsets,
@@ -28,6 +37,17 @@ import type { SubtitleChunk } from '../../src/types/subtitle.ts';
   constructor(width: number, height: number) { this.canvas = createCanvas(width, height); }
   getContext(type: '2d') { return this.canvas.getContext(type); }
 };
+
+const memStorage = new Map<string, string>();
+Object.defineProperty(globalThis, 'localStorage', {
+  configurable: true,
+  value: {
+    getItem: (key: string) => memStorage.get(key) ?? null,
+    setItem: (key: string, value: string) => { memStorage.set(key, String(value)); },
+    removeItem: (key: string) => { memStorage.delete(key); },
+    clear: () => { memStorage.clear(); },
+  },
+});
 
 const FONT_DIR = new URL('../../src-tauri/shared_assets/subtitle-fonts/', import.meta.url).pathname;
 const FAMILY = 'FlyCutPlatformPresetsNotoSansSC';
@@ -109,5 +129,152 @@ test('F-0026/AC-2 AC-3 all five presets reuse shared graphics layer across three
       assert.deepEqual(pLines, eLines, `${preset.id} ${width}x${height} preview and export wrap identically`);
       assert.equal(drawFrame(ctx, eScene, 0.5), true, `${preset.id} draws on shared graphics layer`);
     }
+  }
+});
+
+function memoryRecoveryStorage(): RecoveryStorage {
+  const rows = new Map<string, any>();
+  return {
+    async list(scope: string) {
+      return [...rows.values()].filter(r => r.scope === scope).map(copy => ({ ok: true as const, copy }));
+    },
+    async put(copy) { rows.set(copy.key, copy); },
+    async delete(key: string, sequence?: number) {
+      const existing = rows.get(key);
+      if (existing && sequence !== undefined && existing.sequence !== sequence) return false;
+      rows.delete(key);
+      return true;
+    },
+  };
+}
+
+async function makeClient(base: string, token: string, intercept?: (method: string, payload: unknown, next: () => Promise<unknown>) => Promise<unknown>) {
+  const ctx = new Context();
+  await ctx.plugin(storesPlugin()).await();
+  const calls: Array<{ method: string; payload: unknown }> = [];
+  const conn = {
+    isReady: () => true,
+    snapshot: () => 'connected' as const,
+    subscribe: () => () => undefined,
+    on: () => () => undefined,
+    resourceUrl: (path: string) => `${base}${path}`,
+    async call(method: string, payload?: unknown) {
+      calls.push({ method, payload });
+      const exec = async () => {
+        const response = await fetch(`${base}/rpc`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'client-request', rpcId: 'f0026', method, payload: payload ?? {} }),
+        });
+        const envelope = await response.json();
+        if (!envelope?.result?.ok) throw new Error(envelope?.result?.error?.message ?? JSON.stringify(envelope));
+        return envelope.result.value;
+      };
+      return intercept ? intercept(method, payload, exec) : exec();
+    },
+  } as unknown as RemoteConnection;
+  ctx.provide('connection', conn);
+  const service = new ProjectService(ctx, memoryRecoveryStorage());
+  return { ctx, service, calls };
+}
+
+test('F-0026/AC-1 AC-2 AC-6 AC-7 AC-8 ProjectService persists platform presets across second client, verifies lost receipts, reverts unsaved style, and rechecks conflicts', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'flycut-f0026-ps-'));
+  const token = 'f0026-ps-token';
+  const host = await createHost({ home, token, port: 0, resourceRoot: resolve('src-tauri') }, { profile: 'desktop', providers: [], patches: [] });
+  const base = `http://127.0.0.1:${(host.httpServer.address() as { port: number }).port}`;
+  try {
+    const upload = await (await fetch(`${base}/assets`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: 'mp4' })).json();
+    const createRes = await (await fetch(`${base}/rpc`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'client-request', rpcId: '1', method: 'projects.create', payload: {
+        name: 'F-0026', videoName: 'clip.mp4', durationSeconds: 4, media: { assetId: upload.assetId, mimeType: 'video/mp4' },
+      } }),
+    })).json();
+    const { projectId, videoId } = createRes.result.value;
+    await fetch(`${base}/rpc`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'client-request', rpcId: '2', method: 'projects.saveTranscript', payload: {
+        projectId, videoId, transcript: { text: '大家好', language: 'zh', duration: 4, chunks: [{ id: 's1', text: '大家好', timestamp: [0.2, 1.5] }] },
+      } }),
+    });
+
+    let dropNextStyleReceipt = false;
+    const clientA = await makeClient(base, token, async (method, _payload, next) => {
+      const value = await next();
+      if (method === 'projects.saveProjectStyle' && dropNextStyleReceipt) {
+        dropNextStyleReceipt = false;
+        throw new Error('simulated dropped receipt after Host write');
+      }
+      return value;
+    });
+    const clientB = await makeClient(base, token);
+
+    try {
+      await clientA.service.open(projectId, videoId);
+      const appA = clientA.ctx.stores.app;
+      const historyA = clientA.ctx.stores.history;
+      const douyin = updateSafeZoneInsets(applyPlatformPreset(appA.getState().subtitleStylePair.primary, 'douyin'), { bottom: 0.26 });
+      appA.getState().setSubtitleStylePair({ ...appA.getState().subtitleStylePair, primary: douyin });
+      assert.equal(await clientA.service.flush(), true);
+      assert.equal(historyA.getState().chunks[0].text, '大家好', 'preset application preserves subtitle text');
+      assert.deepEqual(historyA.getState().chunks[0].timestamp, [0.2, 1.5], 'preset application preserves timestamps');
+
+      // AC-7: Second client reads identical platform preset, safe-zone state, and aspect ratio from Host.
+      await clientB.service.open(projectId, videoId);
+      const styleB = clientB.ctx.stores.app.getState().subtitleStylePair.primary;
+      assert.equal(styleB.platformPresetId, 'douyin');
+      assert.equal(styleB.safeZoneVisible, true);
+      assert.equal(styleB.safeZonePlatformId, 'douyin');
+      assert.equal(styleB.safeZoneInsets?.bottom, 0.26);
+      assert.equal(styleB.aspectPreset, 'portrait_9_16');
+
+      // AC-8: Lost-receipt retry checks Host first via verifyCurrentEditsSaved and avoids duplicate writes.
+      dropNextStyleReceipt = true;
+      const xhs = applyPlatformPreset(appA.getState().subtitleStylePair.primary, 'xiaohongshu');
+      appA.getState().setSubtitleStylePair({ ...appA.getState().subtitleStylePair, primary: xhs });
+      assert.equal(await clientA.service.flush(), false);
+      assert.equal(clientA.ctx.stores.project.getState().save.status, 'failed');
+      const writesBeforeRetry = clientA.calls.filter(c => c.method === 'projects.saveProjectStyle').length;
+      assert.equal(await clientA.service.retryStyleSave(), true);
+      assert.equal(clientA.calls.filter(c => c.method === 'projects.saveProjectStyle').length, writesBeforeRetry, 'retry verified Host state without blind duplicate write');
+      assert.equal(clientA.ctx.stores.project.getState().save.status, 'saved');
+
+      // AC-6: revertUnsavedStyle restores Host-confirmed style while keeping unsaved text edits intact.
+      historyA.getState().updateChunkText('s1', '大家好啊');
+      const bili = applyPlatformPreset(appA.getState().subtitleStylePair.primary, 'bilibili');
+      appA.getState().setSubtitleStylePair({ ...appA.getState().subtitleStylePair, primary: bili });
+      assert.equal(clientA.service.revertUnsavedStyle(), true);
+      assert.equal(appA.getState().subtitleStylePair.primary.platformPresetId, 'xiaohongshu');
+      assert.equal(historyA.getState().chunks[0].text, '大家好啊', 'reverting style keeps subtitle text edits');
+      assert.equal(await clientA.service.flush(), true);
+
+      // AC-8: Version conflict blocks submit until recheckStyleConflict refreshes revisions and preserves user input.
+      await clientB.service.open(projectId, videoId);
+      const appB = clientB.ctx.stores.app;
+      const yt = applyPlatformPreset(appB.getState().subtitleStylePair.primary, 'youtube-shorts');
+      appB.getState().setSubtitleStylePair({ ...appB.getState().subtitleStylePair, primary: yt });
+      assert.equal(await clientB.service.flush(), true);
+
+      appA.getState().setSubtitleStylePair({ ...appA.getState().subtitleStylePair, primary: applyPlatformPreset(appA.getState().subtitleStylePair.primary, 'bilibili') });
+      assert.equal(await clientA.service.flush(), false);
+      assert.equal(clientA.ctx.stores.project.getState().save.status, 'conflict');
+      assert.equal(await clientA.service.flush(), false, 'conflict blocks further submits until re-check');
+
+      const reviewed = await clientA.service.recheckStyleConflict();
+      assert.equal(reviewed.status, 'reviewed');
+      assert.equal(appA.getState().subtitleStylePair.primary.platformPresetId, 'bilibili', 'recheck preserves user selection');
+      assert.equal(clientA.ctx.stores.project.getState().save.status, 'pending');
+      assert.equal(await clientA.service.flush(), true);
+      assert.equal(clientA.ctx.stores.project.getState().save.status, 'saved');
+    } finally {
+      await clientA.ctx.fiber.dispose();
+      await clientB.ctx.fiber.dispose();
+    }
+  } finally {
+    await host.fiber.dispose();
+    await rm(home, { recursive: true, force: true });
   }
 });
