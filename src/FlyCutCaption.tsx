@@ -477,7 +477,7 @@ export function FlyCutCaptionContent(props: FlyCutCaptionProps) {
       <div className="h-screen bg-background flex flex-col">
         {/* 顶部标题栏 - Aimu 风格 */}
         <WorkstationHeader media={media} mergedConfig={mergedConfig} onLanguageChange={onLanguageChange} onOpenVideoExport={handleOpenVideoExportDialog}
-          onOpenSubtitleExport={handleOpenSubtitleExportDialog} onOpenJianyingDraft={handleOpenJianyingDraftDialog}
+          onOpenSubtitleExport={handleOpenSubtitleExportDialog} onOpenJianyingDraft={handleOpenJianyingDraftDialog} onOpenProjectBackup={props.onOpenProjectBackup}
           onSmartCutBlank={handleSmartCutBlank} onOpenSettings={() => setSettingsOpen(true)} slot={props.headerSlot} />
 
         {/* 主要内容区域 - Aimu 风格左右分栏 */}

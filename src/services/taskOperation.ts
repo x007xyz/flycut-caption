@@ -6,7 +6,7 @@ import {
   type RemoteConnection,
 } from '@/runtime/connection';
 
-export type TaskOperationKind = 'asr' | 'export';
+export type TaskOperationKind = 'asr' | 'export' | 'backup-export' | 'backup-import';
 
 interface TaskOperationRecord {
   version: 1;

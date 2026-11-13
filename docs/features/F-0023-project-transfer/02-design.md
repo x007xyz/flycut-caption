@@ -112,8 +112,8 @@ approved_at: 2026-11-13
 - [x] 1. **共享备份契约与纯 TS 流式 ZIP/ZIP64 归档引擎**：新增 `shared/backup.ts`、`server/projects/backupArchive.ts` 及 `shared/protocol.ts` RPC 类型声明，覆盖路径穿越、符号链接、截断/损坏与 ZIP64 单元测试（AC-1、AC-2、AC-4）。
 - [x] 2. **Host 备份导出/预检/导入服务与安全隔离**：新增 `server/projects/backup.ts`，接入 `server/plugins/projects.ts` 与 `server/projects/store.ts`（启动清理 `.import-*`、HTTP 流式上传与 shell 路由），实现版本检查、空间校验、脱敏（剥离 API Key/token/绝对路径/恢复副本）、ID 重映射、幂等重试与取消清理；补齐双 Host 跨迁移与安全故障注入测试（AC-1–AC-4、AC-6–AC-8）。
 - [x] 3. **Tauri 桌面外壳对话框与流式暂存桥接**：新增 `src-tauri/src/backup.rs`（`pick_backup_file`、`pick_save_backup_file`、`stage_host_backup`），接入 `src-tauri/src/lib.rs` 并补 Rust 路径白名单安全测试（AC-1、AC-2、AC-4、AC-5）。
-- [ ] 4. **前端备份服务、任务追踪与双语本地化**：扩展 `src/runtime/connection.ts`、`src/runtime/connectionModel.ts`、`src/services/taskOperation.ts`、`src/stores/projectStore.ts`、`src/services/projectService.ts` 与 `src/locales/{zh_CN,en_US}.ts`，支持迟到响应隔离、进度/取消与不确定结果查询（AC-1–AC-8）。
-- [ ] 5. **项目菜单入口与备份导出/导入 UI 对话框**：新增 `src/components/Project/BackupDialogs.tsx`，接入 `ProjectActionsMenu.tsx`、`ProjectDetail.tsx`、`ProjectsHome.tsx`、`ProjectsApp.tsx` 与 `WorkstationHeader.tsx`，覆盖全部 AC 界面状态（AC-1–AC-8）。
+- [x] 4. **前端备份服务、任务追踪与双语本地化**：扩展 `src/runtime/connection.ts`、`src/runtime/connectionModel.ts`、`src/services/taskOperation.ts`、`src/stores/projectStore.ts`、`src/services/projectService.ts` 与 `src/locales/{zh_CN,en_US}.ts`，支持迟到响应隔离、进度/取消与不确定结果查询（AC-1–AC-8）。
+- [x] 5. **项目菜单入口与备份导出/导入 UI 对话框**：新增 `src/components/Project/BackupDialogs.tsx`，接入 `ProjectActionsMenu.tsx`、`ProjectDetail.tsx`、`ProjectsHome.tsx`、`ProjectsApp.tsx` 与 `WorkstationHeader.tsx`，覆盖全部 AC 界面状态（AC-1–AC-8）。
 - [ ] 6. **E2E 回归、真实媒体跨 Host 验证与验收报告**：编写 `tests/e2e/features/F-0023.spec.ts`（中英文、明暗主题全状态），运行 `PW_PORT=5302 pnpm e2e:evidence F-0023`、真实双 Host + 真实视频迁移/播放/导出验证、全量静态检查与单测，产出 `04-test-report.md`（AC-1–AC-9）。
 
 ## 验证计划

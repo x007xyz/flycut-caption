@@ -24,6 +24,8 @@ import { RecoveryRecorder } from '@/recovery/recorder';
 import { holdSession, liveSessions } from '@/recovery/sessions';
 import type { RecoveryState } from '@/stores/projectStore';
 import type { UploadCapabilities, UploadSession } from '../../shared/uploads';
+import type { BackupExportResult, BackupImportResult, BackupInspectionResult } from '../../shared/backup';
+import { TaskOperationRunner, TaskVerificationPendingError, taskOperationKey } from '@/services/taskOperation';
 import { hashFile } from '@/upload/sha256';
 import { transferMissingChunks, validateUploadSelection } from '@/upload/client';
 import { UploadLocatorStore, viewFromLocator, type UploadLocator } from '@/upload/locator';
@@ -203,8 +205,16 @@ export class ProjectService {
   /** 最近的副本写入耗时（毫秒），验收测量 1 秒 / 2 秒指标用 */
   readonly recoveryTimings: Array<{ at: number; ms: number; bytes: number }> = [];
 
+  // ---------- 项目备份导出与导入（F-0023） ----------
+  private backupTasks: TaskOperationRunner;
+  private backupExportAbort: AbortController | null = null;
+  private backupExportJobId: string | null = null;
+  private backupImportAbort: AbortController | null = null;
+  private backupImportJobId: string | null = null;
+
   constructor(ctx: Context, storage: RecoveryStorage = new IndexedDbRecoveryStorage()) {
     this.ctx = ctx; this.connection = ctx.connection; this.stores = ctx.stores; this.recoveryStorage = storage;
+    this.backupTasks = new TaskOperationRunner(ctx.connection);
   }
 
   private get state() { return this.stores.project.getState(); }
@@ -1660,6 +1670,456 @@ export class ProjectService {
     this.state.set({ current: null, save: { status: 'saved' }, conflictDialog: false, projectDeleted: null });
     this.stores.history.getState().reset();
     this.stores.app.getState().setVideoFile(null);
+  }
+
+  // ---------- 项目备份导出与导入（F-0023） ----------
+
+  private setBackupExport(patch: Partial<ReturnType<typeof this.stores.project.getState>['backupExport']>) {
+    this.state.set({ backupExport: { ...this.state.backupExport, ...patch } });
+  }
+
+  private setBackupImport(patch: Partial<ReturnType<typeof this.stores.project.getState>['backupImport']>) {
+    this.state.set({ backupImport: { ...this.state.backupImport, ...patch } });
+  }
+
+  async openBackupExport(projectId: string, projectName?: string) {
+    if (this.state.current?.projectId === projectId && this.hasUnsavedChanges()) {
+      await this.flush().catch(() => undefined);
+    }
+    const seq = this.state.backupExport.requestSeq + 1;
+    this.setBackupExport({
+      phase: 'loading',
+      projectId,
+      projectName: projectName ?? this.state.backupExport.projectName,
+      preview: undefined,
+      includeMissingMedia: false,
+      progress: 0,
+      statusText: undefined,
+      savingToDisk: false,
+      result: undefined,
+      savedPath: undefined,
+      error: undefined,
+      uncertain: false,
+      requestSeq: seq,
+    });
+    try {
+      const preview = await this.connection.call('projects.backupPreview', { projectId });
+      const latest = this.state.backupExport;
+      if (latest.requestSeq !== seq || latest.phase === 'idle' || latest.projectId !== projectId) return;
+      this.setBackupExport({
+        phase: preview.missingMedia.length > 0 ? 'missing-resource' : 'ready',
+        projectName: preview.projectName,
+        preview,
+        error: undefined,
+        uncertain: false,
+      });
+    } catch (error) {
+      const latest = this.state.backupExport;
+      if (latest.requestSeq !== seq || latest.phase === 'idle' || latest.projectId !== projectId) return;
+      this.setBackupExport({
+        phase: 'error',
+        error: error instanceof Error ? error.message : String(error),
+        uncertain: false,
+      });
+    }
+  }
+
+  setBackupIncludeMissingMedia(includeMissingMedia: boolean) {
+    this.setBackupExport({ includeMissingMedia });
+  }
+
+  async startBackupExport() {
+    const current = this.state.backupExport;
+    if (!current.projectId || !current.preview) return;
+    if (current.phase === 'processing') return;
+    if (current.preview.missingMedia.length > 0 && !current.includeMissingMedia) return;
+
+    let outputPath: string | null = null;
+    if (isTauriRuntime()) {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const defaultName = `${current.preview.projectName || 'flycut-project'}.flycut.zip`;
+      outputPath = await invoke<string | null>('pick_save_backup_file', { defaultName });
+      if (!outputPath) return;
+    }
+
+    const seq = current.requestSeq;
+    const projectId = current.projectId;
+    const expectedRevision = current.preview.revision;
+    const includeMissingMedia = current.includeMissingMedia;
+    const controller = new AbortController();
+    this.backupExportAbort?.abort();
+    this.backupExportAbort = controller;
+    this.backupExportJobId = null;
+    const opKey = taskOperationKey('backup-export', projectId, expectedRevision, includeMissingMedia ? 1 : 0);
+
+    this.setBackupExport({
+      phase: 'processing',
+      progress: 2,
+      statusText: undefined,
+      savingToDisk: false,
+      error: undefined,
+      uncertain: false,
+    });
+
+    try {
+      const completed = await this.backupTasks.run<BackupExportResult>({
+        kind: 'backup-export',
+        key: opKey,
+        signal: controller.signal,
+        start: (operationId) =>
+          this.connection.call('projects.backupExport', {
+            projectId,
+            expectedRevision,
+            includeMissingMedia,
+            operationId,
+          }),
+        progress: (job) => {
+          this.backupExportJobId = job.id;
+          if (this.state.backupExport.requestSeq !== seq || this.state.backupExport.phase === 'idle') return;
+          this.setBackupExport({
+            progress: job.progress?.progress ?? this.state.backupExport.progress,
+            statusText: job.progress?.data,
+          });
+        },
+        verifying: () => {
+          if (this.state.backupExport.requestSeq !== seq) return;
+          this.setBackupExport({ statusText: '正在核验导出状态…' });
+        },
+      });
+
+      if (this.state.backupExport.requestSeq !== seq || (this.state.backupExport.phase as string) === 'idle') return;
+      const result = completed.result;
+
+      if (outputPath && isTauriRuntime()) {
+        this.setBackupExport({ savingToDisk: true, progress: 98 });
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('save_host_asset', { assetId: result.assetId, outputPath });
+        void this.connection.call('assets.delete', { assetId: result.assetId }).catch(() => undefined);
+      } else {
+        await this.triggerBackupDownload(result);
+      }
+
+      await this.backupTasks.complete('backup-export', opKey, completed.hostId).catch(() => undefined);
+      if (this.state.backupExport.requestSeq !== seq || (this.state.backupExport.phase as string) === 'idle') return;
+      this.setBackupExport({
+        phase: 'completed',
+        progress: 100,
+        savingToDisk: false,
+        result,
+        savedPath: outputPath ?? undefined,
+        error: undefined,
+        uncertain: false,
+      });
+    } catch (error) {
+      if (this.state.backupExport.requestSeq !== seq || (this.state.backupExport.phase as string) === 'idle') return;
+      if (controller.signal.aborted) {
+        this.setBackupExport({
+          phase: current.preview.missingMedia.length > 0 ? 'missing-resource' : 'ready',
+          progress: 0,
+          savingToDisk: false,
+          statusText: undefined,
+          error: undefined,
+        });
+        return;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      if (/内容已更新|Content changed/i.test(message)) {
+        this.setBackupExport({ phase: 'stale', savingToDisk: false, error: message, uncertain: false });
+        return;
+      }
+      this.setBackupExport({
+        phase: 'error',
+        savingToDisk: false,
+        error: message,
+        uncertain: error instanceof TaskVerificationPendingError,
+      });
+    } finally {
+      if (this.backupExportAbort === controller) this.backupExportAbort = null;
+      this.backupExportJobId = null;
+    }
+  }
+
+  private async triggerBackupDownload(result: BackupExportResult) {
+    const blob = await this.connection.download(result.assetId);
+    const url = URL.createObjectURL(blob);
+    try {
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = result.filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } finally {
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+  }
+
+  async downloadLastBackup() {
+    const result = this.state.backupExport.result;
+    if (!result) return;
+    await this.triggerBackupDownload(result);
+  }
+
+  cancelBackupExport() {
+    if (this.state.backupExport.savingToDisk) return;
+    const jobId = this.backupExportJobId;
+    this.backupExportAbort?.abort();
+    if (jobId) void this.connection.call('jobs.cancel', { id: jobId }).catch(() => undefined);
+  }
+
+  closeBackupExport() {
+    this.cancelBackupExport();
+    const result = this.state.backupExport.result;
+    if (result?.assetId) void this.connection.call('assets.delete', { assetId: result.assetId }).catch(() => undefined);
+    this.setBackupExport({
+      phase: 'idle',
+      projectId: undefined,
+      projectName: undefined,
+      preview: undefined,
+      includeMissingMedia: false,
+      progress: 0,
+      statusText: undefined,
+      savingToDisk: false,
+      result: undefined,
+      savedPath: undefined,
+      error: undefined,
+      uncertain: false,
+      requestSeq: this.state.backupExport.requestSeq + 1,
+    });
+  }
+
+  openBackupImport() {
+    this.backupImportAbort?.abort();
+    this.setBackupImport({
+      phase: 'empty',
+      fileName: undefined,
+      stagingId: undefined,
+      inspection: undefined,
+      projectName: '',
+      progress: 0,
+      statusText: undefined,
+      result: undefined,
+      error: undefined,
+      uncertain: false,
+      requestSeq: this.state.backupImport.requestSeq + 1,
+    });
+  }
+
+  setBackupImportName(projectName: string) {
+    this.setBackupImport({ projectName });
+  }
+
+  async selectBackupFile(fileOrPath: File | string) {
+    const prevStaging = this.state.backupImport.stagingId;
+    if (prevStaging) void this.connection.call('projects.backupDiscardStaging', { stagingId: prevStaging }).catch(() => undefined);
+
+    const seq = this.state.backupImport.requestSeq + 1;
+    const fileName = typeof fileOrPath === 'string' ? (fileOrPath.split(/[/\\]/).pop() || fileOrPath) : fileOrPath.name;
+    const controller = new AbortController();
+    this.backupImportAbort?.abort();
+    this.backupImportAbort = controller;
+    this.backupImportJobId = null;
+
+    this.setBackupImport({
+      phase: 'uploading',
+      fileName,
+      stagingId: undefined,
+      inspection: undefined,
+      projectName: '',
+      progress: 10,
+      statusText: undefined,
+      result: undefined,
+      error: undefined,
+      uncertain: false,
+      requestSeq: seq,
+    });
+
+    let stagingId: string | undefined;
+    try {
+      if (typeof fileOrPath === 'string') {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const staged = await invoke<{ stagingId: string }>('stage_host_backup', { path: fileOrPath });
+        stagingId = staged.stagingId;
+      } else {
+        if (!this.connection.uploadBackup) throw new Error('Host connection does not support backup upload');
+        const staged = await this.connection.uploadBackup(fileOrPath, controller.signal);
+        stagingId = staged.stagingId;
+      }
+
+      if (this.state.backupImport.requestSeq !== seq || (this.state.backupImport.phase as string) === 'idle') {
+        if (stagingId) void this.connection.call('projects.backupDiscardStaging', { stagingId }).catch(() => undefined);
+        return;
+      }
+
+      this.setBackupImport({ phase: 'inspecting', stagingId, progress: 25 });
+      const job = await this.connection.call('projects.backupInspect', { stagingId });
+      this.backupImportJobId = job.id;
+      const inspection = await this.connection.waitJob<BackupInspectionResult>(
+        job.id,
+        (snapshot) => {
+          if (this.state.backupImport.requestSeq !== seq || this.state.backupImport.phase === 'idle') return;
+          this.setBackupImport({
+            progress: snapshot.progress?.progress ?? this.state.backupImport.progress,
+            statusText: snapshot.progress?.data,
+          });
+        },
+        controller.signal,
+      );
+      if (this.state.backupImport.requestSeq !== seq || (this.state.backupImport.phase as string) === 'idle') {
+        void this.connection.call('projects.backupDiscardStaging', { stagingId }).catch(() => undefined);
+        return;
+      }
+      this.setBackupImport({
+        phase: 'ready',
+        stagingId,
+        inspection,
+        projectName: inspection.projectName,
+        progress: 100,
+        statusText: undefined,
+        error: undefined,
+      });
+    } catch (error) {
+      if (stagingId) void this.connection.call('projects.backupDiscardStaging', { stagingId }).catch(() => undefined);
+      if (this.state.backupImport.requestSeq !== seq || (this.state.backupImport.phase as string) === 'idle') return;
+      if (controller.signal.aborted) {
+        this.setBackupImport({ phase: 'empty', stagingId: undefined, progress: 0, statusText: undefined, error: undefined });
+        return;
+      }
+      this.setBackupImport({
+        phase: 'rejected',
+        stagingId: undefined,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      if (this.backupImportAbort === controller) this.backupImportAbort = null;
+      this.backupImportJobId = null;
+    }
+  }
+
+  async confirmBackupImport() {
+    const current = this.state.backupImport;
+    if (!current.stagingId || !current.inspection) return;
+    if (current.phase === 'importing') return;
+
+    const seq = current.requestSeq;
+    const stagingId = current.stagingId;
+    const expectedDigest = current.inspection.stagingDigest;
+    const desiredName = current.projectName.trim() || current.inspection.projectName;
+    const controller = new AbortController();
+    this.backupImportAbort?.abort();
+    this.backupImportAbort = controller;
+    this.backupImportJobId = null;
+    const opKey = taskOperationKey('backup-import', stagingId, expectedDigest, desiredName);
+
+    this.setBackupImport({
+      phase: 'importing',
+      progress: 5,
+      statusText: undefined,
+      error: undefined,
+      uncertain: false,
+    });
+
+    try {
+      const completed = await this.backupTasks.run<BackupImportResult>({
+        kind: 'backup-import',
+        key: opKey,
+        signal: controller.signal,
+        start: (operationId) =>
+          this.connection.call('projects.backupImport', {
+            stagingId,
+            expectedDigest,
+            name: desiredName,
+            operationId,
+          }),
+        progress: (job) => {
+          this.backupImportJobId = job.id;
+          if (this.state.backupImport.requestSeq !== seq || this.state.backupImport.phase === 'idle') return;
+          this.setBackupImport({
+            progress: job.progress?.progress ?? this.state.backupImport.progress,
+            statusText: job.progress?.data,
+          });
+        },
+        verifying: () => {
+          if (this.state.backupImport.requestSeq !== seq) return;
+          this.setBackupImport({ statusText: '正在核验导入结果…' });
+        },
+      });
+
+      if (this.state.backupImport.requestSeq !== seq || (this.state.backupImport.phase as string) === 'idle') return;
+      await this.backupTasks.complete('backup-import', opKey, completed.hostId).catch(() => undefined);
+      void this.connection.call('projects.backupDiscardStaging', { stagingId }).catch(() => undefined);
+      await this.refresh().catch(() => undefined);
+
+      if (this.state.backupImport.requestSeq !== seq || (this.state.backupImport.phase as string) === 'idle') return;
+      this.setBackupImport({
+        phase: 'completed',
+        stagingId: undefined,
+        progress: 100,
+        result: completed.result,
+        error: undefined,
+        uncertain: false,
+      });
+    } catch (error) {
+      if (this.state.backupImport.requestSeq !== seq || (this.state.backupImport.phase as string) === 'idle') return;
+      if (controller.signal.aborted) {
+        this.setBackupImport({ phase: 'ready', progress: 0, statusText: undefined, error: undefined });
+        return;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      if (/内容已更新|Content changed/i.test(message)) {
+        this.setBackupImport({ phase: 'stale', error: message, uncertain: false });
+        return;
+      }
+      if (/无法导入此备份|Cannot import/i.test(message)) {
+        this.setBackupImport({ phase: 'rejected', error: message, uncertain: false });
+        return;
+      }
+      this.setBackupImport({
+        phase: 'error',
+        error: message,
+        uncertain: error instanceof TaskVerificationPendingError,
+      });
+    } finally {
+      if (this.backupImportAbort === controller) this.backupImportAbort = null;
+      this.backupImportJobId = null;
+    }
+  }
+
+  cancelBackupImport() {
+    const jobId = this.backupImportJobId;
+    this.backupImportAbort?.abort();
+    if (jobId) void this.connection.call('jobs.cancel', { id: jobId }).catch(() => undefined);
+  }
+
+  closeBackupImport() {
+    this.cancelBackupImport();
+    const stagingId = this.state.backupImport.stagingId;
+    if (stagingId) void this.connection.call('projects.backupDiscardStaging', { stagingId }).catch(() => undefined);
+    this.setBackupImport({
+      phase: 'idle',
+      fileName: undefined,
+      stagingId: undefined,
+      inspection: undefined,
+      projectName: '',
+      progress: 0,
+      statusText: undefined,
+      result: undefined,
+      error: undefined,
+      uncertain: false,
+      requestSeq: this.state.backupImport.requestSeq + 1,
+    });
+  }
+
+  async openImportedProject(projectId: string) {
+    this.closeBackupImport();
+    const project = this.state.projects.find((p) => p.id === projectId);
+    if (project && project.videoCount > 1) {
+      await this.openDetail(projectId);
+    } else if (project && project.videoCount === 0) {
+      await this.openDetail(projectId);
+    } else {
+      await this.open(projectId);
+    }
   }
 
   private loadEditor(current: CurrentProject, videoFile: VideoFile | null, transcript?: SubtitleTranscript, stylePair?: SubtitleStylePair, restored = !!stylePair,

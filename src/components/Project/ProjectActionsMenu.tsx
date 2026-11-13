@@ -1,10 +1,10 @@
 // 项目卡片和列表行的「更多」菜单。重命名、删除属于 E-02/6，没传对应回调就不显示。
-import { FolderOpen, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { Archive, FolderOpen, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useProjectText } from './useProjectText';
 
-export function ProjectActionsMenu({ onOpen, onRename, onDelete, className }: {
-  onOpen: () => void; onRename?: () => void; onDelete?: () => void; className?: string;
+export function ProjectActionsMenu({ onOpen, onRename, onBackup, onDelete, className }: {
+  onOpen: () => void; onRename?: () => void; onBackup?: () => void; onDelete?: () => void; className?: string;
 }) {
   const { tp } = useProjectText();
   return (
@@ -18,6 +18,7 @@ export function ProjectActionsMenu({ onOpen, onRename, onDelete, className }: {
       <DropdownMenuContent align="end" onClick={e => e.stopPropagation()}>
         <DropdownMenuItem onClick={onOpen}><FolderOpen className="h-4 w-4" />{tp('open')}</DropdownMenuItem>
         {onRename && <DropdownMenuItem onClick={onRename}><Pencil className="h-4 w-4" />{tp('rename')}</DropdownMenuItem>}
+        {onBackup && <DropdownMenuItem onClick={onBackup}><Archive className="h-4 w-4" />{tp('backupMenu')}</DropdownMenuItem>}
         {onDelete && (
           <>
             <DropdownMenuSeparator />

@@ -95,6 +95,8 @@ export interface FlyCutCaptionProps {
   playerPlaceholder?: ReactNode
   /** 项目模式：字幕样式面板上方（样式来源，F-0003 AC-31） */
   styleHeaderSlot?: ReactNode
+  /** 项目模式下从顶栏导出下拉触发项目备份（F-0023） */
+  onOpenProjectBackup?: () => void
   /** 项目模式：字幕样式面板下方（共享样式的一次性提示，F-0003 AC-31） */
   styleFooterSlot?: ReactNode
   /**

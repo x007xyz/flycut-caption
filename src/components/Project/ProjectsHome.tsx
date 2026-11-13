@@ -1,6 +1,6 @@
 // 项目首页（F-0002 AC-5；排序、列表视图、重命名、删除等属于 E-02/6 的部分由参数开关）
 import { useRef, useState } from 'react';
-import { AlertTriangle, FolderOpen, FolderPlus, LayoutGrid, List, Loader2, Play, RefreshCw, Search, Upload } from 'lucide-react';
+import { AlertTriangle, FileArchive, FolderOpen, FolderPlus, LayoutGrid, List, Loader2, Play, RefreshCw, Search, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -38,13 +38,15 @@ export interface ProjectsHomeProps {
   onCreateEmpty?: () => void;
   onRetry: () => void;
   onRename?: (id: string) => void;
+  onBackup?: (id: string) => void;
   onDelete?: (id: string) => void;
+  onImportBackup?: () => void;
   /** 强制显示拖入时的遮罩（原型和截图用） */
   dragActive?: boolean;
 }
 
 export function ProjectsHome(props: ProjectsHomeProps) {
-  const { status, projects, totalCount, query, onQueryChange, view, onViewChange, sort, onSortChange, openingId, creating, now, onOpen, onFilesDropped, onChooseFile, onUseSample, onCreateEmpty, onRetry, onRename, onDelete, dragActive } = props;
+  const { status, projects, totalCount, query, onQueryChange, view, onViewChange, sort, onSortChange, openingId, creating, now, onOpen, onFilesDropped, onChooseFile, onUseSample, onCreateEmpty, onRetry, onRename, onBackup, onDelete, onImportBackup, dragActive } = props;
   const { t, tp } = useProjectText();
   const [dragging, setDragging] = useState(false);
   const hostReady = useHostReady();
@@ -70,6 +72,7 @@ export function ProjectsHome(props: ProjectsHomeProps) {
           </div>
           <div className="flex flex-shrink-0 items-center gap-2">
             <Button variant="ghost" size="sm" onClick={onUseSample} disabled={creating || !hostReady}><Play className="h-3.5 w-3.5" />{tp('useSample')}</Button>
+            {onImportBackup && <Button variant="outline" size="sm" onClick={onImportBackup} disabled={creating || !hostReady}><FileArchive className="h-3.5 w-3.5" />{tp('importBackupMenu')}</Button>}
             {onCreateEmpty && <Button variant="outline" size="sm" onClick={onCreateEmpty} disabled={creating || !hostReady}><FolderPlus className="h-3.5 w-3.5" />{tp('newEmpty')}</Button>}
             <Button size="sm" onClick={onChooseFile} disabled={creating || !hostReady}><Upload className="h-3.5 w-3.5" />{tp('chooseFile')}</Button>
           </div>
@@ -121,12 +124,12 @@ export function ProjectsHome(props: ProjectsHomeProps) {
             <div className="-mx-2 grid grid-cols-2 gap-x-2 gap-y-4 md:grid-cols-3 xl:grid-cols-4">
               {projects.map(p => (
                 <ProjectCard key={p.id} project={p} now={now} opening={openingId === p.id} disabled={Boolean(openingId) && openingId !== p.id}
-                  onOpen={() => onOpen(p.id)} onRename={onRename && (() => onRename(p.id))} onDelete={onDelete && (() => onDelete(p.id))} />
+                  onOpen={() => onOpen(p.id)} onRename={onRename && (() => onRename(p.id))} onBackup={onBackup && (() => onBackup(p.id))} onDelete={onDelete && (() => onDelete(p.id))} />
               ))}
             </div>
           )}
           {status === 'ready' && projects.length > 0 && view === 'list' && (
-            <ProjectsTable projects={projects} now={now} openingId={openingId} onOpen={onOpen} onRename={onRename} onDelete={onDelete} />
+            <ProjectsTable projects={projects} now={now} openingId={openingId} onOpen={onOpen} onRename={onRename} onBackup={onBackup} onDelete={onDelete} />
           )}
         </div>
       </div>
@@ -171,7 +174,7 @@ function SkeletonGrid() {
   );
 }
 
-function ProjectsTable({ projects, now, openingId, onOpen, onRename, onDelete }: Pick<ProjectsHomeProps, 'projects' | 'now' | 'openingId' | 'onOpen' | 'onRename' | 'onDelete'>) {
+function ProjectsTable({ projects, now, openingId, onOpen, onRename, onBackup, onDelete }: Pick<ProjectsHomeProps, 'projects' | 'now' | 'openingId' | 'onOpen' | 'onRename' | 'onBackup' | 'onDelete'>) {
   const { tp, language } = useProjectText();
   return (
     <table className="w-full text-sm">
@@ -203,7 +206,7 @@ function ProjectsTable({ projects, now, openingId, onOpen, onRename, onDelete }:
                 : p.transcribing ? <span className="text-primary">{tp('transcribing', { progress: p.transcribing.progress })}</span>
                 : <span className="text-muted-foreground">{p.videoCount === 0 ? '—' : tp('ready')}</span>}
             </td>
-            <td><div className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100"><ProjectActionsMenu onOpen={() => onOpen(p.id)} onRename={onRename && (() => onRename(p.id))} onDelete={onDelete && (() => onDelete(p.id))} /></div></td>
+            <td><div className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100"><ProjectActionsMenu onOpen={() => onOpen(p.id)} onRename={onRename && (() => onRename(p.id))} onBackup={onBackup && (() => onBackup(p.id))} onDelete={onDelete && (() => onDelete(p.id))} /></div></td>
           </tr>
         ))}
       </tbody>
