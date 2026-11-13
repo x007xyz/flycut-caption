@@ -10,6 +10,8 @@ import { useClientRuntime } from '@/runtime/context';
 import { loadMediaBuffer } from '@/utils/mediaSource';
 import { taskOperationKey } from '@/services/taskOperation';
 import { hashBytes } from '@/upload/sha256';
+import { inferHotwordCapabilities } from '../../shared/providers';
+import { selectActiveHotwords } from '../../shared/terminology';
 import { findModel } from './useProviderModels';
 
 export interface UseASRReturn { isASRLoading: boolean; asrProgress: ASRProgress | null; startASR: (videoFile: VideoFile) => Promise<void> }
@@ -51,11 +53,12 @@ export function useASR(options: { onSubtitleGenerated?: (subtitles: SubtitleChun
       // Browser files, desktop paths and Host project media (F-0002)
       const buffer = await loadMediaBuffer(videoFile);
       const sourceSha256 = await hashBytes(new Uint8Array(buffer));
+      const hotwords = selectActiveHotwords(startProject?.terminology ?? [], inferHotwordCapabilities(found.model));
       const operationKey = taskOperationKey('asr', startProject?.projectId, startProject?.videoId,
         videoFile.remotePath ?? videoFile.path ?? videoFile.name, videoFile.size, app.asrModel.providerId, app.asrModel.modelId,
-        app.language, JSON.stringify(app.asrOptions[modelKey(app.asrModel)] ?? {}), sourceSha256);
+        app.language, JSON.stringify(app.asrOptions[modelKey(app.asrModel)] ?? {}), JSON.stringify(hotwords), sourceSha256);
       const transcript = await asrService.transcribeAudio(buffer, { ...app.asrModel, language: app.language,
-        options: app.asrOptions[modelKey(app.asrModel)] }, { key: operationKey, verifyingMessage: t('messages.asr.taskVerifying') });
+        options: app.asrOptions[modelKey(app.asrModel)], ...(hotwords.length ? { hotwords } : {}) }, { key: operationKey, verifyingMessage: t('messages.asr.taskVerifying') });
       // The user may have opened something else while recognition ran; never overwrite that editor.
       if (isSameTarget()) {
         stores.history.getState().setTranscript(transcript);

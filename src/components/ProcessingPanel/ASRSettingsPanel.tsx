@@ -2,11 +2,14 @@
 // 模型、语言、选项都来自 Host 的 providers.models；下载和添加服务在设置弹窗的「模型」里。
 
 import { useEffect } from 'react';
-import { AlertCircle, BrainCircuit, Download, Globe, Loader2, RotateCcw, Settings, X } from 'lucide-react';
+import { AlertCircle, BrainCircuit, Download, Globe, Loader2, RotateCcw, Settings, Sparkles, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { modelKey, useAppStore } from '@/stores/appStore';
+import { useProjectStore } from '@/stores/projectStore';
 import { useRuntimeStoreApi } from '@/stores/runtimeStore';
 import { ASRLanguageSelector, ModelOptionsForm, RecommendedModelCard } from '@/components/ASR';
+import { inferHotwordCapabilities } from '../../../shared/providers';
+import { selectActiveHotwords } from '../../../shared/terminology';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { findModel, useModelDownloads, useProviderModels } from '@/hooks/useProviderModels';
 import { getModelLanguageConfig, resolveLanguageForModel } from '@/utils/modelLanguageConfig';
@@ -29,10 +32,11 @@ interface ASRSettingsPanelProps {
 const parseKey = (key: string): ModelRef => { const index = key.lastIndexOf('/'); return { providerId: key.slice(0, index), modelId: key.slice(index + 1) }; };
 
 export function ASRSettingsPanel({ className, onOpenSettings }: ASRSettingsPanelProps) {
-  const { asr } = useClientRuntime();
-  const { language: uiLanguage } = useTranslation();
+  const { asr, projects } = useClientRuntime();
+  const { t, language: uiLanguage } = useTranslation();
   const mc = asrModelsCopy(uiLanguage);
   const app = useRuntimeStoreApi('app');
+  const currentProject = useProjectStore((s) => s.current);
   const language = useAppStore((s) => s.language);
   const asrModel = useAppStore((s) => s.asrModel);
   const asrOptions = useAppStore((s) => s.asrOptions);
@@ -81,6 +85,8 @@ export function ASRSettingsPanel({ className, onOpenSettings }: ASRSettingsPanel
 
   const providerError = asrModel && groups.find(group => group.provider.id === asrModel.providerId)?.error;
   const showRecommendedGuide = !loading && (!active || active.model.status !== 'ready');
+  const hotwordCaps = active ? inferHotwordCapabilities(active.model) : undefined;
+  const activeHotwords = selectActiveHotwords(currentProject?.terminology ?? [], hotwordCaps);
 
   return (
     <div className={cn('space-y-3', className)}>
@@ -195,6 +201,48 @@ export function ASRSettingsPanel({ className, onOpenSettings }: ASRSettingsPanel
         <ModelOptionsForm fields={active.model.options} values={asrOptions[modelKey(asrModel)] ?? {}} disabled={isLoading}
           onChange={(values) => app.getState().setASROptions(asrModel, values)} />
       )}
+
+      <div className="space-y-1.5 rounded-md border border-border/70 bg-muted/30 p-2.5 text-xs" data-testid="asr-hotwords-summary">
+        <div className="flex items-center justify-between gap-2">
+          <span className="flex items-center gap-1.5 font-medium text-foreground">
+            <Sparkles className="h-3.5 w-3.5 text-primary" />
+            {t('components.project.hotwordsTitle')}
+          </span>
+          {currentProject ? (
+            <button
+              type="button"
+              disabled={isLoading}
+              onClick={() => { void projects.openHotwordsDialog(currentProject.projectId, currentProject.name); }}
+              className="text-[11px] font-medium text-primary hover:underline disabled:opacity-50"
+            >
+              {t('components.project.hotwordsManage')}
+            </button>
+          ) : null}
+        </div>
+        {!currentProject ? (
+          <p className="text-[11px] text-muted-foreground">{t('components.project.hotwordsNoProject')}</p>
+        ) : active && !hotwordCaps?.supported ? (
+          <div className="space-y-1 text-[11px]">
+            <p className="text-amber-600 dark:text-amber-400">{t('components.project.hotwordsUnsupported')}</p>
+            <p className="text-muted-foreground">{t('components.project.hotwordsContinuePlain')}</p>
+            {onOpenSettings && (
+              <button type="button" onClick={onOpenSettings} className="text-primary hover:underline">
+                {t('components.project.hotwordsChangeModel')}
+              </button>
+            )}
+          </div>
+        ) : active ? (
+          <p className="text-[11px] text-muted-foreground">
+            {activeHotwords.length > 0
+              ? t('components.project.hotwordsSummaryActive')
+                  .replace('{count}', String(activeHotwords.length))
+                  .replace('{model}', active.model.name)
+              : t('components.project.hotwordsSummaryNone').replace('{model}', active.model.name)}
+          </p>
+        ) : (
+          <p className="text-[11px] text-muted-foreground">{t('components.project.hotwordsEmpty')}</p>
+        )}
+      </div>
     </div>
   );
 }

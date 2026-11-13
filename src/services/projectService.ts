@@ -17,6 +17,7 @@ import type { CurrentProject, MediaUploadView, ProjectRoute } from '@/stores/pro
 import type { SubtitleStylePair } from '@/subtitle';
 import { defaultSubtitleStylePair } from '@/subtitle';
 import type { TextRecord } from '../../shared/text/corrections';
+import type { ProjectTermEntry } from '../../shared/terminology';
 import { isTauriRuntime } from '@/utils/runtime';
 import { conflictsWithHost, diffWithHost, keyOf, scopeOf, type HostContent, type RecoveryContent, type RecoveryCopy } from '@/recovery/copy';
 import { IndexedDbRecoveryStorage, type RecoveryStorage } from '@/recovery/storage';
@@ -202,6 +203,9 @@ export class ProjectService {
   private recoverySaveAsId: string | null = null;
   /** 最近的副本写入耗时（毫秒），验收测量 1 秒 / 2 秒指标用 */
   readonly recoveryTimings: Array<{ at: number; ms: number; bytes: number }> = [];
+
+  // ---------- 项目热词与共享术语（F-0019） ----------
+  private hotwordsSaveOpId: string | null = null;
 
   constructor(ctx: Context, storage: RecoveryStorage = new IndexedDbRecoveryStorage()) {
     this.ctx = ctx; this.connection = ctx.connection; this.stores = ctx.stores; this.recoveryStorage = storage;
@@ -424,6 +428,7 @@ export class ProjectService {
         const video = created.project.videos[0];
         this.loadEditor({ projectId: created.projectId, videoId: created.videoId, name, revision: created.revision, hasTranscript: false,
           media: { status: 'ok', name: locator.fileName }, videoName: locator.fileName, videoRevision: 0, styleRevision: 0, styleSource: 'project',
+          terminology: created.project.terminology ?? [], terminologyRevision: created.project.terminologyRevision ?? 0,
           projectStyle: defaultSubtitleStylePair, videos: [{ id: video.id, name: video.name, durationSeconds: video.durationSeconds,
             createdAt: video.createdAt, updatedAt: video.createdAt, hasTranscript: false, mediaMissing: false, hasThumbnail: false,
             styleSource: 'project', revision: 0 }] }, videoFile);
@@ -602,6 +607,7 @@ export class ProjectService {
       const video = created.project.videos[0];
       this.loadEditor({ projectId: created.projectId, videoId: created.videoId, name, revision: created.revision, hasTranscript: false,
         media: { status: 'ok', name: videoFile.name }, videoName: videoFile.name, videoRevision: 0, styleRevision: 0, styleSource: 'project',
+        terminology: created.project.terminology ?? [], terminologyRevision: created.project.terminologyRevision ?? 0,
         projectStyle: defaultSubtitleStylePair, videos: [{ id: video.id, name: video.name, durationSeconds: video.durationSeconds, createdAt: video.createdAt,
           updatedAt: video.createdAt, hasTranscript: false, mediaMissing: false, hasThumbnail: false, styleSource: 'project', revision: 0 }] }, videoFile);
       // 新视频照常开始识别（appStore.setVideoFile 已切到 transcribe）
@@ -834,6 +840,7 @@ export class ProjectService {
       this.transcriptRecord = transcript as TranscriptRecord | undefined;
       this.loadEditor({ projectId, videoId: video.id, name: project.name, revision: project.revision, hasTranscript: video.hasTranscript,
         media: { status: media.status, name: media.name }, videoName: video.name, videoRevision: video.revision, styleRevision: project.styleRevision,
+        terminology: project.terminology ?? [], terminologyRevision: project.terminologyRevision ?? 0,
         styleSource: video.styleSource, projectStyle: projectStyle ?? withAspect(defaultSubtitleStylePair, aspectOf(style.pair)), videos },
       videoFile, transcript ? mergeEdits(transcript as unknown as SubtitleTranscript, edits) : undefined, style.pair, style.restored,
       edits?.textHistory, edits?.languageTracks, edits?.activeLanguageTrackId ?? null);
@@ -1660,6 +1667,178 @@ export class ProjectService {
     this.state.set({ current: null, save: { status: 'saved' }, conflictDialog: false, projectDeleted: null });
     this.stores.history.getState().reset();
     this.stores.app.getState().setVideoFile(null);
+  }
+
+  // ---------- 项目热词与共享术语（F-0019） ----------
+
+  private setHotwordsDialog(patch: Partial<ReturnType<typeof this.stores.project.getState>['hotwordsDialog']>) {
+    this.state.set({ hotwordsDialog: { ...this.state.hotwordsDialog, ...patch } });
+  }
+
+  async openHotwordsDialog(projectId?: string, projectName?: string) {
+    const targetId = projectId ?? this.state.current?.projectId ?? this.state.detail?.projectId;
+    if (!targetId) return;
+    const targetName = projectName ?? this.state.current?.name ?? this.state.detail?.name;
+    const seq = this.state.hotwordsDialog.requestSeq + 1;
+    this.hotwordsSaveOpId = null;
+    this.setHotwordsDialog({
+      phase: 'loading',
+      projectId: targetId,
+      projectName: targetName,
+      revision: 0,
+      terms: [],
+      dirty: false,
+      error: undefined,
+      uncertain: false,
+      requestSeq: seq,
+    });
+    try {
+      const snap = await this.connection.call('projects.getTerminology', { projectId: targetId });
+      const latest = this.state.hotwordsDialog;
+      if (latest.requestSeq !== seq || (latest.phase as string) === 'idle' || latest.projectId !== targetId) return;
+      this.setHotwordsDialog({
+        phase: 'ready',
+        revision: snap.revision,
+        terms: snap.terminology,
+        dirty: false,
+        error: undefined,
+        uncertain: false,
+      });
+      if (this.state.current?.projectId === targetId) {
+        this.state.set({
+          current: { ...this.state.current, terminology: snap.terminology, terminologyRevision: snap.revision },
+        });
+      }
+    } catch (error) {
+      const latest = this.state.hotwordsDialog;
+      if (latest.requestSeq !== seq || (latest.phase as string) === 'idle') return;
+      this.setHotwordsDialog({
+        phase: 'error',
+        error: error instanceof Error ? error.message : String(error),
+        uncertain: false,
+      });
+    }
+  }
+
+  async reloadHotwordsDialog() {
+    const d = this.state.hotwordsDialog;
+    if (d.projectId) await this.openHotwordsDialog(d.projectId, d.projectName);
+  }
+
+  addHotwordEntry(entry: { term: string; weight?: number; asHotword: boolean }) {
+    const d = this.state.hotwordsDialog;
+    const next: ProjectTermEntry = {
+      id: crypto.randomUUID(),
+      term: entry.term,
+      asHotword: entry.asHotword,
+      ...(entry.weight !== undefined ? { weight: entry.weight } : {}),
+      updatedAt: new Date().toISOString(),
+    };
+    this.setHotwordsDialog({ terms: [...d.terms, next], dirty: true, phase: 'ready', error: undefined });
+  }
+
+  updateHotwordEntry(id: string, patch: { term: string; weight?: number; asHotword: boolean }) {
+    const d = this.state.hotwordsDialog;
+    const terms = d.terms.map((item) =>
+      item.id === id
+        ? {
+            ...item,
+            term: patch.term,
+            asHotword: patch.asHotword,
+            weight: patch.weight,
+            updatedAt: new Date().toISOString(),
+          }
+        : item,
+    );
+    this.setHotwordsDialog({ terms, dirty: true, phase: 'ready', error: undefined });
+  }
+
+  toggleHotwordEntry(id: string) {
+    const d = this.state.hotwordsDialog;
+    const terms = d.terms.map((item) =>
+      item.id === id ? { ...item, asHotword: !item.asHotword, updatedAt: new Date().toISOString() } : item,
+    );
+    this.setHotwordsDialog({ terms, dirty: true, phase: 'ready', error: undefined });
+  }
+
+  removeHotwordEntry(id: string) {
+    const d = this.state.hotwordsDialog;
+    this.setHotwordsDialog({ terms: d.terms.filter((t) => t.id !== id), dirty: true, phase: 'ready', error: undefined });
+  }
+
+  async saveHotwordsDialog() {
+    const d = this.state.hotwordsDialog;
+    if (!d.projectId || d.phase === 'saving' || d.phase === 'loading') return;
+    const seq = d.requestSeq;
+    const projectId = d.projectId;
+    const operationId = this.hotwordsSaveOpId ?? crypto.randomUUID();
+    this.hotwordsSaveOpId = operationId;
+    this.setHotwordsDialog({ phase: 'saving', error: undefined, uncertain: false });
+
+    try {
+      if (d.uncertain) {
+        const currentSnap = await this.connection.call('projects.getTerminology', { projectId });
+        if (this.state.hotwordsDialog.requestSeq !== seq || (this.state.hotwordsDialog.phase as string) === 'idle') return;
+        if (currentSnap.revision > d.revision) {
+          this.setHotwordsDialog({ phase: 'stale', revision: currentSnap.revision, terms: currentSnap.terminology, uncertain: false });
+          return;
+        }
+      }
+      const res = await this.connection.call('projects.saveTerminology', {
+        projectId,
+        baseRevision: d.revision,
+        operationId,
+        terms: d.terms.map((item) => ({
+          id: item.id,
+          term: item.term,
+          asHotword: item.asHotword,
+          ...(item.weight !== undefined ? { weight: item.weight } : {}),
+          ...(item.translations ? { translations: item.translations } : {}),
+        })),
+      });
+      if (this.state.hotwordsDialog.requestSeq !== seq || (this.state.hotwordsDialog.phase as string) === 'idle') return;
+      this.hotwordsSaveOpId = null;
+      if (res.status === 'conflict') {
+        this.setHotwordsDialog({ phase: 'stale', revision: res.revision, error: undefined, uncertain: false });
+        return;
+      }
+      if (this.state.current?.projectId === projectId) {
+        this.state.set({
+          current: { ...this.state.current, terminology: res.terminology, terminologyRevision: res.revision, revision: res.projectRevision },
+        });
+      }
+      this.setHotwordsDialog({
+        phase: 'completed',
+        revision: res.revision,
+        terms: res.terminology,
+        dirty: false,
+        error: undefined,
+        uncertain: false,
+      });
+    } catch (error) {
+      if (this.state.hotwordsDialog.requestSeq !== seq || (this.state.hotwordsDialog.phase as string) === 'idle') return;
+      const uncertain = error instanceof ConnectionUnavailableError || error instanceof TypeError;
+      this.setHotwordsDialog({
+        phase: 'error',
+        error: error instanceof Error ? error.message : String(error),
+        uncertain,
+      });
+    }
+  }
+
+  closeHotwordsDialog() {
+    this.hotwordsSaveOpId = null;
+    this.setHotwordsDialog({
+      phase: 'idle',
+      projectId: undefined,
+      projectName: undefined,
+      revision: 0,
+      terms: [],
+      dirty: false,
+      error: undefined,
+      uncertain: false,
+      requestSeq: this.state.hotwordsDialog.requestSeq + 1,
+    });
   }
 
   private loadEditor(current: CurrentProject, videoFile: VideoFile | null, transcript?: SubtitleTranscript, stylePair?: SubtitleStylePair, restored = !!stylePair,

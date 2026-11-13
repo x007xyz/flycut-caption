@@ -111,7 +111,7 @@ export const projectFileSchema = z.object({
   /** F-0019 / F-0032: shared project-level terminology & ASR hotwords. */
   terminology: z.array(projectTermEntrySchema).optional(),
   /** F-0019 / F-0032: grows on every terminology save. */
-  terminologyRevision: z.number().int().min(0).default(0),
+  terminologyRevision: z.number().int().min(0).optional(),
   /** Format 2: set while the project is in Trash (ISO 8601). */
   deletedAt: z.string().optional(),
   /** Format 2: when the Host deletes the project permanently (ISO 8601). */

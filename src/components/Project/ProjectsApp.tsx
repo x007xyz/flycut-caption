@@ -25,6 +25,7 @@ import { TrashPage } from './TrashPage';
 import { SharedStyleHint, StyleSourceBar } from './StyleSource';
 import { ConfirmDialog, DeleteProjectDialog, MediaMissingBanner, ProjectDeletedDialog, ProjectOpenErrorDialog, RenameProjectDialog, SaveConflictDialog,
   UnsavedChangesDialog } from './ProjectDialogs';
+import { HotwordsDialog } from './HotwordsDialog';
 import { RecoveryCheckingDialog, RecoveryChooseDialog, RecoveryConflictDialog, RecoveryDiscardDialog, RecoveryFailedDialog,
   RecoveryUnavailableBanner } from './RecoveryDialogs';
 import { MediaUploadPanel } from './MediaUploadPanel';
@@ -233,6 +234,7 @@ function ProjectDetailPage({ version }: { version: string }) {
         onAddVideo={() => { void chooseFiles(); }}
         onFilesDropped={files => { void Promise.all(files.map(videoFileFromFile)).then(addFiles); }}
         onRename={() => rename.open(projectId, detail.name)}
+        onManageHotwords={() => { void projects.openHotwordsDialog(projectId, detail.name); }}
         onRemoveVideo={id => setRemoving({ id, name: detail.videos.find(video => video.id === id)?.name ?? '', busy: false })}
         onDismissFailed={key => projects.dismissFailedAdd(key)} />
       {rename.element}
@@ -512,6 +514,7 @@ function ProjectsRoot(props: FlyCutCaptionProps) {
         : route.name === 'trash' ? <TrashPageContainer version={__FLYCUT_VERSION__} />
         : <ProjectsHomePage version={__FLYCUT_VERSION__} />}
       <RecoveryGate />
+      <HotwordsDialog />
       <ProjectOpenErrorDialog open={!!newerVersion} projectName={newerVersion?.name ?? ''} onClose={() => setProject({ newerVersion: null })} />
     </div>
   );
