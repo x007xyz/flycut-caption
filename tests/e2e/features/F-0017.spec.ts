@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { shot } from '../lib/evidence';
-import { MOCK_HOST, mockHost, prepare, projectItem, uuid, type MockHandlers } from '../lib/mockHost';
+import { E2E_HOST_ID, MOCK_HOST, mockHost, prepare, projectItem, uuid, type MockHandlers } from '../lib/mockHost';
 import { makeF0017Transcript } from '../lib/longTranscript';
 
 const F = 'F-0017';
@@ -14,8 +14,6 @@ const SHORT = '00000000-0000-4000-8000-0000000000ab';
 const T = '2026-11-09T12:00:00.000Z';
 const NAME = '六十小时口播';
 const longTranscript = makeF0017Transcript();
-const aiSettings = JSON.stringify({ state: { aiModels: [{ id: 'mock-ai', name: 'Mock AI', baseUrl: 'http://ai.test/v1',
-  apiKey: 'test-key', model: 'mock-model' }], selectedAIModelId: 'mock-ai' }, version: 1 });
 const shortTranscript = {
   text: '短视频第一句',
   language: 'zh',
@@ -160,6 +158,7 @@ for (const theme of ['light', 'dark'] as const) {
     let release!: () => void;
     const providerGate = new Promise<void>(resolve => { release = resolve; });
     const transcriptWithoutLoadedState = { ...longTranscript, editing: undefined };
+    let workflowOpId: unknown;
     const host = await mockHost(page, {
       'projects.list': () => [projectItem(P, NAME, { durationSeconds: 3600, videoId: LONG })],
       'projects.open': () => ({
@@ -169,13 +168,16 @@ for (const theme of ['light', 'dark'] as const) {
         transcript: undefined,
       }),
       'projects.saveTranscript': () => ({ status: 'saved', revision: 2, updatedAt: T }),
-      'workflow.start': () => ({ id: uuid(991), status: 'queued', createdAt: T, updatedAt: T }),
+      'workflow.start': payload => {
+        workflowOpId = payload?.operationId;
+        return { id: uuid(991), operationId: workflowOpId, status: 'queued', createdAt: T, updatedAt: T };
+      },
       'jobs.get': async () => {
         await providerGate;
         await page.evaluate(() => {
           (window as Window & { __f0017ProviderReturnedAt?: number }).__f0017ProviderReturnedAt = performance.now();
         });
-        return { id: uuid(991), status: 'complete', result: { transcript: transcriptWithoutLoadedState, cuts: [] }, createdAt: T, updatedAt: T };
+        return { id: uuid(991), operationId: workflowOpId, status: 'complete', result: { transcript: transcriptWithoutLoadedState, cuts: [] }, createdAt: T, updatedAt: T };
       },
       'assets.delete': () => ({ deleted: true }),
     });
@@ -346,6 +348,8 @@ test('F-0017/AC-9 translation and AI correction write back offscreen virtual row
   let sequence = 0;
   const jobs = new Map<string, { mode: 'correction' | 'translation'; items: Array<{ id: string; text: string }> }>();
   await openEditor(page, 'light', {
+    'aiSettings.list': () => ({ hostId: E2E_HOST_ID, revision: 1, selectedId: 'mock-ai',
+      configs: [{ id: 'mock-ai', name: 'Mock AI', baseUrl: 'http://ai.test/v1', model: 'mock-model', hasApiKey: true }] }),
     'text.start': payload => {
       const id = uuid(970 + sequence++);
       jobs.set(id, payload as { mode: 'correction' | 'translation'; items: Array<{ id: string; text: string }> });
@@ -357,7 +361,7 @@ test('F-0017/AC-9 translation and AI correction write back offscreen virtual row
         text: job.mode === 'translation' ? `译文 ${item.text}` : `${item.text}。` }));
       return { id, status: 'complete', result, createdAt: T, updatedAt: T };
     },
-  }, { storage: { 'app-settings': aiSettings } });
+  });
 
   await page.getByRole('button', { name: '翻译' }).click();
   await expect(page.getByText('字幕翻译完成')).toBeVisible();

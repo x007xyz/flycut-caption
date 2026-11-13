@@ -187,7 +187,9 @@ test('F-0024/AC-4 Host export request carries the frozen highlighted scene', asy
   const connection = {
     call: async (method: string, payload: Record<string, unknown>) => {
       calls.push({ method, payload });
-      return method === 'export.start' ? { id: 'job' } : undefined;
+      if (method === 'projects.identity') return { hostId: 'test-host' };
+      if (method === 'export.start') return { id: 'job', operationId: payload.operationId };
+      return undefined;
     },
     waitJob: async () => ({ assetId: 'out', mimeType: 'video/mp4' }),
     download: async () => new Blob(),
