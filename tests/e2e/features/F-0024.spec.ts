@@ -79,12 +79,18 @@ const handlers = (reliable = true): MockHandlers => ({
   'projects.saveProjectStyle': () => ({ status: 'saved', revision: 1, updatedAt: NOW }),
 });
 
+/** Enter through the project card. Direct editor URLs are covered by project tests; this avoids racing F-0024's mocked startup. */
+async function enterEditor(page: Page) {
+  await page.goto('/#/projects');
+  await page.getByText(NAME, { exact: true }).click();
+  await expect(page.locator('video')).toBeVisible({ timeout: 15_000 });
+}
+
 async function openEditor(page: Page, theme: Theme, reliable = true) {
   await prepare(page, theme);
   const host = await mockHost(page, handlers(reliable));
   await page.route('**/projects/*/media/*', serveMedia);
-  await page.goto(`/#/projects/${P}/videos/${VIDEO_ID}`);
-  await expect(page.locator('video')).toBeVisible();
+  await enterEditor(page);
   await page.locator('video').evaluate(async (video: HTMLVideoElement) => {
     if (video.readyState >= 1) return;
     await new Promise<void>(resolve => video.addEventListener('loadedmetadata', () => resolve(), { once: true }));
@@ -207,8 +213,7 @@ for (const theme of THEMES) {
     await prepare(page, theme);
     await mockHost(page, stateful);
     await page.route('**/projects/*/media/*', serveMedia);
-    await page.goto(`/#/projects/${P}/videos/${VIDEO_ID}`);
-    await expect(page.locator('video')).toBeVisible();
+    await enterEditor(page);
     await page.getByRole('button', { name: '逐字高亮', exact: true }).click();
     await expect(page.getByTestId('word-highlight-fallback')).toHaveCount(0);
     await seek(page, 0.45);
@@ -229,8 +234,7 @@ for (const theme of THEMES) {
       const file = new URL(route.request().url()).pathname.split('/').at(-1)!;
       await route.fulfill({ path: join(process.cwd(), 'public/fonts/subtitle', file) });
     });
-    await page.goto(`/#/projects/${P}/videos/${VIDEO_ID}`);
-    await expect(page.locator('video')).toBeVisible();
+    await enterEditor(page);
     await page.getByRole('button', { name: '逐字高亮', exact: true }).click();
     await expect(page.getByText('正在加载字幕字体…')).toBeVisible();
     await shot(page, F, `word-highlight-loading-${theme}`);
@@ -250,15 +254,15 @@ for (const theme of THEMES) {
       const file = new URL(route.request().url()).pathname.split('/').at(-1)!;
       await route.fulfill({ path: join(process.cwd(), 'public/fonts/subtitle', file) });
     });
-    await page.goto(`/#/projects/${P}/videos/${VIDEO_ID}`);
-    await expect(page.locator('video')).toBeVisible();
-    await page.getByRole('button', { name: '逐字高亮', exact: true }).click();
+    await enterEditor(page);
+    // Font loading is global to the overlay and may fail before the style preset is applied.
     await expect(page.getByText('字幕渲染不可用')).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole('button', { name: '重试' })).toBeVisible();
     await shot(page, F, `word-highlight-error-${theme}`);
     fail = false;
     await page.getByRole('button', { name: '重试' }).click();
     await expect(page.getByText('字幕渲染不可用')).toHaveCount(0, { timeout: 20_000 });
+    await page.getByRole('button', { name: '逐字高亮', exact: true }).click();
     await seek(page, 0.45);
     await expect.poll(() => coloredPixels(page, 'yellow'), { timeout: 10_000 }).toBeGreaterThan(20);
   });
@@ -275,18 +279,20 @@ test('F-0024/AC-4 AC-7 保存高亮样式后重新打开项目，预设和颜色
   await prepare(page, 'light');
   await mockHost(page, stateful);
   await page.route('**/projects/*/media/*', serveMedia);
-  await page.goto(`/#/projects/${P}/videos/${VIDEO_ID}`);
-  await expect(page.locator('video')).toBeVisible();
+  await enterEditor(page);
   await page.getByRole('button', { name: '逐字高亮', exact: true }).click();
   await page.getByTestId('subtitle-base-color').fill('#00FF00');
   await page.getByTestId('word-highlight-color').fill('#FF0000');
+  const saveNow = page.getByRole('status').filter({ hasText: '有未保存的修改' });
+  await expect(saveNow).toBeVisible({ timeout: 10_000 });
+  await saveNow.click();
   await expect.poll(() => {
     const primary = savedStyle?.primary as Record<string, unknown> | undefined;
     return [primary?.wordHighlightMode, primary?.color, primary?.wordHighlightColor];
   }, { timeout: 12_000 }).toEqual(['word', '#00FF00', '#FF0000']);
 
   await page.reload();
-  await expect(page.locator('video')).toBeVisible();
+  await enterEditor(page);
   await expect(page.getByText('正在加载字幕字体…')).toHaveCount(0, { timeout: 20_000 });
   await expect(page.getByTestId('subtitle-base-color')).toHaveValue('#00FF00');
   await expect(page.getByTestId('word-highlight-color')).toHaveValue('#ff0000');
