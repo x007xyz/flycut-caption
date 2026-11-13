@@ -1,7 +1,8 @@
 import type { Context } from '@deepseek-ai/cordis';
 import { providerPrepareSchema } from '../../shared/protocol';
-import { checkOptions, voiceActivityResultSchema, type ModelInfo, type ProviderModels } from '../../shared/providers';
+import { checkOptions, checkTtsRequest, voiceActivityResultSchema, type ModelInfo, type ProviderModels } from '../../shared/providers';
 import { validateTranscript } from '../../shared/asr/transcript';
+import { validateTtsAudio } from '../../shared/tts/audio';
 import type { Provider, ProviderRegistry } from '../services';
 
 const MODELS_TIMEOUT_MS = 10_000;
@@ -52,6 +53,18 @@ export const providerRegistryPlugin = { name: 'flycut-provider-registry', inject
       if (info.role !== 'vad') throw new Error(info.name + ' 不是 VAD 模型');
       if (info.status !== 'ready') throw new Error(info.name + ' 不可用：' + (info.reason ?? '模型未就绪'));
       return voiceActivityResultSchema.parse(await provider.detectVoice(ref.modelId, audioPath, signal, report));
+    },
+    async synthesize(request, signal, report) {
+      const provider = get(request.providerId);
+      if (!provider.synthesize) throw new Error(`${provider.name} 不支持语音合成（TTS）`);
+      const info = await model(provider, request.modelId, signal);
+      checkTtsRequest(info, request);
+      if (request.cloneReferenceAssetId && !request.referenceAudioPath) {
+        throw new Error('声音克隆缺少可读取的参考音频样本');
+      }
+      const audio = await provider.synthesize(request, signal, report);
+      const validated = validateTtsAudio(audio.bytes, audio.mimeType);
+      return { ...validated, bytes: audio.bytes };
     },
   };
   ctx.provide('providers', registry);

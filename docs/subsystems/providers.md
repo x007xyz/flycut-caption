@@ -20,6 +20,7 @@ interface ModelInfo {
   status: 'ready' | 'download' | 'unavailable';
   reason?: string;
   options?: Record<string, OptionField>; // 识别时可调的选项
+  tts?: TtsCapabilities;                // role === 'tts' 时的音色、克隆与参数能力声明
 }
 
 interface Provider {
@@ -32,6 +33,7 @@ interface Provider {
   prepare?(modelId: string, signal: AbortSignal, report: ProgressReporter): Promise<void>;
   /** 能力按需实现：没有就不写，不写抛错的空方法 */
   transcribe?(request: AsrRequest, audioPath: string, signal: AbortSignal, report: ProgressReporter): Promise<SubtitleTranscript>;
+  synthesize?(request: TtsSynthesizeProviderInput, signal: AbortSignal, report: ProgressReporter): Promise<TtsProviderAudio>;
 }
 
 interface AsrRequest extends ModelRef {
@@ -85,6 +87,8 @@ interface AsrRequest extends ModelRef {
 | `providers.list` | 已注册的 Provider（`id`、`name`、`kind`） |
 | `providers.models` | 所有 Provider 的模型，按 Provider 分组；单个 Provider 出错不影响其他 Provider，错误随分组返回 |
 | `providers.prepare` | `{ providerId, modelId }`，创建下载任务 |
+| `tts.getSettings` / `tts.saveSettings` | 读取和保存 Host 侧默认 TTS 模型、音色、参数与最近试听摘要（`revision` 冲突校验） |
+| `tts.synthesize` | 校验能力与克隆本人授权、执行合成并校验音频产物后存入 Host 资产 |
 | `endpoints.list` / `endpoints.save` / `endpoints.remove` | 管理用户添加的服务 |
 
 识别仍然通过 `workflow.start`，输入里的 `asr` 是 `AsrRequest` 加 `assetId`。

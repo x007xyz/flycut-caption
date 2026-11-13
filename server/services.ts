@@ -1,5 +1,6 @@
 import type { JobSnapshot, PipelineInput, PipelineResult, ExportInput, AgentInput, TextInput, SemanticCutsInput, KeywordSuggestInput } from '../shared/protocol';
-import type { AsrRequest, ModelInfo, ModelRef, ProviderKind, ProviderModels, ProviderSummary, VoiceActivityResult } from '../shared/providers';
+import type { AsrRequest, ModelInfo, ModelRef, ProviderKind, ProviderModels, ProviderSummary, TtsAudioFormat, TtsRequest, VoiceActivityResult } from '../shared/providers';
+import type { ValidatedTtsAudio } from '../shared/tts/audio';
 import type { ASRProgress, SubtitleTranscript } from '../src/types/subtitle';
 import type { AISettingsImportInput, AISettingsMutationResult, AISettingsRemoveResult, AISettingsSaveInput,
   AISettingsSaveResult, AISettingsSnapshot, AISettingsTestResult, ResolvedAIConfig } from '../shared/aiSettings';
@@ -32,6 +33,24 @@ export interface HostConfig { home: string; port: number; token: string; resourc
   /** F-0018: minimum free disk reserve in bytes before model download (defaults to 64 MiB). */
   modelDiskReserveBytes?: number }
 export type ProgressReporter = (progress: ASRProgress) => void;
+
+export interface TtsSynthesizeProviderInput extends TtsRequest {
+  /** Resolved local path on the Host for reference audio when cloning is authorized. */
+  referenceAudioPath?: string;
+}
+
+export interface TtsProviderAudio {
+  bytes: Buffer;
+  mimeType?: string;
+  format?: TtsAudioFormat;
+  durationSeconds?: number;
+  sampleRate?: number;
+}
+
+export interface TtsSynthesizeOutput extends ValidatedTtsAudio {
+  bytes: Buffer;
+}
+
 /**
  * One inference backend. Capabilities are optional methods: implement only what the backend does.
  * Rules: docs/subsystems/providers.md.
@@ -47,6 +66,8 @@ export interface Provider {
   detectVoice?(modelId: string, audioPath: string, signal: AbortSignal, report: ProgressReporter): Promise<VoiceActivityResult>;
   /** `audioPath` is a 16 kHz mono PCM16 WAV. The registry validates the result. */
   transcribe?(request: AsrRequest, audioPath: string, signal: AbortSignal, report: ProgressReporter): Promise<SubtitleTranscript>;
+  /** Optional TTS capability; only implemented when the backend provides `role: 'tts'` models. */
+  synthesize?(request: TtsSynthesizeProviderInput, signal: AbortSignal, report: ProgressReporter): Promise<TtsProviderAudio>;
 }
 export interface ProviderRegistry {
   register(provider: Provider): () => void;
@@ -58,6 +79,8 @@ export interface ProviderRegistry {
   transcribe(request: AsrRequest, audioPath: string, signal: AbortSignal, report: ProgressReporter): Promise<SubtitleTranscript>;
   prepare(ref: ModelRef, signal: AbortSignal, report: ProgressReporter): Promise<void>;
   detectVoice(ref: ModelRef, audioPath: string, signal: AbortSignal, report: ProgressReporter): Promise<VoiceActivityResult>;
+  /** Looks up the TTS model, validates capabilities & cloning authorization, runs synthesis and validates audio bytes. */
+  synthesize(request: TtsSynthesizeProviderInput, signal: AbortSignal, report: ProgressReporter): Promise<TtsSynthesizeOutput>;
 }
 export interface JobService {
   /** `id` and `operationId` are optional for idempotent producers; clients cannot choose a job ID over RPC. */

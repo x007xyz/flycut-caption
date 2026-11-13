@@ -2,18 +2,21 @@ import { readFile } from 'node:fs/promises';
 import { setTimeout } from 'node:timers/promises';
 import { z } from 'zod';
 import { modelInfoSchema, type ProviderKind } from '../../shared/providers';
+import { MAX_TTS_AUDIO_BYTES } from '../../shared/tts/audio';
 import type { Provider, ProgressReporter } from '../services';
 
 /** Client for the FlyCut Provider protocol v1 (docs/provider-http-protocol.md). */
 export const PROTOCOL = { name: 'flycut-provider', version: 1 } as const;
 const MAX_RESPONSE = 16_000_000;
 const POLL_MS = 500;
+const DEFAULT_TIMEOUT_MS = 120_000;
 
 export interface HttpConnection { baseUrl: string; headers?: Record<string, string> }
 export interface HttpProviderOptions {
   id: string;
   name: string;
   kind: ProviderKind;
+  timeoutMs?: number;
   /** Resolved on every request so a managed worker can start (or restart) lazily. */
   connect(): Promise<HttpConnection>;
 }
@@ -22,31 +25,93 @@ const healthSchema = z.object({ protocol: z.string(), version: z.number(), name:
 const modelsSchema = z.object({ models: z.array(modelInfoSchema) });
 const jobSchema = z.object({ id: z.string(), status: z.enum(['queued', 'running', 'complete', 'error', 'cancelled']),
   progress: z.number().optional(), message: z.string().optional(), result: z.unknown().optional(), error: z.string().optional() });
+const ttsJobResultSchema = z.object({
+  audioUrl: z.string().min(1),
+  mimeType: z.string().optional(),
+  format: z.enum(['wav', 'mp3', 'ogg', 'flac']).optional(),
+  durationSeconds: z.number().positive().optional(),
+  sampleRate: z.number().int().positive().optional(),
+});
 
 export function createHttpProvider(options: HttpProviderOptions): Provider {
+  const timeoutMs = Math.max(1000, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  const withTimeout = (signal?: AbortSignal) => {
+    const timeout = AbortSignal.timeout(timeoutMs);
+    return signal ? AbortSignal.any([signal, timeout]) : timeout;
+  };
+  const formatHttpError = (status: number, message?: unknown) => {
+    if (status === 401 || status === 403) {
+      const detail = typeof message === 'string' && message.trim() ? `：${message.slice(0, 200)}` : '';
+      return `${options.name} 鉴权失败（HTTP ${status}），请检查 API Key${detail}`;
+    }
+    return typeof message === 'string' ? `${options.name}：${message.slice(0, 500)}` : `${options.name} HTTP ${status}`;
+  };
+  const wrapFetchError = (error: unknown, signal?: AbortSignal): never => {
+    if (signal?.aborted) throw error;
+    if (error instanceof Error && (error.name === 'TimeoutError' || /timed out/i.test(error.message))) {
+      throw new Error(`${options.name} 请求超时（超过 ${Math.round(timeoutMs / 1000)} 秒）`);
+    }
+    throw error;
+  };
+
   async function call(path: string, init: RequestInit = {}, signal?: AbortSignal): Promise<unknown> {
     const { baseUrl, headers = {} } = await options.connect();
-    const response = await fetch(`${baseUrl.replace(/\/+$/, '')}${path}`, { ...init, redirect: 'error', signal,
-      headers: { ...Object.fromEntries(new Headers(init.headers).entries()), ...headers } });
+    let response: Response;
+    try {
+      response = await fetch(`${baseUrl.replace(/\/+$/, '')}${path}`, { ...init, redirect: 'error', signal: withTimeout(signal),
+        headers: { ...Object.fromEntries(new Headers(init.headers).entries()), ...headers } });
+    } catch (error) {
+      throw wrapFetchError(error, signal);
+    }
     const text = await response.text();
     if (text.length > MAX_RESPONSE) throw new Error(`${options.name} 响应超过 16 MB`);
     let data: unknown;
     try { data = text ? JSON.parse(text) : {}; } catch { throw new Error(`${options.name} 返回的不是 JSON（HTTP ${response.status}）`); }
     if (!response.ok) {
-      const message = (data as { error?: unknown }).error;
-      throw new Error(typeof message === 'string' ? `${options.name}：${message.slice(0, 500)}` : `${options.name} HTTP ${response.status}`);
+      throw new Error(formatHttpError(response.status, (data as { error?: unknown }).error));
     }
     return data;
   }
-  let checked: Promise<void> | undefined;
+  async function downloadAudio(audioUrl: string, signal?: AbortSignal): Promise<{ bytes: Buffer; mimeType?: string }> {
+    const { baseUrl, headers = {} } = await options.connect();
+    const base = new URL(baseUrl);
+    const target = new URL(audioUrl, base);
+    if (target.origin !== base.origin) {
+      throw new Error(`${options.name} 返回的音频地址跨源，已拒绝下载`);
+    }
+    let response: Response;
+    try {
+      response = await fetch(target, { method: 'GET', redirect: 'error', signal: withTimeout(signal), headers });
+    } catch (error) {
+      throw wrapFetchError(error, signal);
+    }
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      let parsedError: unknown;
+      try { parsedError = text ? (JSON.parse(text) as { error?: unknown }).error : undefined; } catch { parsedError = undefined; }
+      throw new Error(formatHttpError(response.status, parsedError));
+    }
+    const contentLength = Number(response.headers.get('content-length') ?? '0');
+    if (Number.isFinite(contentLength) && contentLength > MAX_TTS_AUDIO_BYTES) {
+      throw new Error(`${options.name} 音频产物超过 50 MB 上限`);
+    }
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.byteLength > MAX_TTS_AUDIO_BYTES) {
+      throw new Error(`${options.name} 音频产物超过 50 MB 上限`);
+    }
+    return { bytes, mimeType: response.headers.get('content-type') ?? undefined };
+  }
+
+  let checked: Promise<string[]> | undefined;
   const check = () => checked ??= (async () => {
     const health = healthSchema.parse(await call('/v1/health', {}, AbortSignal.timeout(10_000)));
     if (health.protocol !== PROTOCOL.name || health.version !== PROTOCOL.version) {
       throw new Error(`${options.name} 的协议版本不兼容：${health.protocol} v${health.version}，需要 ${PROTOCOL.name} v${PROTOCOL.version}`);
     }
+    return health.capabilities;
   })().catch(error => { checked = undefined; throw error; });
 
-  async function wait(id: string, signal: AbortSignal, report: ProgressReporter, purpose: 'download' | 'transcribe') {
+  async function wait(id: string, signal: AbortSignal, report: ProgressReporter, purpose: 'download' | 'transcribe' | 'synthesize') {
     try {
       while (true) {
         signal.throwIfAborted();
@@ -80,6 +145,51 @@ export function createHttpProvider(options: HttpProviderOptions): Provider {
         'Content-Type': 'audio/wav', 'X-Flycut-Model': request.modelId, 'X-Flycut-Language': request.language,
         'X-Flycut-Options': headerJson(request.options ?? {}) } }, signal));
       return await wait(id, signal, report, 'transcribe') as never;
+    },
+    async synthesize(request, signal, report) {
+      const capabilities = await check();
+      if (capabilities.length > 0 && !capabilities.includes('tts')) {
+        throw new Error(`${options.name} 未声明 tts 能力`);
+      }
+      report({ status: 'loading', purpose: 'synthesize', data: `正在向 ${options.name} 提交语音合成请求...` });
+      const payload = {
+        model: request.modelId,
+        text: request.text,
+        language: request.language,
+        ...(request.voiceId ? { voiceId: request.voiceId } : {}),
+        ...(request.speed !== undefined ? { speed: request.speed } : {}),
+        ...(request.format ? { format: request.format } : {}),
+        ...(request.options ? { options: request.options } : {}),
+      };
+      let id: string;
+      if (request.referenceAudioPath) {
+        const referenceBytes = await readFile(request.referenceAudioPath);
+        id = created(await call('/v1/tts/jobs', {
+          method: 'POST',
+          body: referenceBytes,
+          headers: {
+            'Content-Type': 'audio/wav',
+            'X-Flycut-TTS-Request': headerJson({ ...payload, authorization: request.cloneAuthorization }),
+          },
+        }, signal));
+      } else {
+        id = created(await call('/v1/tts/jobs', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+          headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        }, signal));
+      }
+      const rawResult = await wait(id, signal, report, 'synthesize');
+      const result = ttsJobResultSchema.parse(rawResult);
+      report({ status: 'running', purpose: 'synthesize', progress: 95, data: `正在下载并校验 ${options.name} 音频产物...` });
+      const downloaded = await downloadAudio(result.audioUrl, signal);
+      return {
+        bytes: downloaded.bytes,
+        mimeType: downloaded.mimeType ?? result.mimeType,
+        format: result.format,
+        durationSeconds: result.durationSeconds,
+        sampleRate: result.sampleRate,
+      };
     },
   };
 }

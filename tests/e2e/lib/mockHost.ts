@@ -36,6 +36,7 @@ const defaults: MockHandlers = {
   'projects.list': () => [],
   'projects.identity': () => ({ hostId: E2E_HOST_ID, recovery: 1 }),
   'aiSettings.list': () => ({ hostId: E2E_HOST_ID, revision: 0, selectedId: null, configs: [] }),
+  'tts.getSettings': () => ({ hostId: E2E_HOST_ID, revision: 0, selectedModel: null, voiceId: null, language: 'auto', speed: 1, options: {}, lastAudition: null }),
 };
 
 export interface MockHostOptions {

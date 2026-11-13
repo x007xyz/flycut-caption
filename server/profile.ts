@@ -14,6 +14,7 @@ import { modelsPlugin } from './plugins/models';
 import { sherpaAsrPlugin } from './plugins/asr';
 import { endpointsPlugin } from './plugins/endpoints';
 import { cloudPlugin } from './plugins/cloud';
+import { ttsPlugin } from './plugins/tts';
 import { aiSettingsPlugin } from './plugins/aiSettings';
 import { deleteSilenceEditingPlugin, editingPlugin, removeFillersEditingPlugin } from './plugins/editing';
 import { textPlugin } from './plugins/text';
@@ -38,6 +39,7 @@ export const BUILTINS: Record<string, Builtin> = {
   'asr-sherpa': { plugin: sherpaAsrPlugin, provides: [] },
   'asr-cloud': { plugin: cloudPlugin, provides: [] },
   endpoints: { plugin: endpointsPlugin, provides: [] },
+  tts: { plugin: ttsPlugin, provides: [] },
   'ai-settings': { plugin: aiSettingsPlugin, provides: ['aiSettings'] },
   editing: { plugin: editingPlugin, provides: ['editorPlugins'] },
   'editing-delete-silence': { plugin: deleteSilenceEditingPlugin, provides: [] },
