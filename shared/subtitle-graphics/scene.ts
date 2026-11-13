@@ -28,6 +28,12 @@ export const subtitleGraphicStyleSchema = z.object({
   /** Optional for F-0028 scenes created before word highlighting. */
   wordHighlightMode: z.enum(['none', 'word']).optional(),
   wordHighlightColor: z.string().min(1).max(64).optional(),
+  /** Optional for F-0028/F-0024 scenes created before keyword emphasis. */
+  keywordColorEnabled: z.boolean().optional(),
+  keywordColor: z.string().min(1).max(64).optional(),
+  keywordScale: z.number().min(1).max(2.5).optional(),
+  keywordBackgroundColor: z.string().min(1).max(64).optional(),
+  keywordBackgroundOpacity: z.number().min(0).max(1).optional(),
   visible: z.boolean(),
 });
 export type SubtitleGraphicStyle = z.infer<typeof subtitleGraphicStyleSchema>;
@@ -40,6 +46,13 @@ export const subtitleGraphicWordSchema = z.object({
 }).refine(word => word.end > word.start, 'Subtitle word must have a positive duration');
 export type SubtitleGraphicWord = z.infer<typeof subtitleGraphicWordSchema>;
 
+export const subtitleGraphicKeywordSchema = z.object({
+  start: z.number().int().min(0),
+  end: z.number().int().min(1),
+  text: z.string().min(1).max(2000).optional(),
+}).refine(kw => kw.end > kw.start, 'Subtitle keyword must have a non-empty range');
+export type SubtitleGraphicKeyword = z.infer<typeof subtitleGraphicKeywordSchema>;
+
 export const subtitleGraphicCueSchema = z.object({
   id: z.string().min(1).max(300),
   start: z.number().min(0),
@@ -47,17 +60,31 @@ export const subtitleGraphicCueSchema = z.object({
   text: z.string().max(20000),
   secondText: z.string().max(20000).optional(),
   words: z.array(subtitleGraphicWordSchema).max(5000).optional(),
+  keywords: z.array(subtitleGraphicKeywordSchema).max(100).optional(),
 }).refine(cue => cue.end > cue.start, 'Subtitle cue must have a positive duration')
   .superRefine((cue, ctx) => {
     let previousEnd = -Infinity;
     for (const [index, word] of (cue.words ?? []).entries()) {
       if (word.start < cue.start - 0.02 || word.end > cue.end + 0.02) {
-        ctx.addIssue({ code: 'custom', message: 'Subtitle word time is outside its cue', path: [index] });
+        ctx.addIssue({ code: 'custom', message: 'Subtitle word time is outside its cue', path: ['words', index] });
       }
       if (word.start < previousEnd - 0.02) {
-        ctx.addIssue({ code: 'custom', message: 'Subtitle words must be in time order without overlap', path: [index] });
+        ctx.addIssue({ code: 'custom', message: 'Subtitle words must be in time order without overlap', path: ['words', index] });
       }
       previousEnd = word.end;
+    }
+    let previousKwEnd = 0;
+    for (const [index, kw] of (cue.keywords ?? []).entries()) {
+      if (kw.end > cue.text.length) {
+        ctx.addIssue({ code: 'custom', message: 'Subtitle keyword range is outside cue text', path: ['keywords', index] });
+      }
+      if (kw.start < previousKwEnd) {
+        ctx.addIssue({ code: 'custom', message: 'Subtitle keywords must be sorted and non-overlapping', path: ['keywords', index] });
+      }
+      if (kw.text !== undefined && cue.text.slice(kw.start, kw.end) !== kw.text) {
+        ctx.addIssue({ code: 'custom', message: 'Subtitle keyword text does not match cue text', path: ['keywords', index] });
+      }
+      previousKwEnd = kw.end;
     }
   });
 
@@ -106,6 +133,11 @@ export function emptySubtitleGraphicStyle(fontId = DEFAULT_SUBTITLE_FONT_ID): Su
     backgroundPadding: 8,
     wordHighlightMode: 'none',
     wordHighlightColor: '#FFE100',
+    keywordColorEnabled: true,
+    keywordColor: '#FFE100',
+    keywordScale: 1.2,
+    keywordBackgroundColor: '#FF5B57',
+    keywordBackgroundOpacity: 0,
     visible: true,
   };
 }

@@ -1,6 +1,7 @@
 export {
   subtitleGraphicStyleSchema,
   subtitleGraphicWordSchema,
+  subtitleGraphicKeywordSchema,
   subtitleGraphicCueSchema,
   subtitleGraphicSceneSchema,
   emptySubtitleGraphicStyle,
@@ -9,6 +10,7 @@ export {
 export type {
   SubtitleGraphicStyle,
   SubtitleGraphicWord,
+  SubtitleGraphicKeyword,
   SubtitleGraphicCue,
   SubtitleGraphicScene,
   SubtitleDisplayMode,
@@ -16,6 +18,7 @@ export type {
 
 export {
   BLOCK_GAP_RATIO,
+  resolveKeywordMetrics,
   resolveVideoFontSize,
   resolveBottomOffset,
   buildCanvasFont,
@@ -29,10 +32,12 @@ export {
   findActiveWordRange,
   type TextLine,
   type LayoutItem,
+  type LayoutRun,
   type LayoutLine,
   type LayoutBlock,
   type CueLayout,
   type LayoutWordRange,
+  type KeywordMetrics,
 } from './layout';
 
 export { drawFrame, frameKey, subtitleBand, findVisibleCue, type SubtitleDrawOptions } from './draw';
@@ -47,6 +52,9 @@ export {
 
 export {
   stripSubtitleDisplayPunctuation,
+  mapRawRangesToDisplay,
   fixCjkLineStarts,
   applyCjkBreakHints,
+  type RawRangeInput,
+  type DisplayRangeResult,
 } from './text';

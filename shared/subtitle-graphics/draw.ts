@@ -5,9 +5,11 @@ import {
   findCue,
   getCueLayout,
   mapCueWordRanges,
+  resolveKeywordMetrics,
   type CueLayout,
   type LayoutBlock,
   type LayoutLine,
+  type LayoutRun,
   type LayoutWordRange,
 } from './layout';
 
@@ -54,19 +56,26 @@ function textX(style: SubtitleGraphicStyle, sceneWidth: number): number {
   return sceneWidth / 2;
 }
 
+function lineStartXFor(style: SubtitleGraphicStyle, sceneWidth: number, lineWidth: number): number {
+  if (style.textAlign === 'left') return 0;
+  if (style.textAlign === 'right') return sceneWidth - lineWidth;
+  return (sceneWidth - lineWidth) / 2;
+}
+
 function drawHandShadow(
   ctx: CanvasRenderingContext2D,
   line: string,
   x: number,
   y: number,
   style: SubtitleGraphicStyle,
+  strokeWidth = style.borderWidth,
 ): void {
   if (style.shadowBlur <= 0) return;
-  const strokes = style.borderWidth > 0;
+  const strokes = strokeWidth > 0;
   ctx.save();
   ctx.fillStyle = withOpacity(style.shadowColor, 1);
   ctx.strokeStyle = withOpacity(style.shadowColor, 1);
-  ctx.lineWidth = strokes ? style.borderWidth : 0;
+  ctx.lineWidth = strokes ? strokeWidth : 0;
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
   const baseAlpha = ctx.globalAlpha;
@@ -107,9 +116,21 @@ function drawBackground(
   fontSize: number,
 ): void {
   if (style.backgroundOpacity <= 0) return;
-  const metrics = ctx.measureText(line.text);
-  const ascent = metrics.actualBoundingBoxAscent || fontSize * 0.8;
-  const descent = metrics.actualBoundingBoxDescent || fontSize * 0.2;
+  const effectiveFontSize = line.fontSize ?? fontSize;
+  let ascent = effectiveFontSize * 0.8;
+  let descent = effectiveFontSize * 0.2;
+  if (line.runs?.length) {
+    for (const run of line.runs) {
+      ctx.font = buildCanvasFont(style, run.fontSize);
+      const metrics = ctx.measureText(run.text);
+      ascent = Math.max(ascent, metrics.actualBoundingBoxAscent || run.fontSize * 0.8);
+      descent = Math.max(descent, metrics.actualBoundingBoxDescent || run.fontSize * 0.2);
+    }
+  } else {
+    const metrics = ctx.measureText(line.text);
+    ascent = metrics.actualBoundingBoxAscent || fontSize * 0.8;
+    descent = metrics.actualBoundingBoxDescent || fontSize * 0.2;
+  }
   const padding = style.backgroundPadding;
   const width = line.width + padding * 2;
   const height = ascent + descent + padding * 2;
@@ -121,6 +142,108 @@ function drawBackground(
   ctx.fillStyle = withOpacity(style.backgroundColor, style.backgroundOpacity);
   roundRectPath(ctx, boxX, boxY, width, height, style.backgroundRadius);
   ctx.fill();
+  ctx.restore();
+}
+
+function drawKeywordRunBackground(
+  ctx: CanvasRenderingContext2D,
+  run: LayoutRun,
+  lineStartX: number,
+  y: number,
+  style: SubtitleGraphicStyle,
+  baseFontSize: number,
+): void {
+  const opacity = style.keywordBackgroundOpacity ?? 0;
+  if (opacity <= 0) return;
+  const kw = resolveKeywordMetrics(style, baseFontSize);
+  ctx.save();
+  ctx.font = buildCanvasFont(style, run.fontSize);
+  ctx.letterSpacing = `${style.letterSpacing}px`;
+  const metrics = ctx.measureText(run.text);
+  const ascent = metrics.actualBoundingBoxAscent || run.fontSize * 0.8;
+  const descent = metrics.actualBoundingBoxDescent || run.fontSize * 0.2;
+  const boxX = lineStartX + run.glyphX - kw.bgPadX;
+  const boxW = run.glyphWidth + kw.bgPadX * 2;
+  const boxY = y - ascent - kw.bgPadY;
+  const boxH = ascent + descent + kw.bgPadY * 2;
+  ctx.fillStyle = withOpacity(style.keywordBackgroundColor ?? '#FF5B57', opacity);
+  roundRectPath(ctx, boxX, boxY, boxW, boxH, kw.bgRadius);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawLineWithRuns(
+  ctx: CanvasRenderingContext2D,
+  line: LayoutLine,
+  block: LayoutBlock,
+  scene: SubtitleGraphicScene,
+  y: number,
+  wordHighlight: boolean,
+  activeWord: LayoutWordRange | undefined,
+  sentenceHighlight: boolean,
+): void {
+  const style = block.style;
+  const runs = line.runs!;
+  const startX = lineStartXFor(style, scene.width, line.width);
+  const highlightColor = style.wordHighlightColor ?? '#FFE100';
+  const kwColor = style.keywordColorEnabled !== false ? (style.keywordColor ?? '#FFE100') : style.color;
+
+  ctx.save();
+  ctx.textBaseline = 'bottom';
+  ctx.textAlign = 'left';
+  ctx.letterSpacing = `${style.letterSpacing}px`;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+
+  drawBackground(ctx, line, textX(style, scene.width), y, style, scene.width, block.fontSize);
+  for (const run of runs) {
+    if (run.isKeyword) drawKeywordRunBackground(ctx, run, startX, y, style, block.fontSize);
+  }
+
+  for (const run of runs) {
+    const runX = startX + run.glyphX;
+    const strokeWidth = run.isKeyword ? style.borderWidth * (run.fontSize / block.fontSize) : style.borderWidth;
+    ctx.font = buildCanvasFont(style, run.fontSize);
+    drawHandShadow(ctx, run.text, runX, y, style, strokeWidth);
+    if (strokeWidth > 0) {
+      ctx.strokeStyle = withOpacity(style.borderColor, style.borderOpacity);
+      ctx.lineWidth = strokeWidth;
+      ctx.strokeText(run.text, runX, y);
+    }
+    const baseFill = run.isKeyword ? kwColor : style.color;
+    ctx.fillStyle = withOpacity(wordHighlight && sentenceHighlight ? highlightColor : baseFill, style.colorOpacity);
+    ctx.fillText(run.text, runX, y);
+
+    if (wordHighlight && activeWord && run.charStart !== undefined && run.charEnd !== undefined) {
+      const start = Math.max(activeWord.charStart, run.charStart);
+      const end = Math.min(activeWord.charEnd, run.charEnd);
+      if (end > start) {
+        const localStart = start - run.charStart;
+        const localEnd = end - run.charStart;
+        const prefix = run.text.slice(0, localStart);
+        const fragment = run.text.slice(localStart, localEnd);
+        const clipX = runX + ctx.measureText(prefix).width;
+        const clipWidth = Math.max(0.5, ctx.measureText(fragment).width);
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(clipX - 1, y - run.fontSize * 1.45, clipWidth + 2, run.fontSize * 1.8);
+        ctx.clip();
+        ctx.fillStyle = withOpacity(highlightColor, style.colorOpacity);
+        ctx.fillText(run.text, runX, y);
+        ctx.restore();
+      }
+    }
+
+    if (style.textDecoration === 'underline') {
+      const underlineY = y + run.fontSize * 0.08;
+      ctx.strokeStyle = withOpacity(baseFill, style.colorOpacity);
+      ctx.lineWidth = Math.max(1, run.fontSize * 0.06);
+      ctx.beginPath();
+      ctx.moveTo(runX, underlineY);
+      ctx.lineTo(runX + run.glyphWidth, underlineY);
+      ctx.stroke();
+    }
+  }
   ctx.restore();
 }
 
@@ -136,6 +259,10 @@ function drawLine(
 ): void {
   const style = block.style;
   if (!style.visible) return;
+  if (line.runs?.length) {
+    drawLineWithRuns(ctx, line, block, scene, y, wordHighlight, activeWord, sentenceHighlight);
+    return;
+  }
   const x = textX(style, scene.width);
   ctx.save();
   ctx.font = buildCanvasFont(style, block.fontSize);
@@ -205,8 +332,9 @@ function drawBlock(
   let y = bottom;
   const activeWord = wordHighlight && wordRanges?.length ? findActiveWordRange(wordRanges, t) : undefined;
   for (let i = block.lines.length - 1; i >= 0; i -= 1) {
-    drawLine(ctx, block.lines[i], block, scene, y, wordHighlight, activeWord, sentenceHighlight);
-    y -= block.lineHeight;
+    const line = block.lines[i];
+    drawLine(ctx, line, block, scene, y, wordHighlight, activeWord, sentenceHighlight);
+    y -= line.lineHeight ?? block.lineHeight;
   }
 }
 
@@ -294,7 +422,10 @@ export function frameKey(scene: SubtitleGraphicScene, t: number): string {
       wordState = active ? `|word${active.index}` : '|gap';
     }
   }
-  return `${sceneStyleKey(scene)}|${cue.id}|${cue.text}|${cue.secondText ?? ''}${wordState}`;
+  const kwState = cue.keywords?.length
+    ? `|kw:${cue.keywords.map(k => `${k.start}-${k.end}`).join(',')}`
+    : '';
+  return `${sceneStyleKey(scene)}|${cue.id}|${cue.text}|${cue.secondText ?? ''}${wordState}${kwState}`;
 }
 
 /** 计算只包含字幕内容的条带，供 Host 渲染透明字幕层。 */
@@ -314,10 +445,17 @@ export function subtitleBand(
       if (!block) continue;
       hasContent = true;
       const style = block.style;
+      const hasKwRuns = block.lines.some(line => line.runs?.some(run => run.isKeyword));
+      const kwMargin = hasKwRuns
+        ? (() => {
+            const kw = resolveKeywordMetrics(style, block.fontSize);
+            return kw.bgPadY + kw.bgRadius + Math.ceil(kw.strokeWidth) + Math.ceil(block.fontSize * Math.max(0, kw.scale - 1) * 0.25);
+          })()
+        : 0;
       margin = Math.max(
         margin,
-        style.borderWidth / 2 + style.backgroundPadding + style.backgroundRadius,
-        style.shadowBlur + Math.max(Math.abs(style.shadowOffsetX), Math.abs(style.shadowOffsetY)) + style.borderWidth,
+        style.borderWidth / 2 + style.backgroundPadding + style.backgroundRadius + kwMargin,
+        style.shadowBlur + Math.max(Math.abs(style.shadowOffsetX), Math.abs(style.shadowOffsetY)) + style.borderWidth + kwMargin,
       );
     }
   }
