@@ -1,9 +1,9 @@
 ---
 id: F-0026
 stage: 03-implementation
-status: draft
-approved_by:
-approved_at:
+status: approved
+approved_by: auto
+approved_at: 2026-11-13
 ---
 
 # F-0026 平台风格字幕预设与安全区：开发记录
@@ -25,7 +25,7 @@ approved_at:
 | 2026-11-13 | 2. Host 持久化恢复与冲突回退辅助 | cde3a85 | pnpm lint ✅, pnpm tsc -b --noEmit ✅, pnpm check:host ✅, platform-presets-f0026.test.ts ✅ (5 pass) |
 | 2026-11-13 | 3. 播放器安全区叠层与辅助线 | 58196a3 | pnpm lint ✅, pnpm tsc -b --noEmit ✅, pnpm check:host ✅ |
 | 2026-11-13 | 4. 平台预设库、画幅切换、安全区微调与生命周期 UI | e2b7fa1 | pnpm lint ✅, pnpm tsc -b --noEmit ✅, pnpm check:host ✅ |
-| 2026-11-13 | 5. E2E 端到端与真实 Host 导出回归 | 待提交 | pnpm lint ✅, pnpm tsc -b --noEmit ✅, pnpm check:host ✅, pnpm test ✅, pnpm test:architecture ✅, PW_PORT=5303 pnpm e2e:evidence F-0026 ✅ |
+| 2026-11-13 | 5. E2E 端到端与真实 Host 导出回归 | 039e40f | pnpm lint ✅, pnpm tsc -b --noEmit ✅, pnpm check:host ✅, pnpm test ✅, pnpm test:architecture ✅, PW_PORT=5303 pnpm e2e:evidence F-0026 ✅ |
 
 ## 自行决定的事项
 
