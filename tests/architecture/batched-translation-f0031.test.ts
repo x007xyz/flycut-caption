@@ -234,7 +234,7 @@ test('F-0031/AC-4 AC-7 AC-8 selective outdated translation updates only chosen I
   );
 
   let verifiedCalled = 0;
-  let flushOk = false;
+  const flushOk = false;
   let verifyOk = true;
   const projectState = {
     current: { projectId: 'p1', videoId: 'v1' },
