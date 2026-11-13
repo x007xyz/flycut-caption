@@ -44,6 +44,7 @@ public/whisper-timestamps-demo.mp4
 # Generated Cordis and Host bundles
 core/*/lib/
 dist-host/
+dist-cli/
 .flycut-host/
 server/lib/
 src-tauri/host/
