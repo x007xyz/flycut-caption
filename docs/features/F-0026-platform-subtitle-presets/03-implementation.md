@@ -23,7 +23,8 @@ approved_at:
 |---|---|---|---|
 | 2026-11-13 | 1. 共用平台预设目录与安全区模型 | 5048c3c | pnpm lint ✅, pnpm tsc -b --noEmit ✅, pnpm check:host ✅, pnpm test ✅, platform-presets-f0026.test.ts ✅ |
 | 2026-11-13 | 2. Host 持久化恢复与冲突回退辅助 | cde3a85 | pnpm lint ✅, pnpm tsc -b --noEmit ✅, pnpm check:host ✅, platform-presets-f0026.test.ts ✅ (5 pass) |
-| 2026-11-13 | 3. 播放器安全区叠层与辅助线 | 待提交 | pnpm lint ✅, pnpm tsc -b --noEmit ✅, pnpm check:host ✅ |
+| 2026-11-13 | 3. 播放器安全区叠层与辅助线 | 58196a3 | pnpm lint ✅, pnpm tsc -b --noEmit ✅, pnpm check:host ✅ |
+| 2026-11-13 | 4. 平台预设库、画幅切换、安全区微调与生命周期 UI | 待提交 | pnpm lint ✅, pnpm tsc -b --noEmit ✅, pnpm check:host ✅ |
 
 ## 自行决定的事项
 

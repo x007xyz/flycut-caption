@@ -6,6 +6,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { keywordCopy } from '@/locales/keywords';
+import { platformPresetCopy } from '@/locales/platformPresets';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { Slider } from '@/components/ui/slider';
@@ -17,6 +18,7 @@ import { useTranslation } from '@/contexts/LocaleProvider';
 import { useChunks, useHasWordTimestamps, useWordChunks } from '@/stores/historyStore';
 import { SUBTITLE_FONTS } from '@/config/subtitleFonts';
 import {
+  type AspectPreset,
   type SubtitleStyle,
   type SubtitleStylePair,
   type SubtitleDisplayMode,
@@ -24,11 +26,13 @@ import {
   bottomOffsetAtReference,
   fontSizeRatioFromReference,
   bottomOffsetRatioFromReference,
+  applyAspectPreset,
   STYLE_PRESETS,
   applyStylePreset,
   hasReliableWordHighlight,
   matchActiveStylePreset,
 } from '@/subtitle';
+import { PlatformPresetsSection } from './PlatformPresetsSection';
 
 interface SubtitleSettingsProps {
   stylePair: SubtitleStylePair;
@@ -105,12 +109,14 @@ function SliderWithInput({
   min,
   max,
   onChange,
+  testId,
 }: {
   label: string;
   value: number;
   min: number;
   max: number;
   onChange: (value: number) => void;
+  testId?: string;
 }) {
   return (
     <SettingRow label={label}>
@@ -122,7 +128,7 @@ function SliderWithInput({
         onValueChange={([next]) => onChange(next)}
         className="aimu-slider flex-1 [&_[data-slot=slider-track]]:h-1"
       />
-      <NumberInput value={value} min={min} max={max} onChange={onChange} />
+      <NumberInput value={value} min={min} max={max} onChange={onChange} testId={testId} ariaLabel={label} />
     </SettingRow>
   );
 }
@@ -281,6 +287,7 @@ export function SubtitleSettings({
 }: SubtitleSettingsProps) {
   const { t, language } = useTranslation();
   const kwCopy = keywordCopy(language);
+  const ppCopy = platformPresetCopy(language);
   const chunks = useChunks();
   const wordChunks = useWordChunks();
   const hasWordTimestamps = useHasWordTimestamps();
@@ -398,6 +405,12 @@ export function SubtitleSettings({
           </div>
         )}
       </div>
+
+      <PlatformPresetsSection
+        primaryStyle={stylePair.primary}
+        onPrimaryStyleChange={(nextPrimary) => onStylePairChange({ ...stylePair, primary: nextPrimary })}
+        isPrimaryTab={isPrimaryTab}
+      />
 
       <div className="h-px bg-aimu-border" />
 
@@ -642,11 +655,42 @@ export function SubtitleSettings({
         </CollapsibleTrigger>
         <CollapsibleContent className="space-y-2 pt-1">
           <div className={cn(!isPrimaryTab && 'pointer-events-none opacity-50')}>
+            <SettingRow label={t('components.workstation.aspectPreset')} className="mb-2">
+              <div className="flex flex-1 overflow-hidden rounded border border-aimu-border" role="group" aria-label={t('components.workstation.aspectPreset')}>
+                {([
+                  ['landscape', ppCopy.aspectLandscape],
+                  ['portrait_9_16', ppCopy.aspectPortrait],
+                  ['square_1_1', ppCopy.aspectSquare],
+                ] as Array<[AspectPreset, string]>).map(([preset, label]) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    data-testid={`aspect-preset-${preset}`}
+                    aria-pressed={stylePair.primary.aspectPreset === preset}
+                    disabled={!isPrimaryTab}
+                    onClick={() => {
+                      if (isPrimaryTab) {
+                        onStylePairChange({ ...stylePair, primary: applyAspectPreset(stylePair.primary, preset) });
+                      }
+                    }}
+                    className={cn(
+                      'flex-1 px-1.5 py-1 text-[10px] transition-colors',
+                      stylePair.primary.aspectPreset === preset
+                        ? 'bg-aimu-purple text-white'
+                        : 'bg-aimu-input text-aimu-text-secondary hover:bg-aimu-hover',
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </SettingRow>
             <SliderWithInput
               label={t('components.workstation.bottomOffset')}
               value={bottomOffsetDisplay}
               min={0}
-              max={160}
+              max={540}
+              testId="subtitle-bottom-offset-input"
               onChange={(value) => {
                 // 底边距位置共享 primary：secondary Tab 下禁用，仅 primary 可调
                 if (isPrimaryTab) {
