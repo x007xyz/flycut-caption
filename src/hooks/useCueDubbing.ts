@@ -540,6 +540,7 @@ export function useCueDubbing(hookOptions: UseCueDubbingOptions = {}): CueDubbin
     const targetKey = pending.targetKey;
     setProcessing(true);
     setErrorState(null);
+    let shouldResend = false;
     try {
       const lookup = await dubbingService.findOperationResult(pending.operationId);
       if (!mountedRef.current || epoch !== requestEpochRef.current || targetKey !== latestTargetKeyRef.current) return;
@@ -606,17 +607,22 @@ export function useCueDubbing(hookOptions: UseCueDubbingOptions = {}): CueDubbin
           }
         }
       }
+      shouldResend = true;
     } catch (error) {
       if (!mountedRef.current || epoch !== requestEpochRef.current || targetKey !== latestTargetKeyRef.current) return;
-      setProcessing(false);
       setErrorState({
         message: error instanceof Error ? error.message : String(error),
         uncertain: isUncertainError(error),
       });
       return;
+    } finally {
+      if (mountedRef.current && epoch === requestEpochRef.current) {
+        setProcessing(false);
+      }
     }
-    setProcessing(false);
-    await executeSynthesize(pending);
+    if (shouldResend) {
+      await executeSynthesize(pending);
+    }
   }, [connection, dubbingService, errorState?.uncertain, executeSynthesize, historyStoreApi, projects]);
 
   const clearError = useCallback(() => setErrorState(null), []);
