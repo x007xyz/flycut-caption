@@ -165,17 +165,19 @@ async function openEditor(page: Page, theme: 'light' | 'dark', lang: 'zh' | 'en'
     await page.goto(url);
     await expect(page.getByTestId('subtitle-main-text').first()).toHaveValue('这个这个方案', { timeout: 15_000 });
   }
-  if (lang === 'en') {
-    await page.getByRole('button', { name: '选择语言' }).click();
-    await page.getByRole('menuitem', { name: /English/ }).click();
-    await expect(page.getByRole('button', { name: /^(去口癖|Remove fillers)$/ })).toBeVisible();
-  }
+  if (lang === 'en') await switchToEnglish(page);
   await expect(page.getByTestId('semantic-filler-open')).toBeVisible();
   return state;
 }
 
 async function openSemantic(page: Page) {
   await page.getByTestId('semantic-filler-open').click();
+}
+
+async function switchToEnglish(page: Page) {
+  await page.getByRole('button', { name: '选择语言' }).click();
+  await page.getByRole('menuitem', { name: /English/ }).click();
+  await expect(page.getByRole('button', { name: /^(去口癖|Remove fillers)$/ })).toBeVisible();
 }
 
 async function acknowledgeAndStart(page: Page) {
@@ -199,6 +201,7 @@ for (const theme of ['light', 'dark'] as const) for (const lang of ['zh', 'en'] 
       state.host.set('aiSettings.list', () => aiSnapshot);
       await page.reload();
       await expect(page.getByText('Semantic Fixture').first()).toBeVisible();
+      if (lang === 'en') await switchToEnglish(page);
       await openSemantic(page);
       const panel = page.getByTestId('semantic-filler-panel');
       await expect(panel).toContainText(/确认要发送的内容|Review what will be sent/);
