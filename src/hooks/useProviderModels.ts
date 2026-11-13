@@ -1,7 +1,8 @@
 // Provider 模型列表：唯一来源是 Host 的 providers.models
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ModelInfo, ModelRef, ProviderModels, ProviderSummary } from '../../shared/providers';
 import { useClientRuntime } from '@/runtime/context';
+import type { ModelDownloadEntry } from '@/services/asrService';
 
 const CHANGED_EVENT = 'flycut-provider-models-changed';
 
@@ -20,16 +21,41 @@ export function findModel(groups: ProviderModels[], ref: ModelRef | null | undef
 export function useProviderModels() {
   const { connection } = useClientRuntime();
   const [state, setState] = useState<{ groups: ProviderModels[]; loading: boolean; error?: string }>({ groups: [], loading: true });
+  const seqRef = useRef(0);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
   const refresh = useCallback(() => {
+    const seq = ++seqRef.current;
     setState(previous => ({ ...previous, loading: true }));
     return connection.call('providers.models').then(
-      groups => setState({ groups, loading: false }),
-      error => setState(previous => ({ ...previous, loading: false, error: error instanceof Error ? error.message : String(error) })));
+      groups => {
+        if (!mountedRef.current || seq !== seqRef.current) return;
+        setState({ groups, loading: false });
+      },
+      error => {
+        if (!mountedRef.current || seq !== seqRef.current) return;
+        setState(previous => ({ ...previous, loading: false, error: error instanceof Error ? error.message : String(error) }));
+      },
+    );
   }, [connection]);
+
   useEffect(() => {
     void refresh();
-    window.addEventListener(CHANGED_EVENT, refresh);
-    return () => window.removeEventListener(CHANGED_EVENT, refresh);
+    const onChanged = () => { void refresh(); };
+    window.addEventListener(CHANGED_EVENT, onChanged);
+    return () => window.removeEventListener(CHANGED_EVENT, onChanged);
   }, [refresh]);
+
   return { ...state, refresh };
+}
+
+/** Reactive subscription to runtime-scoped model download & verification state. */
+export function useModelDownloads(): Record<string, ModelDownloadEntry> {
+  const { asr } = useClientRuntime();
+  return useSyncExternalStore(asr.subscribeDownloads, asr.getDownloadsSnapshot, asr.getDownloadsSnapshot);
 }
