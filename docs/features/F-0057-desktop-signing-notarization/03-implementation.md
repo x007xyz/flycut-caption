@@ -20,7 +20,8 @@ approved_at:
 
 | 日期 | 清单项 | 提交 | 检查 |
 |---|---|---|---|
-| 2026-11-13 | 1. 签名基础契约与配置 | pending | plutil -lint, node --check, cargo check |
+| 2026-11-13 | 1. 签名基础契约与配置 | cc0f8ba | plutil -lint, node --check, cargo check |
+| 2026-11-13 | 2. macOS 签名与自包含检查 | pending | node --check scripts/signing/macos.mjs |
 
 ## 自行决定的事项
 

@@ -88,7 +88,7 @@ approved_at: 2026-11-13
 ## 实现清单
 
 - [x] 1. 签名基础契约与配置：新增 entitlements plist、更新 `tauri.conf.json`，实现 `scripts/signing/common.mjs`（脱敏、预检 fail-closed、哈希与证据输出）。
-- [ ] 2. macOS 签名与自包含检查：实现 `scripts/signing/macos.mjs`（Mach-O/`.node` 递归发现、`otool -L`/`-D` 校验、临时钥匙串隔离与 `finally` 清理、由内向外签名与嵌套校验、DMG 打包与签名）。
+- [x] 2. macOS 签名与自包含检查：实现 `scripts/signing/macos.mjs`（Mach-O/`.node` 递归发现、`otool -L`/`-D` 校验、临时钥匙串隔离与 `finally` 清理、由内向外签名与嵌套校验、DMG 打包与签名）。
 - [ ] 3. macOS 幂等公证、装订与验证：实现 `scripts/signing/macos-notarize.mjs`（API Key / Apple ID 支持、`info` 先行查验、超时保留 `submissionId`、拒绝留证阻断、`stapler` + `spctl` 验证）。
 - [ ] 4. Windows 代码签名与验证：实现 `scripts/signing/windows.mjs`（临时证书存储导入与 `finally` 清理、预置二进制与安装包签名、`signtool verify` + `Get-AuthenticodeSignature` + 时间戳/发布者校验）。
 - [ ] 5. 发版流水线、本地闸门与运维文档：实现 `scripts/release-signing.mjs`、改造 `.github/workflows/release.yml` 与 `scripts/release.mjs`、编写 `docs/40-ops/runbooks/desktop-signing-notarization.md`。
