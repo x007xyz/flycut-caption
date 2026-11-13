@@ -51,6 +51,11 @@ export interface SubtitleStyle {
   /** `word` uses verified word timestamps; missing words fall back to a whole-sentence highlight. */
   wordHighlightMode: 'none' | 'word';
   wordHighlightColor: string;
+  keywordColorEnabled: boolean;
+  keywordColor: string;
+  keywordScale: number;
+  keywordBackgroundColor: string;
+  keywordBackgroundOpacity: number;
 }
 
 /**
@@ -91,6 +96,11 @@ export const defaultSubtitleStyle: SubtitleStyle = {
 
   wordHighlightMode: 'none',
   wordHighlightColor: '#FFE100',
+  keywordColorEnabled: true,
+  keywordColor: '#FFE100',
+  keywordScale: 1.2,
+  keywordBackgroundColor: '#FF5B57',
+  keywordBackgroundOpacity: 0,
 };
 
 /**

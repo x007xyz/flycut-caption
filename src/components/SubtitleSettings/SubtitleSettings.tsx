@@ -3,7 +3,10 @@ import {
   Ban,
   ChevronDown,
   ChevronUp,
+  Sparkles,
 } from 'lucide-react';
+import { keywordCopy } from '@/locales/keywords';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { Slider } from '@/components/ui/slider';
 import { Input } from '@/components/ui/input';
@@ -61,6 +64,8 @@ function NumberInput({
   step = 1,
   onChange,
   className,
+  testId,
+  ariaLabel,
 }: {
   value: number;
   min: number;
@@ -68,12 +73,16 @@ function NumberInput({
   step?: number;
   onChange: (value: number) => void;
   className?: string;
+  testId?: string;
+  ariaLabel?: string;
 }) {
   const clamp = (next: number) => Math.min(max, Math.max(min, next));
 
   return (
     <Input
       type="number"
+      data-testid={testId}
+      aria-label={ariaLabel}
       value={value}
       min={min}
       max={max}
@@ -140,6 +149,10 @@ function ColorControl({
   onOpacityChange,
   allowNone = false,
   testId,
+  noneLabel = '无',
+  opacityLabel = '透明',
+  noneTestId,
+  opacityTestId,
 }: {
   label: string;
   value: string;
@@ -148,6 +161,10 @@ function ColorControl({
   onOpacityChange: (value: number) => void;
   allowNone?: boolean;
   testId?: string;
+  noneLabel?: string;
+  opacityLabel?: string;
+  noneTestId?: string;
+  opacityTestId?: string;
 }) {
   const disabled = allowNone && opacity === 0;
 
@@ -177,16 +194,17 @@ function ColorControl({
         {allowNone && (
           <button
             type="button"
+            data-testid={noneTestId}
             data-active={disabled}
             onClick={() => onOpacityChange(disabled ? 1 : 0)}
             className="subtitle-none-color h-7 w-9 shrink-0 rounded border border-aimu-border text-[10px] text-aimu-text-muted transition-colors"
           >
-            无
+            {noneLabel}
           </button>
         )}
       </div>
       <div className="flex items-center gap-2">
-        <span className="w-10 shrink-0 text-[10px] text-aimu-text-muted">透明</span>
+        <span className="w-10 shrink-0 text-[10px] text-aimu-text-muted">{opacityLabel}</span>
         <Slider
           value={[Math.round(opacity * 100)]}
           min={0}
@@ -196,6 +214,8 @@ function ColorControl({
           className="aimu-slider flex-1 [&_[data-slot=slider-track]]:h-1"
         />
         <NumberInput
+          testId={opacityTestId}
+          ariaLabel={opacityLabel}
           value={Math.round(opacity * 100)}
           min={0}
           max={100}
@@ -259,7 +279,8 @@ export function SubtitleSettings({
   onDisplayModeChange,
   className,
 }: SubtitleSettingsProps) {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
+  const kwCopy = keywordCopy(language);
   const chunks = useChunks();
   const wordChunks = useWordChunks();
   const hasWordTimestamps = useHasWordTimestamps();
@@ -516,6 +537,103 @@ export function SubtitleSettings({
           </div>
         </div>
       </SettingRow>
+
+      <div className="h-px bg-aimu-border" />
+
+      <div className="space-y-2" data-testid="keyword-style-section">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium text-aimu-text-secondary">{kwCopy.sectionTitle}</span>
+          {isPrimaryTab && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              data-testid="keyword-recommend-from-settings"
+              className="h-6 px-2 text-[11px]"
+              onClick={() => window.dispatchEvent(new CustomEvent('flycut:open-keyword-recommend'))}
+            >
+              <Sparkles className="mr-1 h-3 w-3 text-aimu-purple" />
+              {kwCopy.recommendFromSettings}
+            </Button>
+          )}
+        </div>
+        {!isPrimaryTab ? (
+          <div className="text-[10px] text-aimu-text-muted">{kwCopy.primaryOnlyHint}</div>
+        ) : (
+          <div className="space-y-2">
+            <div className="space-y-1.5 rounded border border-aimu-border bg-aimu-input p-2">
+              <div className="flex items-center gap-2">
+                <label className="flex w-14 shrink-0 cursor-pointer items-center gap-1 text-[10px] text-aimu-text-muted">
+                  <input
+                    type="checkbox"
+                    data-testid="keyword-color-enabled"
+                    checked={activeStyle.keywordColorEnabled !== false}
+                    onChange={(event) => updateActiveStyle({ keywordColorEnabled: event.target.checked })}
+                    className="h-3 w-3 rounded border-aimu-border text-aimu-purple"
+                  />
+                  {kwCopy.colorEnabled}
+                </label>
+                <label className={cn('relative h-7 w-9 shrink-0 cursor-pointer overflow-hidden rounded border border-aimu-border', activeStyle.keywordColorEnabled === false && 'opacity-40 pointer-events-none')}>
+                  <input
+                    type="color"
+                    aria-label={kwCopy.colorLabel}
+                    data-testid="keyword-color-picker"
+                    value={normalizeHexColor(activeStyle.keywordColor ?? '#FFE100')}
+                    onChange={(event) => updateActiveStyle({ keywordColor: event.target.value.toUpperCase(), keywordColorEnabled: true })}
+                    className="absolute -left-2 -top-2 h-12 w-12 cursor-pointer opacity-0"
+                  />
+                  <span className="block h-full w-full" style={{ backgroundColor: normalizeHexColor(activeStyle.keywordColor ?? '#FFE100') }} />
+                </label>
+                <Input
+                  data-testid="keyword-color"
+                  aria-label={kwCopy.colorLabel}
+                  disabled={activeStyle.keywordColorEnabled === false}
+                  value={normalizeHexColor(activeStyle.keywordColor ?? '#FFE100')}
+                  onChange={(event) => updateActiveStyle({ keywordColor: normalizeHexColor(event.target.value), keywordColorEnabled: true })}
+                  className="h-7 flex-1 border-aimu-border bg-aimu-panel px-2 text-[11px] text-aimu-text-primary"
+                />
+              </div>
+            </div>
+            <SettingRow label={kwCopy.scaleLabel}>
+              <Slider
+                aria-label={kwCopy.scaleLabel}
+                value={[Math.round((activeStyle.keywordScale ?? 1.2) * 100)]}
+                min={100}
+                max={180}
+                step={5}
+                onValueChange={([next]) => updateActiveStyle({ keywordScale: Number((next / 100).toFixed(2)) })}
+                className="aimu-slider flex-1 [&_[data-slot=slider-track]]:h-1"
+              />
+              <NumberInput
+                testId="keyword-scale-input"
+                ariaLabel={kwCopy.scaleLabel}
+                value={Math.round((activeStyle.keywordScale ?? 1.2) * 100)}
+                min={100}
+                max={180}
+                step={5}
+                onChange={(next) => updateActiveStyle({ keywordScale: Number((next / 100).toFixed(2)) })}
+                className="w-14"
+              />
+              <span className="text-[10px] text-aimu-text-muted">%</span>
+            </SettingRow>
+            <ColorControl
+              label={kwCopy.backgroundLabel}
+              value={activeStyle.keywordBackgroundColor ?? '#FF5B57'}
+              opacity={activeStyle.keywordBackgroundOpacity ?? 0}
+              testId="keyword-bg-color"
+              noneLabel={kwCopy.none}
+              opacityLabel={kwCopy.opacity}
+              noneTestId="keyword-bg-none"
+              opacityTestId="keyword-bg-opacity"
+              onChange={(value) => updateActiveStyle({ keywordBackgroundColor: value })}
+              onOpacityChange={(value) => updateActiveStyle({ keywordBackgroundOpacity: value })}
+              allowNone
+            />
+          </div>
+        )}
+      </div>
+
+      <div className="h-px bg-aimu-border" />
 
       <Collapsible open={positionOpen} onOpenChange={setPositionOpen}>
         <CollapsibleTrigger className="flex w-full items-center justify-between py-1 text-xs text-aimu-text-secondary hover:text-aimu-text-primary">

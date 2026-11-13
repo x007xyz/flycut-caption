@@ -31,4 +31,5 @@ approved_at:
 <!-- 实现时改变了设计的地方及原因；重大偏差回到 02-design.md 修改，并记进测试报告 -->
 
 ## 遗留问题
-| 2026-11-13 | 2. Host AI 推荐接口与协议校验 | 待记录（下一提交） | `pnpm lint`、`pnpm tsc -b --noEmit`、`pnpm check:host`、F-0025/F-0009/F-0056 架构测试 (15/15) |
+| 2026-11-13 | 2. Host AI 推荐接口与协议校验 | 8b92fc1 | `pnpm lint`、`pnpm tsc -b --noEmit`、`pnpm check:host`、F-0025/F-0009/F-0056 架构测试 (15/15) |
+| 2026-11-13 | 3. 前端样式、预览、历史与持久化接线 | 待记录（下一提交） | `pnpm lint`、`pnpm tsc -b --noEmit`、`pnpm check:host`、F-0025/F-0002 架构测试 (19/19) |

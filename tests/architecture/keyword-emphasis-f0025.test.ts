@@ -397,3 +397,67 @@ test('F-0025/AC-3 AC-8 Host text.suggestKeywords resolves saved AI config withou
     await rm(home, { recursive: true, force: true });
   }
 });
+
+import { buildExportSubtitleScene, buildPreviewSubtitleScene } from '../../src/subtitle/graphicsScene.ts';
+import { defaultSubtitleStylePair } from '../../src/subtitle/subtitleStyle.ts';
+import { createHistoryStore } from '../../src/stores/historyStore.ts';
+import type { SubtitleChunk } from '../../src/types/subtitle.ts';
+
+test('F-0025/AC-1 AC-4 historyStore keyword marks keep text/timestamps/EDL intact and reconcile on text edits', () => {
+  const store = createHistoryStore();
+  const chunks: SubtitleChunk[] = [
+    { id: 'c1', text: '今天，聊聊 React 19！', timestamp: [0.5, 2.5] },
+    { id: 'c2', text: '第二句', timestamp: [3, 4] },
+  ];
+  store.getState().setTranscript({ text: chunks.map(c => c.text).join(' '), chunks, language: 'zh', duration: 5 });
+
+  const edlBefore = JSON.stringify(store.getState().edl);
+  const cutsBefore = JSON.stringify(store.getState().cutHistory);
+  const start = chunks[0].text.indexOf('React 19');
+  store.getState().setChunkKeywords('c1', [{ start, end: start + 8, text: 'React 19', source: 'manual' }]);
+
+  const afterMark = store.getState();
+  assert.equal(afterMark.chunks[0].text, '今天，聊聊 React 19！');
+  assert.deepEqual(afterMark.chunks[0].timestamp, [0.5, 2.5]);
+  assert.equal(JSON.stringify(afterMark.edl), edlBefore);
+  assert.equal(JSON.stringify(afterMark.cutHistory), cutsBefore);
+  assert.deepEqual(afterMark.chunks[0].keywords, [{ start, end: start + 8, text: 'React 19', source: 'manual' }]);
+
+  const stylePair = {
+    primary: {
+      ...defaultSubtitleStylePair.primary,
+      keywordColorEnabled: true,
+      keywordColor: '#FF2D2D',
+      keywordScale: 1.5,
+      keywordBackgroundColor: '#1E3A8A',
+      keywordBackgroundOpacity: 0.9,
+    },
+    secondary: defaultSubtitleStylePair.secondary,
+  };
+  const preview = buildPreviewSubtitleScene({
+    chunks: afterMark.chunks,
+    stylePair,
+    videoWidth: 1920,
+    videoHeight: 1080,
+    duration: 5,
+  });
+  assert.deepEqual(preview.cues[0].keywords, [{ start: 5, end: 13, text: 'React 19' }]);
+  assert.equal(preview.cues[0].text.slice(5, 13), 'React 19');
+
+  const exported = buildExportSubtitleScene({
+    chunks: afterMark.chunks,
+    stylePair,
+    keptSegments: [{ start: 0, end: 5, keep: true }],
+    videoWidth: 1920,
+    videoHeight: 1080,
+    duration: 5,
+  });
+  assert.deepEqual(exported.cues[0].keywords, [{ start: 5, end: 13, text: 'React 19' }]);
+
+  store.getState().updateChunkText('c1', '完全改写的新字幕内容');
+  assert.equal(store.getState().chunks[0].keywords, undefined);
+
+  store.getState().undo();
+  assert.equal(store.getState().chunks[0].text, '今天，聊聊 React 19！');
+  assert.deepEqual(store.getState().chunks[0].keywords, [{ start, end: start + 8, text: 'React 19', source: 'manual' }]);
+});

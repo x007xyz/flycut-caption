@@ -5,9 +5,11 @@ import {
   emptySubtitleGraphicStyle,
   mapCueWordRanges,
   resolveSubtitleFontFamily,
+  mapRawRangesToDisplay,
   stripSubtitleDisplayPunctuation,
   type SubtitleDisplayMode,
   type SubtitleGraphicCue,
+  type SubtitleGraphicKeyword,
   type SubtitleGraphicScene,
   type SubtitleGraphicStyle,
   type SubtitleGraphicWord,
@@ -44,6 +46,11 @@ export function toGraphicStyle(style: SubtitleStyle): SubtitleGraphicStyle {
     backgroundPadding: style.backgroundPadding,
     wordHighlightMode: style.wordHighlightMode ?? 'none',
     wordHighlightColor: style.wordHighlightColor ?? '#FFE100',
+    keywordColorEnabled: style.keywordColorEnabled ?? true,
+    keywordColor: style.keywordColor ?? '#FFE100',
+    keywordScale: style.keywordScale ?? 1.2,
+    keywordBackgroundColor: style.keywordBackgroundColor ?? '#FF5B57',
+    keywordBackgroundOpacity: style.keywordBackgroundOpacity ?? 0,
     visible: style.visible,
   };
 }
@@ -110,6 +117,7 @@ function wordsForChunk(
 function toCue(
   chunk: SubtitleChunk,
   words?: SubtitleGraphicWord[],
+  keywords?: SubtitleGraphicKeyword[],
   offset = 0,
 ): SubtitleGraphicCue | undefined {
   const start = Math.max(0, chunk.timestamp[0] + offset);
@@ -118,7 +126,8 @@ function toCue(
   const text = displayText(chunk.text);
   const secondText = displayText(chunk.secondText);
   if (!text && !secondText) return undefined;
-  const cue: SubtitleGraphicCue = { id: chunk.id, start, end, text, secondText: secondText || undefined, words };
+  const validKeywords = keywords?.length ? keywords : undefined;
+  const cue: SubtitleGraphicCue = { id: chunk.id, start, end, text, secondText: secondText || undefined, words, ...(validKeywords ? { keywords: validKeywords } : {}) };
   if (words && !mapCueWordRanges(cue)) delete cue.words;
   return cue;
 }
@@ -127,7 +136,7 @@ function toCue(
 export function buildPreviewSubtitleScene(input: SceneInput): SubtitleGraphicScene {
   const cues = input.chunks
     .filter((chunk) => !chunk.deleted && !chunk.isBlankSpacer)
-    .map((chunk) => toCue(chunk, wordsForChunk(chunk, input.wordChunks, input.hasWordTimestamps === true)))
+    .map((chunk) => toCue(chunk, wordsForChunk(chunk, input.wordChunks, input.hasWordTimestamps === true), mapRawRangesToDisplay(chunk.text, chunk.keywords)))
     .filter((cue): cue is SubtitleGraphicCue => Boolean(cue))
     .sort((a, b) => a.start - b.start);
   return sceneShell(input, cues);
@@ -139,6 +148,7 @@ export function buildExportSubtitleScene(input: SceneInput & { keptSegments: Vid
     .filter((chunk) => !chunk.deleted && !chunk.isBlankSpacer)
     .map((chunk) => ({
       ...chunk,
+      keywords: mapRawRangesToDisplay(chunk.text, chunk.keywords),
       text: displayText(chunk.text),
       secondText: displayText(chunk.secondText),
     }))
@@ -166,7 +176,7 @@ export function buildExportSubtitleScene(input: SceneInput & { keptSegments: Vid
       const marker = chunk.id.lastIndexOf('@');
       const sourceId = marker < 0 ? chunk.id : chunk.id.slice(0, marker);
       const suffix = marker < 0 ? '' : chunk.id.slice(marker + 1);
-      return toCue({ ...chunk, id: chunk.id }, wordsBySentence.get(`${sourceId}\0${suffix}`));
+      return toCue({ ...chunk, id: chunk.id }, wordsBySentence.get(`${sourceId}\0${suffix}`), (chunk as SubtitleChunk).keywords);
     })
     .filter((cue): cue is SubtitleGraphicCue => Boolean(cue))
     .sort((a, b) => a.start - b.start);

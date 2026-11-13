@@ -10,6 +10,7 @@ import { changeCuts, createEdl, editingSchema, isDeleted, outputDuration, valida
 import { selectPendingRanges, validateSuggestionBatch, type SuggestionBatch } from '../../shared/editing/suggestions';
 import { applyTextSnapshots, createTextRecord, planTextRestore, trimTextHistory, validateTextUpdates,
   type TextRecord, type TextUpdate } from '../../shared/text/corrections';
+import { reconcileChunkKeywords, type SubtitleKeyword } from '../../shared/text/keywords';
 import { createLanguageTrack as makeLanguageTrack, findTrackForLanguage, keepTranslation, normalizeLanguageTracks,
   projectLanguageTrack, withTranslation, type LanguageTrack } from '../../shared/languageTracks';
 
@@ -52,6 +53,8 @@ export interface HistoryActions {
     blankInserts: {start: number; end: number}[]; blankUpdates: {id: string; deleted: boolean}[] }) => void;
   updateChunkText: (id: string, text: string) => void;
   batchUpdateText: (updates: {id: string; text?: string; secondText?: string}[]) => void;
+  setChunkKeywords: (id: string, keywords: SubtitleKeyword[] | undefined) => void;
+  batchSetKeywords: (updates: Array<{ id: string; keywords: SubtitleKeyword[] | undefined }>) => void;
   insertBlankChunks: (ranges: {start: number; end: number}[]) => void;
   proposeCuts: (ranges: {start: number; end: number}[]) => void;
   proposeSuggestions: (batch: SuggestionBatch) => 'ok' | 'cross-kind' | 'invalid';
@@ -95,9 +98,11 @@ function syncWords(chunks: Chunk[], before: Chunk[], after: Chunk[]): Chunk[] {
     const oldWords = c.wordIds.map(id => oldById.get(id)).filter((w): w is Chunk => !!w && !w.deleted);
     const active = words.filter(w => !w.deleted);
     const matches = plain(c.text) === plain(joinWordTexts(oldWords.map(w => w.text)));
+    const nextText = matches && active.length ? joinWordTexts(active.map(w => w.text)) : c.text;
     return { ...c, deleted: active.length === 0,
       edlWordProjection: matches || c.edlWordProjection,
-      text: matches && active.length ? joinWordTexts(active.map(w => w.text)) : c.text };
+      text: nextText,
+      keywords: reconcileChunkKeywords(c.keywords, nextText) };
   });
 }
 export const createHistoryStore = () => createStore<HistoryState & HistoryActions>()(devtools((set, get) => {
@@ -214,10 +219,20 @@ export const createHistoryStore = () => createStore<HistoryState & HistoryAction
         const field = layer === 'word' ? 'wordChunks' : 'chunks';
         const hasTranslation = layer === 'sentence' && Object.prototype.hasOwnProperty.call(next, 'secondText');
         // IDs and source time are immutable. This entry point only edits text/translation/selection.
-        const patch = { ...(next.text !== undefined ? { text: next.text, edlWordProjection: false } : {}),
-          ...(!hasTranslation && next.secondText !== undefined ? { secondText: next.secondText } : {}),
-          ...(next.selected !== undefined ? { selected: next.selected } : {}) };
-        const nextField = snap[field].map(c => c.id === id ? { ...c, ...patch } : c);
+        const nextField = snap[field].map(c => {
+          if (c.id !== id) return c;
+          const nextText = next.text !== undefined ? next.text : c.text;
+          const nextKeywords = layer === 'sentence' && next.keywords !== undefined
+            ? reconcileChunkKeywords(next.keywords, nextText)
+            : next.text !== undefined
+              ? reconcileChunkKeywords(c.keywords, nextText)
+              : c.keywords;
+          const patch = { ...(next.text !== undefined ? { text: next.text, edlWordProjection: false } : {}),
+            ...(!hasTranslation && next.secondText !== undefined ? { secondText: next.secondText } : {}),
+            ...(next.selected !== undefined ? { selected: next.selected } : {}),
+            ...(layer === 'sentence' && (next.keywords !== undefined || next.text !== undefined) ? { keywords: nextKeywords } : {}) };
+          return { ...c, ...patch };
+        });
         if (hasTranslation) {
           const translated = setTranslations(s, nextField as Chunk[], [{ id, text: next.secondText }]);
           commit({ ...snap, chunks: translated.chunks, languageTracks: translated.languageTracks,
@@ -291,8 +306,11 @@ export const createHistoryStore = () => createStore<HistoryState & HistoryAction
       try {
         const s = get(); const text = new Map(updates.filter(update => update.text !== undefined)
           .map(update => [update.id, update.text!]));
-        const chunks = s.chunks.map(chunk => text.has(chunk.id)
-          ? { ...chunk, text: text.get(chunk.id)!, edlWordProjection: false } : chunk);
+        const chunks = s.chunks.map(chunk => {
+          if (!text.has(chunk.id)) return chunk;
+          const nextText = text.get(chunk.id)!;
+          return { ...chunk, text: nextText, edlWordProjection: false, keywords: reconcileChunkKeywords(chunk.keywords, nextText) };
+        });
         const translations = updates.filter(update => update.secondText !== undefined)
           .map(update => ({ id: update.id, text: update.secondText }));
         if (translations.length) {
@@ -302,6 +320,24 @@ export const createHistoryStore = () => createStore<HistoryState & HistoryAction
         } else {
           commit({ ...snapshot(s), chunks }, 'text', false);
         }
+      } catch (error) { fail(error); }
+    },
+    setChunkKeywords: (id, keywords) => {
+      try {
+        const s = get(); const snap = snapshot(s);
+        const chunks = snap.chunks.map(chunk => chunk.id === id ? { ...chunk, keywords: reconcileChunkKeywords(keywords, chunk.text) } : chunk);
+        commit({ ...snap, chunks }, 'keyword', false);
+      } catch (error) { fail(error); }
+    },
+    batchSetKeywords: updates => {
+      try {
+        if (!updates.length) return;
+        const s = get(); const snap = snapshot(s);
+        const byId = new Map(updates.map(u => [u.id, u.keywords]));
+        const chunks = snap.chunks.map(chunk => byId.has(chunk.id)
+          ? { ...chunk, keywords: reconcileChunkKeywords(byId.get(chunk.id), chunk.text) }
+          : chunk);
+        commit({ ...snap, chunks }, 'keyword', false);
       } catch (error) { fail(error); }
     },
     setTextHistory: records => set({ textHistory: trimTextHistory(records), textHistoryPreview: null, textError: null }),
@@ -315,7 +351,7 @@ export const createHistoryStore = () => createStore<HistoryState & HistoryAction
           set({ textError: message });
           return { ok: false, error: validation.reason };
         }
-        const nextChunks = applyTextSnapshots(s.chunks, validation.changes);
+        const nextChunks = applyTextSnapshots(s.chunks, validation.changes).map(chunk => chunk.keywords ? { ...chunk, keywords: reconcileChunkKeywords(chunk.keywords, chunk.text) } : chunk);
         const record = createTextRecord(kind, s.chunks, nextChunks);
         if (!record) { set({ textError: null }); return { ok: true, count: 0 }; }
         const before = snapshot(s); const next = { ...before, chunks: nextChunks };
@@ -337,7 +373,7 @@ export const createHistoryStore = () => createStore<HistoryState & HistoryAction
             `Cannot restore: ${plan.ids.length} subtitle(s) changed after this operation` });
           return { ok: false, error: plan.reason };
         }
-        const nextChunks = applyTextSnapshots(s.chunks, plan.changes);
+        const nextChunks = applyTextSnapshots(s.chunks, plan.changes).map(chunk => chunk.keywords ? { ...chunk, keywords: reconcileChunkKeywords(chunk.keywords, chunk.text) } : chunk);
         const before = snapshot(s); const next = { ...before, chunks: nextChunks };
         set({ ...next, ...derived(next), textHistory: trimTextHistory([...s.textHistory, plan.record]),
           undoStack: [...s.undoStack, { before, after: next, textRecord: plan.record }], redoStack: [], canUndo: true, canRedo: false,
