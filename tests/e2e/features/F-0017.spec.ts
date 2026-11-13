@@ -363,8 +363,12 @@ test('F-0017/AC-9 translation and AI correction write back offscreen virtual row
     },
   });
 
-  await page.getByRole('button', { name: '翻译' }).click();
-  await expect(page.getByText('字幕翻译完成')).toBeVisible();
+  await page.getByTestId('translation-open').click();
+  await page.getByTestId('translation-start').click();
+  await expect(page.getByTestId('translation-apply')).toBeVisible({ timeout: 25_000 });
+  await page.getByTestId('translation-apply').click();
+  await expect(page.getByText(/字幕翻译完成/)).toBeVisible();
+  await page.getByTestId('translation-close').click();
   const last = await findVirtualRow(page, '第 1173 句');
   await expect(last.getByTestId('subtitle-secondary-text')).toHaveValue(/译文 第 1173 句/);
 
