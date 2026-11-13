@@ -7,6 +7,7 @@ import { extname, resolve, sep } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { rpcRequestSchema, PROTOCOL_VERSION, type HostFrame, type RpcResponse } from '../../shared/protocol';
+import { asRpcErrorPayload } from '../../shared/errors';
 import { readHostIdentity } from './projects';
 
 async function body(req: IncomingMessage, limit: number): Promise<Buffer> {
@@ -280,7 +281,7 @@ export const gatewayPlugin = { name: 'flycut-api-gateway', inject: ['hostConfig'
       const input = rpcRequestSchema.parse(JSON.parse((await body(req, 32 * 1024 * 1024)).toString('utf8')));
       let response: RpcResponse;
       try { response = { type: 'server-response', rpcId: input.rpcId, result: { ok: true, value: await ctx.rpc.invoke(input.method, input.payload) } }; }
-      catch (error) { response = { type: 'server-response', rpcId: input.rpcId, result: { ok: false, error: { code: 'RPC_ERROR', message: error instanceof Error ? error.message : String(error), details: {} } } }; }
+      catch (error) { response = { type: 'server-response', rpcId: input.rpcId, result: { ok: false, error: asRpcErrorPayload(error) } }; }
       json(200, response);
     } catch (error) {
       if (res.headersSent) { res.destroy(); return; }

@@ -50,3 +50,13 @@ export {
   fixCjkLineStarts,
   applyCjkBreakHints,
 } from './text';
+
+export {
+  defaultExportStylePair,
+  resolveProjectExportStylePair,
+  buildProjectExportSubtitleScene,
+  serializeProjectSubtitles,
+  type ExportableChunk,
+  type ExportStyleConfig,
+  type ExportStylePair,
+} from './projectExport';

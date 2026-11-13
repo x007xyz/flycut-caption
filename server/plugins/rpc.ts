@@ -58,6 +58,8 @@ declare module '@deepseek-ai/cordis' {
     'job/updated'(payload: RemoteEvents['job/updated']): void;
     'agent/message'(payload: RemoteEvents['agent/message']): void;
     'agent/tool-result'(payload: RemoteEvents['agent/tool-result']): void;
+    'confirmation/updated'(payload: RemoteEvents['confirmation/updated']): void;
+    'project/suggestions-updated'(payload: RemoteEvents['project/suggestions-updated']): void;
   }
 }
 
