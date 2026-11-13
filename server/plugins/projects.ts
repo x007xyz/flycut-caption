@@ -118,6 +118,7 @@ export const projectsPlugin = { name: 'flycut-projects', inject: ['hostConfig', 
   const store = new ProjectStore(ctx.hostConfig.home);
   await store.init();
   await store.finishPurges();
+  ctx.provide('projectStore', store);
   /** Files the shell registered during this Host's lifetime, by `mediaRef`. Paths never reach RPC. */
   const registered = new Map<string, Registered>();
 

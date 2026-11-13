@@ -20,7 +20,8 @@ approved_at:
 
 | 日期 | 清单项 | 提交 | 检查 |
 |---|---|---|---|
-| 2026-11-13 | 1. 共享契约、纯导出辅助与 Gateway 错误码 | pending | pnpm lint ✅, pnpm tsc -b --noEmit ✅, pnpm check:host ✅ |
+| 2026-11-13 | 1. 共享契约、纯导出辅助与 Gateway 错误码 | 8fd29fb | pnpm lint ✅, pnpm tsc -b --noEmit ✅, pnpm check:host ✅ |
+| 2026-11-13 | 2. Host 客户端确认插件与共享 ProjectStore | pending | pnpm lint ✅, pnpm check:host ✅, cli-f0051.test.ts (1/1) ✅ |
 
 ## 自行决定的事项
 

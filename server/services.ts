@@ -6,6 +6,7 @@ import type { AISettingsImportInput, AISettingsMutationResult, AISettingsRemoveR
 import type { Server } from 'node:http';
 import type { EditorPlugin } from '../src/types/plugin';
 import type { z } from 'zod';
+import type { ProjectStore } from './projects/store';
 
 export interface HostConfig { home: string; port: number; token: string; resourceRoot: string; 
   /** Resolved profile name (after profile patches). Used for non-overridable deployment boundaries. */
@@ -125,6 +126,7 @@ declare module '@deepseek-ai/cordis' {
     editorPlugins: EditorPluginRegistry;
     text: TextService;
     aiSettings: AISettingsService;
+    projectStore: ProjectStore;
   }
   interface Events {
     /**

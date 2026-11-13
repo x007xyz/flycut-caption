@@ -92,7 +92,7 @@ E2E 测试 `tests/e2e/features/F-0051.spec.ts` 覆盖中英文与明暗主题下
 一个需求做不完、需要拆成几个 PR 分别发布时，说明需求太大，回到 Epic 拆成多个需求。
 -->
 - [x] 1. 抽取纯共享字幕/导出辅助与稳定错误码契约（`shared/errors.ts`、`shared/confirmations.ts`、`shared/projectOps.ts`、`shared/protocol.ts`、`gateway.ts`）。
-- [ ] 2. 实现 Host 客户端确认插件 `server/plugins/confirmations.ts`（持久化、幂等去重、审批执行与一次性消费、`confirmation/updated` 推送）及架构测试。
+- [x] 2. 实现 Host 客户端确认插件 `server/plugins/confirmations.ts`（持久化、幂等去重、审批执行与一次性消费、`confirmation/updated` 推送）及架构测试。
 - [ ] 3. 实现 Host 项目应用服务插件 `server/plugins/projectOps.ts`（`projects.transcribe`、`projects.suggestEdits` 仅生成待审、`projects.export` 与 UI 一致）及架构测试。
 - [ ] 4. 实现 CLI 客户端与命令集（`cli/` + `scripts/build-cli.mjs` + `package.json` `bin`），覆盖发现/鉴权脱敏、`/uploads` 上传、转写、建议、新文件与覆盖确认导出、任务查询、Ctrl+C 与 `--yes` 防绕过。
 - [ ] 5. 实现 UI 客户端确认中心（`ClientConfirmations` 挂接 `ProjectsApp`/`ProjectsShell`/`WorkstationHeader`）与待审建议载入入口，补齐中英文与明暗主题。

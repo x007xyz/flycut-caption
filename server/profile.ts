@@ -19,6 +19,7 @@ import { deleteSilenceEditingPlugin, editingPlugin, removeFillersEditingPlugin }
 import { textPlugin } from './plugins/text';
 import { exportPlugin } from './plugins/export';
 import { projectsPlugin } from './plugins/projects';
+import { confirmationsPlugin } from './plugins/confirmations';
 import { builtinAgentToolsPlugin, langgraphPlugin } from './plugins/langgraph';
 import { gatewayPlugin } from './plugins/gateway';
 import { silencePlugin } from './plugins/silence';
@@ -45,7 +46,8 @@ export const BUILTINS: Record<string, Builtin> = {
   silence: { plugin: silencePlugin, provides: [] },
   text: { plugin: textPlugin, provides: ['text'] },
   export: { plugin: exportPlugin, provides: ['export'] },
-  projects: { plugin: projectsPlugin, provides: [] },
+  projects: { plugin: projectsPlugin, provides: ['projectStore'] },
+  confirmations: { plugin: confirmationsPlugin, provides: [] },
   jianying: { plugin: jianyingPlugin, provides: [] },
   langgraph: { plugin: langgraphPlugin, provides: ['workflows', 'agents', 'agentTools'] },
   'agent-tools': { plugin: builtinAgentToolsPlugin, provides: [] },
