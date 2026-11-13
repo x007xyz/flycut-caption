@@ -60,4 +60,3 @@ try {
 } finally {
   if (!failed) await rm(dir, { recursive: true, force: true });
 }
-

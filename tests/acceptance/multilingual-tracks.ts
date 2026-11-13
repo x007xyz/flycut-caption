@@ -47,4 +47,3 @@ try {
 } finally {
   await rm(dir, { recursive: true, force: true });
 }
-

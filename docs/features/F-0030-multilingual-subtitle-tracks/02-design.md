@@ -129,4 +129,3 @@ Red check：临时撤掉轨道读取迁移或 `sourceText` 过期判断，对应
 | AC-7 | 只有 `saveVideoEdits` 返回 saved 才显示 Completed；状态写入 edits，重开和第二个客户端读取同一 Host 数据。 |
 | AC-8 | Host 错误原文、Retry/Back；`failed` 保留输入；冲突显示 Content changed. Review again. 并打开既有冲突对话框，未显式覆盖不写。 |
 | AC-9 | `tests/e2e/features/F-0030.spec.ts` 中英文 × 明暗主题；真实 Host 保存/重开、EDL、恢复副本和桌面验证在 04 记录，缺环境写 Not run。 |
-

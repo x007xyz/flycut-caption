@@ -235,4 +235,3 @@ for (const theme of ['light', 'dark'] as const) for (const english of [false, tr
     });
   });
 }
-

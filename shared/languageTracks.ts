@@ -140,4 +140,3 @@ export function validateLanguageTracks(tracks: readonly LanguageTrack[], activeI
   }
   if (activeId && !ids.has(activeId)) throw new Error('Active language track does not exist');
 }
-

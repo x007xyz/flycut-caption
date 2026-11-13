@@ -36,4 +36,3 @@ const zh: typeof en = {
 export const languageTrackCopy = (language: string) => language.startsWith('zh') ? zh : en;
 export const fillLanguageTrack = (template: string, values: Record<string, string | number>) =>
   template.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key] ?? ''));
-

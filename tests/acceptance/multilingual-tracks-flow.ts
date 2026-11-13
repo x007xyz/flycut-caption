@@ -100,4 +100,3 @@ export async function multilingualTracks(browser: Browser, api: AcceptanceHostAp
   'F-0030/AC-3: keeping an outdated translation did not update its source version');
   console.log('PASS F-0030/AC-1 AC-3 AC-4 AC-7: real Host tracks, switching, outdated keep and reopen');
 }
-

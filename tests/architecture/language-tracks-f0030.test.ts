@@ -183,4 +183,3 @@ test('F-0030/AC-2 loading an old secondText transcript creates the same explicit
   assert.equal(store.getState().languageTracks[0].languageCode, null);
   assert.equal(store.getState().chunks[0].secondText, 'Bonjour');
 });
-

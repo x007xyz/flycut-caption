@@ -103,4 +103,3 @@ Red check 2：临时让 `isTranslationOutdated` 恒为 false，架构测试按�
 ## 结论
 
 F-0030 在 macOS Web 与 Tauri debug、真实 Host、旧格式迁移、冲突和过期路径上通过验收，可以进入维护者确认。正式发版前仍需父代理处理本机 Node 动态库随包问题，并确认 proposed ADR-0011；本轮不自行 approve、不 push、不发版。
-
