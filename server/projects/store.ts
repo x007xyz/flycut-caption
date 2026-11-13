@@ -167,7 +167,7 @@ export class ProjectStore {
     try {
       const media = await input.media(id, videoId);
       const project: ProjectFile = { formatVersion: PROJECT_FORMAT_VERSION, id, name: input.name, createdAt: now, updatedAt: now, revision: 1,
-        styleRevision: 0, videos: [{ ...input.video, id: videoId, createdAt: now, updatedAt: now, media, hasTranscript: false, revision: 0, styleSource: 'project' }] };
+        styleRevision: 0, terminologyRevision: 0, videos: [{ ...input.video, id: videoId, createdAt: now, updatedAt: now, media, hasTranscript: false, revision: 0, styleSource: 'project' }] };
       await this.writeProject(project);
       return project;
     } catch (error) { await rm(this.dir(id), { recursive: true, force: true }); throw error; }
@@ -178,7 +178,7 @@ export class ProjectStore {
     await this.init();
     const id = randomUUID(); const now = new Date().toISOString();
     await mkdir(this.dir(id), { recursive: true });
-    const project: ProjectFile = { formatVersion: PROJECT_FORMAT_VERSION, id, name, createdAt: now, updatedAt: now, revision: 1, styleRevision: 0, videos: [] };
+    const project: ProjectFile = { formatVersion: PROJECT_FORMAT_VERSION, id, name, createdAt: now, updatedAt: now, revision: 1, styleRevision: 0, terminologyRevision: 0, videos: [] };
     try { await this.writeProject(project); } catch (error) { await rm(this.dir(id), { recursive: true, force: true }); throw error; }
     return project;
   }

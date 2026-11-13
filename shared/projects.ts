@@ -8,6 +8,7 @@ import { languageTrackSchema } from './languageTracks';
 import { modelRefSchema } from './providers';
 import { textRecordSchema } from './text/corrections';
 import { subtitleKeywordSchema } from './text/keywords';
+import { projectTermEntrySchema } from './terminology';
 
 /** Bump together with a migration in `server/projects/migrations.ts` and a note in ADR-0001. */
 export const PROJECT_FORMAT_VERSION = 4;
@@ -107,6 +108,10 @@ export const projectFileSchema = z.object({
   style: projectStyleSchema.optional(),
   /** Format 2: grows on every project style save. */
   styleRevision: z.number().int().min(0).default(0),
+  /** F-0019 / F-0032: shared project-level terminology & ASR hotwords. */
+  terminology: z.array(projectTermEntrySchema).optional(),
+  /** F-0019 / F-0032: grows on every terminology save. */
+  terminologyRevision: z.number().int().min(0).default(0),
   /** Format 2: set while the project is in Trash (ISO 8601). */
   deletedAt: z.string().optional(),
   /** Format 2: when the Host deletes the project permanently (ISO 8601). */
