@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { open, readFile, rename, rm, stat } from 'node:fs/promises';
+import { mkdir, open, readFile, rename, rm, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, extname, join, resolve } from 'node:path';
+import { basename, dirname, extname, join, resolve } from 'node:path';
 import { WebSocket } from 'ws';
 import { redactSecrets, type HostErrorCode } from '../shared/errors';
 import { PROTOCOL_VERSION, type HostFrame, type JobSnapshot, type RemoteEvents, type RpcInput, type RpcMethod, type RpcOutput, type RpcResponse } from '../shared/protocol';
@@ -67,6 +67,13 @@ export interface ConnectionConfig {
   url: string;
   token: string;
   home: string;
+}
+
+export interface WaitForJobOptions {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  onProgress?: (job: JobSnapshot) => void;
+  handleSigint?: boolean;
 }
 
 const MIME_BY_EXT: Record<string, string> = {
@@ -316,7 +323,12 @@ export class HostCliClient {
     return { assetId, size, sha256, mimeType, fileName };
   }
 
-  async downloadAssetToFile(assetId: string, outPath: string, allowOverwrite: boolean): Promise<{ outPath: string; sizeBytes: number }> {
+  async downloadAssetToFile(
+    assetId: string,
+    outPath: string,
+    allowOverwrite: boolean,
+    beforeRename?: (info: { targetExists: boolean }) => Promise<void>,
+  ): Promise<{ outPath: string; sizeBytes: number }> {
     const abs = resolve(outPath);
     const existing = await stat(abs).catch(() => undefined);
     if (existing && !allowOverwrite) {
@@ -327,6 +339,7 @@ export class HostCliClient {
     if (!response.ok || !response.body) {
       throw new CliHostError('NOT_FOUND', `无法下载导出资产 ${assetId}（HTTP ${response.status}）`);
     }
+    await mkdir(dirname(abs), { recursive: true });
     const tmp = `${abs}.${randomUUID()}.part`;
     const handle = await open(tmp, 'w');
     let sizeBytes = 0;
@@ -340,6 +353,9 @@ export class HostCliClient {
       if (raced && !allowOverwrite) {
         throw new CliHostError('CONFIRMATION_REQUIRED', `写入前检测到目标文件已存在，拒绝未确认覆盖：${abs}`);
       }
+      if (beforeRename) {
+        await beforeRename({ targetExists: !!raced });
+      }
       await rename(tmp, abs);
       return { outPath: abs, sizeBytes };
     } catch (error) {
@@ -349,17 +365,20 @@ export class HostCliClient {
     }
   }
 
-  async waitForJob(jobId: string): Promise<JobSnapshot> {
+  async waitForJob(jobId: string, options: WaitForJobOptions = {}): Promise<JobSnapshot> {
     const wsUrl = new URL('/events', this.url);
     wsUrl.protocol = wsUrl.protocol === 'https:' ? 'wss:' : 'ws:';
     let socket: WebSocket | undefined;
     let interrupted = false;
+    let interruptReason: 'sigint' | 'cancelled' | 'timeout' = 'sigint';
     let lastProgress = '';
+    const handleSigint = options.handleSigint !== false;
 
-    const onSigint = () => { interrupted = true; socket?.terminate(); };
-    process.once('SIGINT', onSigint);
+    const onSigint = () => { interrupted = true; interruptReason = 'sigint'; socket?.terminate(); };
+    if (handleSigint) process.once('SIGINT', onSigint);
 
     const logProgress = (job: JobSnapshot) => {
+      options.onProgress?.(job);
       const p = job.progress;
       if (!p) return;
       const pct = typeof p.progress === 'number' ? ` ${Math.round(p.progress)}%` : '';
@@ -372,17 +391,45 @@ export class HostCliClient {
     };
 
     try {
+      if (options.signal?.aborted) {
+        const latest = await this.call('jobs.get', { id: jobId }).catch(() => undefined);
+        const stillRunning = latest ? (latest.status === 'queued' || latest.status === 'running') : true;
+        throw new CliHostError('INTERRUPTED', `已停止本地等待；Host 任务 ${jobId} 当前状态：${latest?.status ?? 'unknown'}`, {
+          details: { jobId, hostStatus: latest?.status ?? 'unknown', hostStillRunning: stillRunning, reason: 'cancelled' },
+        });
+      }
       const initial = await this.call('jobs.get', { id: jobId });
       logProgress(initial);
       if (['complete', 'error', 'cancelled'].includes(initial.status)) return initial;
 
       return await new Promise<JobSnapshot>((resolveWait, rejectWait) => {
         let settled = false;
+        let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+        const onAbort = () => {
+          interrupted = true;
+          interruptReason = 'cancelled';
+          socket?.terminate();
+          void poll();
+        };
+        if (options.signal) {
+          options.signal.addEventListener('abort', onAbort, { once: true });
+        }
+        if (options.timeoutMs && options.timeoutMs > 0) {
+          timeoutTimer = setTimeout(() => {
+            interrupted = true;
+            interruptReason = 'timeout';
+            socket?.terminate();
+            void poll();
+          }, options.timeoutMs);
+          timeoutTimer.unref?.();
+        }
         const finish = (fn: () => void) => {
           if (settled) return;
           settled = true;
           clearInterval(pollTimer);
           clearInterval(sigintTimer);
+          if (timeoutTimer) clearTimeout(timeoutTimer);
+          if (options.signal) options.signal.removeEventListener('abort', onAbort);
           try { socket?.terminate(); } catch { /* ignore */ }
           fn();
         };
@@ -408,7 +455,7 @@ export class HostCliClient {
               ? `已停止本地等待；Host 任务 ${jobId} 仍在运行（状态：${latest?.status ?? 'unknown'}）`
               : `已停止本地等待；Host 任务 ${jobId} 当前状态：${latest?.status ?? 'unknown'}`, {
               next: `使用 flycut jobs get ${jobId} 查询进度，或 flycut jobs cancel ${jobId} 取消任务。`,
-              details: { jobId, hostStatus: latest?.status ?? 'unknown', hostStillRunning: stillRunning },
+              details: { jobId, hostStatus: latest?.status ?? 'unknown', hostStillRunning: stillRunning, reason: interruptReason },
             })));
             return;
           }
@@ -452,7 +499,7 @@ export class HostCliClient {
         sigintTimer.unref?.();
       });
     } finally {
-      process.removeListener('SIGINT', onSigint);
+      if (handleSigint) process.removeListener('SIGINT', onSigint);
     }
   }
 }

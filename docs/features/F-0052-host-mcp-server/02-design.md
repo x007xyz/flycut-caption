@@ -98,7 +98,7 @@ MCP Server 运行在独立 stdio 进程中，不新增 MCP 专属产品页面或
 ## 实现清单
 
 - [x] 1. 实现零依赖 MCP stdio JSON-RPC 2.0 传输与生命周期层（`mcp/protocol.ts`），支持协议版本协商、`tools/list`、`tools/call`、`resources/list|read`、`notifications/cancelled`、`notifications/progress` 与秘钥脱敏日志。
-- [ ] 2. 实现复用 `cli/client.ts` 的 MCP 工具注册与业务逻辑（`mcp/tools.ts`、`mcp/server.ts`），覆盖项目/媒体/转写/建议/新文件导出/任务状态/确认申请工具及严格 `z.strictObject` schema，配置 `scripts/build-mcp.mjs` 与 `package.json` `bin`/构建脚本。
+- [x] 2. 实现复用 `cli/client.ts` 的 MCP 工具注册与业务逻辑（`mcp/tools.ts`、`mcp/server.ts`），覆盖项目/媒体/转写/建议/新文件导出/任务状态/确认申请工具及严格 `z.strictObject` schema，配置 `scripts/build-mcp.mjs` 与 `package.json` `bin`/构建脚本。
 - [ ] 3. 强化前端客户端确认中心与 Host 待审建议入口（`ClientConfirmations.tsx` 实时订阅与刷新、`WorkstationHeader.tsx` 确认入口、`HostSuggestionsBanner.tsx`、`cutPersistence.ts`、中英文国际化文案）。
 - [ ] 4. 编写安装配置说明与市场上架准备材料（`docs/mcp-server.md`、`server.json`、`mcp/marketplace/README.md`、`skills/flycut-caption/SKILL.md`），明确对外发布需维护者授权。
 - [ ] 5. 编写并跑通 MCP 架构与真实协议子进程集成测试（`tests/architecture/mcp-f0052.test.ts`），覆盖真实 stdio MCP 客户端与隔离 Host 端到端闭环（含真实媒体转写/导出、空集合、断连、取消、确认门禁与去重、schema 校验）及 `codex mcp` 注册验证。
