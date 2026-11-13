@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createCanvas, GlobalFonts } from '@napi-rs/canvas';
@@ -273,6 +275,201 @@ test('F-0026/AC-1 AC-2 AC-6 AC-7 AC-8 ProjectService persists platform presets a
       await clientA.ctx.fiber.dispose();
       await clientB.ctx.fiber.dispose();
     }
+  } finally {
+    await host.fiber.dispose();
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+const FFMPEG = resolve('src-tauri/binaries/ffmpeg');
+const REAL_BILI_MP4 = resolve('tests/media/external/bili-BV1Rex26dEWF.mp4');
+const REAL_BILI_TRANSCRIPT = resolve('tests/media/external/bili-BV1Rex26dEWF.transcript.json');
+
+function runFfmpeg(args: string[]) {
+  const result = spawnSync(FFMPEG, ['-hide_banner', '-y', ...args], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  return result;
+}
+
+function readRgbFrame(file: string, time: number, width: number, height: number): Buffer {
+  const result = spawnSync(
+    FFMPEG,
+    ['-v', 'error', '-ss', String(time), '-i', file, '-frames:v', '1', '-pix_fmt', 'rgb24', '-f', 'rawvideo', '-'],
+    { maxBuffer: 32 * 1024 * 1024 },
+  );
+  assert.equal(result.status, 0, result.stderr.toString());
+  assert.equal(result.stdout.length, width * height * 3);
+  return result.stdout;
+}
+
+function countBandMatches(
+  buffer: Buffer,
+  width: number,
+  height: number,
+  yMinRatio: number,
+  yMaxRatio: number,
+  predicate: (r: number, g: number, b: number) => boolean,
+): number {
+  const yStart = Math.max(0, Math.floor(height * yMinRatio));
+  const yEnd = Math.min(height, Math.ceil(height * yMaxRatio));
+  let count = 0;
+  for (let y = yStart; y < yEnd; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const idx = (y * width + x) * 3;
+      if (predicate(buffer[idx], buffer[idx + 1], buffer[idx + 2])) count += 1;
+    }
+  }
+  return count;
+}
+
+test('F-0026/AC-2 AC-3 AC-4 AC-9 real Host Skia + FFmpeg exports platform presets across 16:9, 9:16, 1:1 with zero safe-zone guide leakage', { timeout: 180_000 }, async (t) => {
+  if (!existsSync(REAL_BILI_MP4) || !existsSync(REAL_BILI_TRANSCRIPT)) {
+    t.skip('Real media fixture bili-BV1Rex26dEWF is not installed');
+    return;
+  }
+  const home = await mkdtemp(join(tmpdir(), 'flycut-f0026-export-'));
+  const token = 'f0026-export-token';
+  const host = await createHost({ home, token, port: 0, resourceRoot: resolve('src-tauri') }, { profile: 'desktop', providers: [], patches: [] });
+  const base = `http://127.0.0.1:${(host.httpServer.address() as { port: number }).port}`;
+  const call = async (method: string, payload: unknown) => {
+    const response = await fetch(`${base}/rpc`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'client-request', rpcId: 'f0026-exp', method, payload }),
+    });
+    const envelope = await response.json();
+    assert.equal(envelope.result.ok, true, JSON.stringify(envelope.result));
+    return envelope.result.value;
+  };
+  try {
+    const raw = JSON.parse(await readFile(REAL_BILI_TRANSCRIPT, 'utf8')) as {
+      chunks: SubtitleChunk[];
+      wordChunks: SubtitleChunk[];
+      hasWordTimestamps: boolean;
+    };
+    assert.equal(raw.hasWordTimestamps, true);
+    const firstCue = raw.chunks.find(c => c.timestamp[1] > c.timestamp[0] && c.wordIds?.length);
+    assert.ok(firstCue, 'real transcript provides a word-timed cue');
+    const cueWords = raw.wordChunks.filter(w => w.sentenceId === firstCue.id);
+    const firstWord = cueWords[0];
+    assert.ok(firstWord, 'real transcript provides word timing');
+    const wordTime = Math.min(2.0, Math.max(0.2, (firstWord.timestamp[0] + firstWord.timestamp[1]) / 2 - firstCue.timestamp[0] + 0.3));
+
+    const chunks: SubtitleChunk[] = [
+      {
+        ...firstCue,
+        id: 'real-s1',
+        timestamp: [0.3, 2.2],
+        keywords: [{ start: 0, end: Math.min(2, firstCue.text.length), text: firstCue.text.slice(0, 2), source: 'manual' }],
+      },
+      {
+        id: 'fallback-s2',
+        text: '无词元整句降级示例',
+        timestamp: [2.4, 3.8],
+      },
+    ];
+    const words: SubtitleChunk[] = cueWords.map((w, index) => ({
+      ...w,
+      id: `rw-${index}`,
+      sentenceId: 'real-s1',
+      timestamp: [
+        0.3 + Math.max(0, w.timestamp[0] - firstCue.timestamp[0]) * 0.5,
+        0.3 + Math.max(0.05, w.timestamp[1] - firstCue.timestamp[0]) * 0.5,
+      ] as [number, number],
+    }));
+    chunks[0].wordIds = words.map(w => w.id);
+
+    const cases = [
+      { presetId: 'bilibili' as const, width: 640, height: 360, vf: 'scale=640:360', label: '16:9', checkColor: (r: number, g: number, b: number) => b > 150 && g > 120 && r < 110 },
+      { presetId: 'douyin' as const, width: 360, height: 640, vf: 'crop=ih*9/16:ih,scale=360:640', label: '9:16', checkColor: (r: number, g: number, b: number) => r > 170 && g > 150 && b < 110 },
+      { presetId: 'youtube-shorts' as const, width: 480, height: 480, vf: 'crop=ih:ih,scale=480:480', label: '1:1', checkColor: (r: number, g: number, b: number) => r > 150 && g < 90 && b < 90 },
+    ];
+
+    for (const item of cases) {
+      const samplePath = join(home, `sample-${item.presetId}.mp4`);
+      runFfmpeg(['-ss', '0', '-t', '4', '-i', REAL_BILI_MP4, '-vf', item.vf, '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-an', samplePath]);
+
+      const primary = {
+        ...applyPlatformPreset(defaultSubtitleStyle, item.presetId),
+        fontSizeRatio: 0.08,
+      };
+      const scene = buildExportSubtitleScene({
+        chunks,
+        wordChunks: words,
+        hasWordTimestamps: true,
+        stylePair: { primary, secondary: defaultSubtitleStylePair.secondary },
+        keptSegments: [{ start: 0, end: 4, keep: true }],
+        videoWidth: item.width,
+        videoHeight: item.height,
+        fps: 30,
+        duration: 4,
+      });
+      assert.equal((scene.primary as Record<string, unknown>).safeZoneVisible, undefined);
+      assert.equal((scene.primary as Record<string, unknown>).safeZoneInsets, undefined);
+      const sceneWithoutGuide = buildExportSubtitleScene({
+        chunks,
+        wordChunks: words,
+        hasWordTimestamps: true,
+        stylePair: { primary: toggleSafeZoneGuide(primary, false), secondary: defaultSubtitleStylePair.secondary },
+        keptSegments: [{ start: 0, end: 4, keep: true }],
+        videoWidth: item.width,
+        videoHeight: item.height,
+        fps: 30,
+        duration: 4,
+      });
+      assert.deepEqual(scene, sceneWithoutGuide, `${item.presetId} export scene is identical with safe-zone guide on or off`);
+
+      const asset = await (await fetch(`${base}/assets`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: await readFile(samplePath),
+      })).json();
+      const queued = await call('export.start', {
+        assetId: asset.assetId,
+        segments: [{ start: 0, end: 4, keep: true }],
+        options: {
+          format: 'mp4',
+          quality: 'low',
+          preserveAudio: false,
+          subtitleProcessing: 'hard',
+          subtitleTransport: 'skia-band',
+          subtitleScene: scene,
+        },
+      });
+      let state = queued;
+      const deadline = Date.now() + 90_000;
+      while (state.status === 'running' || state.status === 'queued') {
+        assert.ok(Date.now() < deadline, `${item.presetId} export timeout`);
+        await new Promise(done => setTimeout(done, 40));
+        state = await call('jobs.get', { id: queued.id });
+      }
+      assert.equal(state.status, 'complete', state.error);
+      const outputPath = host.assets.path(state.result.assetId);
+      const outFrame = readRgbFrame(outputPath, Math.min(1.5, wordTime), item.width, item.height);
+      const srcFrame = readRgbFrame(samplePath, Math.min(1.5, wordTime), item.width, item.height);
+
+      const bandHighlight = countBandMatches(outFrame, item.width, item.height, 0.45, 0.92, item.checkColor);
+      assert.ok(bandHighlight > 30, `${item.presetId} (${item.label}) renders highlight/keyword pixels in subtitle band (got ${bandHighlight})`);
+
+      let topDiffSum = 0;
+      let topPixels = 0;
+      for (let y = 4; y < Math.min(28, item.height); y += 1) {
+        for (let x = 4; x < Math.min(160, item.width); x += 1) {
+          const idx = (y * item.width + x) * 3;
+          topDiffSum += Math.abs(outFrame[idx] - srcFrame[idx]) + Math.abs(outFrame[idx + 1] - srcFrame[idx + 1]) + Math.abs(outFrame[idx + 2] - srcFrame[idx + 2]);
+          topPixels += 3;
+        }
+      }
+      const meanTopDiff = topDiffSum / Math.max(1, topPixels);
+      assert.ok(meanTopDiff < 18, `${item.presetId} (${item.label}) top region stays clean without SafeZoneOverlay badge (meanChannelDiff=${meanTopDiff.toFixed(2)})`);
+
+      const fallbackFrame = readRgbFrame(outputPath, 3.0, item.width, item.height);
+      const fallbackMatches = countBandMatches(fallbackFrame, item.width, item.height, 0.45, 0.92, (r, g, b) => r > 170 || b > 150);
+      assert.ok(fallbackMatches > 40, `${item.presetId} fallback cue without words renders visible sentence highlight`);
+    }
+
+    const exportFiles = await readdir(join(home, 'exports'));
+    assert.deepEqual(exportFiles.filter(file => file.endsWith('.ass')), [], 'platform preset export uses shared Skia path, never ASS');
   } finally {
     await host.fiber.dispose();
     await rm(home, { recursive: true, force: true });

@@ -113,7 +113,7 @@ approved_at: 2026-11-13
 - [x] 2. Host 持久化恢复与冲突回退辅助：在 `src/services/projectService.ts` 中补充 `revertUnsavedStyle()`、完善 `verifyCurrentEditsSaved()` 对 `style` 的校验与 `recheckStyleConflict()` 支持，验证多客户端/重开读取一致性与并发冲突处理。
 - [x] 3. 播放器安全区叠层与辅助线：实现 `src/components/VideoPlayer/SafeZoneOverlay.tsx` 并接入 `SubtitleOverlay.tsx`，支持开关、参考平台标注（含「参考，未验证 / Reference, unverified」及参考日期/画幅）、底部进入遮挡区视觉提醒，且确保绝不进入导出场景。
 - [x] 4. 平台预设库、画幅切换、安全区微调与生命周期 UI：实现 `src/components/SubtitleSettings/PlatformPresetsSection.tsx`、中英文文案 `src/locales/platformPresets.ts`，接入 `SubtitleSettings.tsx`（含 AC-5 空态/缺失提示、AC-6 加载/处理中/取消、AC-7 已完成、AC-8 失败查询重试/返回/冲突重新检查）。
-- [ ] 5. E2E 端到端与真实 Host 导出回归：编写 `tests/e2e/features/F-0026.spec.ts`（覆盖 AC-1~AC-9、light/dark × zh/en、加载/空态/成功重开/失败重试/冲突重新检查）与 `tests/architecture/platform-presets-f0026.test.ts`（含三画幅真实 Host Skia + FFmpeg 导出一致性、无辅助线泄漏及 Red check），生成截图与录屏证据。
+- [x] 5. E2E 端到端与真实 Host 导出回归：编写 `tests/e2e/features/F-0026.spec.ts`（覆盖 AC-1~AC-9、light/dark × zh/en、加载/空态/成功重开/失败重试/冲突重新检查）与 `tests/architecture/platform-presets-f0026.test.ts`（含三画幅真实 Host Skia + FFmpeg 导出一致性、无辅助线泄漏及 Red check），生成截图与录屏证据。
 
 ## 验证计划
 

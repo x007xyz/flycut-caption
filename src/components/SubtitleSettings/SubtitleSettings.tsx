@@ -416,7 +416,7 @@ export function SubtitleSettings({
 
       <SettingRow label={t('components.workstation.font')}>
         <Select value={activeStyle.fontId} onValueChange={(value) => updateActiveStyle({ fontId: value })}>
-          <SelectTrigger className="h-7 flex-1 border-aimu-border bg-aimu-input px-2 text-xs">
+          <SelectTrigger data-testid="subtitle-font-select" className="h-7 flex-1 border-aimu-border bg-aimu-input px-2 text-xs">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
