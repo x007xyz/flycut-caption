@@ -8,6 +8,7 @@ const MODELS_TIMEOUT_MS = 10_000;
 
 export const providerRegistryPlugin = { name: 'flycut-provider-registry', inject: ['rpc', 'jobs'], apply(ctx: Context) {
   const providers = new Map<string, Provider>();
+  const activePrepares = new Map<string, string>();
   const get = (id: string) => { const provider = providers.get(id); if (!provider) throw new Error(`Provider unavailable: ${id}`); return provider; };
   async function model(provider: Provider, modelId: string, signal?: AbortSignal): Promise<ModelInfo> {
     const found = (await provider.models(signal)).find(item => item.id === modelId);
@@ -32,7 +33,7 @@ export const providerRegistryPlugin = { name: 'flycut-provider-registry', inject
       if (!provider.transcribe) throw new Error(`${provider.name} 不提供语音识别`);
       const info = await model(provider, request.modelId, signal);
       if (info.role !== 'asr') throw new Error(`${info.name} 不是识别模型`);
-      if (info.status === 'download') throw new Error(`模型未下载：${info.name}`);
+      if (info.status === 'download') throw new Error(`模型未下载或校验未完成：${info.name}`);
       if (info.status === 'unavailable') throw new Error(`${info.name} 不可用：${info.reason ?? '未知原因'}`);
       checkOptions(info, request.options);
       return validateTranscript(await provider.transcribe(request, audioPath, signal, report));
@@ -58,6 +59,20 @@ export const providerRegistryPlugin = { name: 'flycut-provider-registry', inject
   ctx.effect(() => ctx.rpc.register('providers.models', undefined, () => registry.models()));
   ctx.effect(() => ctx.rpc.register('providers.prepare', providerPrepareSchema, ref => {
     get(ref.providerId);
-    return ctx.jobs.create(async (signal, report) => { await registry.prepare(ref, signal, report); return ref; });
+    const key = `${ref.providerId}/${ref.modelId}`;
+    const existingId = activePrepares.get(key);
+    if (existingId) {
+      try {
+        const existing = ctx.jobs.get(existingId);
+        if (existing.status === 'queued' || existing.status === 'running') return existing;
+      } catch { /* job missing */ }
+      activePrepares.delete(key);
+    }
+    const job = ctx.jobs.create(async (signal, report) => {
+      try { await registry.prepare(ref, signal, report); return ref; }
+      finally { if (activePrepares.get(key) === job.id) activePrepares.delete(key); }
+    });
+    activePrepares.set(key, job.id);
+    return job;
   }));
 } };

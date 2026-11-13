@@ -28,7 +28,9 @@ export interface HostConfig { home: string; port: number; token: string; resourc
   uploadChunkBytes?: number;
   uploadMaxBytes?: number;
   uploadSessionTtlHours?: number;
-  uploadDiskReserveBytes?: number }
+  uploadDiskReserveBytes?: number;
+  /** F-0018: minimum free disk reserve in bytes before model download (defaults to 64 MiB). */
+  modelDiskReserveBytes?: number }
 export type ProgressReporter = (progress: ASRProgress) => void;
 /**
  * One inference backend. Capabilities are optional methods: implement only what the backend does.

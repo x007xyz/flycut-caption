@@ -10,7 +10,7 @@ approved_at:
 
 ## 分支与 PR
 
-- 分支：
+- 分支：codex/f0018-default-asr-model
 - PR：
 
 ## 进度
@@ -20,7 +20,8 @@ approved_at:
 
 | 日期 | 清单项 | 提交 | 检查 |
 |---|---|---|---|
-| | | | |
+| 2026-11-13 | 1. 清单元数据与共享模型契约 | 015516f | model-manifest.test ✅, lint ✅, tsc ✅, check:host ✅ |
+| 2026-11-13 | 2. Host 下载进度、磁盘检查、SHA-256 校验与取消 | pending | default-asr-model.test ✅, check:host ✅, lint ✅ |
 
 ## 自行决定的事项
 
