@@ -5,6 +5,7 @@ import type { EditorPluginManifest } from '../src/types/plugin';
 import { asrRequestSchema, modelRefSchema, type ProviderModels, type ProviderSummary } from './providers';
 import { subtitleGraphicSceneSchema } from './subtitle-graphics/scene';
 import { semanticWindowSchema } from './editing/semanticFillers';
+import { keywordSuggestInputSchema, type KeywordSuggestInput } from './text/keywords';
 import {
   aiSettingsImportInputSchema, aiSettingsRemoveInputSchema, aiSettingsSaveInputSchema, aiSettingsSelectInputSchema,
   aiSettingsTestInputSchema, type AISettingsImportResult, type AISettingsMutationResult, type AISettingsRemoveResult,
@@ -64,6 +65,7 @@ export const semanticCutsInputSchema = z.strictObject({
   request: semanticWindowSchema,
 });
 export type SemanticCutsInput = z.infer<typeof semanticCutsInputSchema>;
+export { keywordSuggestInputSchema, type KeywordSuggestInput };
 export const agentInputSchema = z.object({ prompt: z.string().min(1).max(100000), asr: asrInputSchema.optional(),
   configId: z.uuid().optional(),
   /** Compatibility for clients released before F-0056. */
@@ -139,6 +141,7 @@ export interface RpcMethods {
   'agent.start': { input: z.input<typeof agentInputSchema>; output: JobSnapshot };
   'text.start': { input: z.input<typeof textInputSchema>; output: JobSnapshot };
   'text.suggestCuts': { input: z.input<typeof semanticCutsInputSchema>; output: JobSnapshot };
+  'text.suggestKeywords': { input: z.input<typeof keywordSuggestInputSchema>; output: JobSnapshot };
   'export.start': { input: z.input<typeof exportInputSchema>; output: JobSnapshot };
   /** F-0011: normal builds are read-only; internal-validation builds also register the two opaque-grant methods. */
   'jianying.capabilities': { input: void; output: JianyingCapabilities };

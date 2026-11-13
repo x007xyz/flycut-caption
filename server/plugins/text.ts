@@ -1,8 +1,9 @@
 import type { Context } from '@deepseek-ai/cordis';
-import { semanticCutsInputSchema, textInputSchema } from '../../shared/protocol';
+import { keywordSuggestInputSchema, semanticCutsInputSchema, textInputSchema } from '../../shared/protocol';
 import type { TextService } from '../services';
 import { OpenAICompatibleEngine } from '../../shared/text/OpenAICompatibleEngine';
 import { SemanticContractError } from '../../shared/editing/semanticFillers';
+import { KeywordContractError } from '../../shared/text/keywords';
 
 export const textPlugin = { name: 'flycut-text-provider', inject: ['jobs', 'rpc', 'aiSettings'], apply(ctx: Context) {
   const service: TextService = {
@@ -29,8 +30,24 @@ export const textPlugin = { name: 'flycut-text-provider', inject: ['jobs', 'rpc'
         }
       });
     },
+    suggestKeywords(input) {
+      return ctx.jobs.create(async (signal, report) => {
+        const engine = new OpenAICompatibleEngine();
+        engine.setAbortSignal(signal); engine.setProgressCallback(report);
+        const model = await ctx.aiSettings.resolve(input.configId);
+        try {
+          return await engine.suggestKeywords(model, input.request);
+        } catch (error) {
+          if (error instanceof KeywordContractError) {
+            throw new Error(`Invalid keyword result (${error.code}): ${error.message}`);
+          }
+          throw error;
+        }
+      });
+    },
   };
   ctx.provide('text', service);
   ctx.effect(() => ctx.rpc.register('text.start', textInputSchema, input => service.start(input)));
   ctx.effect(() => ctx.rpc.register('text.suggestCuts', semanticCutsInputSchema, input => service.suggestCuts(input)));
+  ctx.effect(() => ctx.rpc.register('text.suggestKeywords', keywordSuggestInputSchema, input => service.suggestKeywords(input)));
 } };

@@ -306,3 +306,94 @@ test('F-0025/AC-3 AC-8 validateKeywordModelResponse grounds exact substrings and
     items: [{ id: 'unknown-id', keywords: ['React 19'] }],
   }, request), (err: unknown) => err instanceof KeywordContractError && err.code === 'UNKNOWN_ID');
 });
+
+import { createServer } from 'node:http';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
+import { createHost } from '../../server/app.ts';
+import type { JobSnapshot } from '../../shared/protocol.ts';
+
+test('F-0025/AC-3 AC-8 Host text.suggestKeywords resolves saved AI config without leaking key and rejects bad outputs', async () => {
+  const seen: Array<{ auth?: string; body: string }> = [];
+  let mode: 'valid' | 'bad-substring' | 'stale-base' = 'valid';
+  const modelServer = createServer(async (request, response) => {
+    let body = '';
+    for await (const chunk of request) body += chunk;
+    const parsed = JSON.parse(body);
+    const user = JSON.parse(parsed.messages[1].content);
+    seen.push({ auth: request.headers.authorization, body });
+    response.setHeader('Content-Type', 'application/json');
+    const content = mode === 'stale-base'
+      ? JSON.stringify({ version: 1, base: 'wrong-base', items: [] })
+      : mode === 'bad-substring'
+        ? JSON.stringify({ version: 1, base: user.base, items: [{ id: 'c1', keywords: ['不存在的词'] }] })
+        : JSON.stringify({ version: 1, base: user.base, items: [{ id: 'c1', keywords: ['React 19'] }] });
+    response.end(JSON.stringify({ choices: [{ message: { content } }] }));
+  });
+  await new Promise<void>(done => modelServer.listen(0, '127.0.0.1', done));
+  const modelUrl = `http://127.0.0.1:${(modelServer.address() as { port: number }).port}/v1`;
+
+  const home = await mkdtemp(join(tmpdir(), 'flycut-f0025-kw-'));
+  const ctx = await createHost({ home, token: 'f0025-token', port: 0, resourceRoot: resolve('.') }, {
+    profile: 'desktop',
+    patches: [{ source: 'f0025-test', patch: { config: { 'ai-settings': { secretBackend: 'memory' } } } }],
+  });
+  const base = `http://127.0.0.1:${(ctx.httpServer.address() as { port: number }).port}`;
+  const call = async <T = any>(method: string, payload: unknown = {}): Promise<T> => {
+    const response = await fetch(`${base}/rpc`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer f0025-token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'client-request', rpcId: crypto.randomUUID(), method, payload }),
+    });
+    const envelope = await response.json();
+    if (!envelope.result.ok) throw new Error(envelope.result.error.message);
+    return envelope.result.value;
+  };
+  const wait = async (id: string) => {
+    for (let i = 0; i < 100; i += 1) {
+      const job = await call<JobSnapshot>('jobs.get', { id });
+      if (['complete', 'error', 'cancelled'].includes(job.status)) return job;
+      await delay(20);
+    }
+    throw new Error('job did not settle');
+  };
+
+  try {
+    const identity = await call<{ hostId: string }>('projects.identity');
+    const saved = await call<{ status: string; configId: string }>('aiSettings.save', {
+      hostId: identity.hostId,
+      expectedRevision: 0,
+      config: { name: 'Keyword fixture', baseUrl: modelUrl, model: 'fixture-kw', apiKey: 'f0025-secret' },
+    });
+    assert.equal(saved.status, 'saved');
+    const items = [{ id: 'c1', text: '今天聊聊 React 19 新特性' }];
+    const kwBase = createKeywordBase(items);
+    const rpcPayload = { configId: saved.configId, request: { base: kwBase, language: 'zh', items } };
+    assert.equal(JSON.stringify(rpcPayload).includes('f0025-secret'), false);
+
+    const okJob = await wait((await call<JobSnapshot>('text.suggestKeywords', rpcPayload)).id);
+    assert.equal(okJob.status, 'complete', okJob.error);
+    assert.deepEqual((okJob.result as any).items, [
+      { id: 'c1', keywords: [{ start: 5, end: 13, text: 'React 19', source: 'ai' }] },
+    ]);
+    assert.equal(seen[0].auth, 'Bearer f0025-secret');
+    assert.equal(seen[0].body.includes('f0025-secret'), false);
+    assert.equal((await readFile(join(home, 'jobs', `${okJob.id}.json`), 'utf8')).includes('f0025-secret'), false);
+
+    mode = 'bad-substring';
+    const badJob = await wait((await call<JobSnapshot>('text.suggestKeywords', rpcPayload)).id);
+    assert.equal(badJob.status, 'error');
+    assert.match(badJob.error ?? '', /SUBSTRING_NOT_FOUND/);
+
+    mode = 'stale-base';
+    const staleJob = await wait((await call<JobSnapshot>('text.suggestKeywords', rpcPayload)).id);
+    assert.equal(staleJob.status, 'error');
+    assert.match(staleJob.error ?? '', /STALE_BASE/);
+  } finally {
+    await ctx.fiber.dispose();
+    await new Promise<void>(done => modelServer.close(() => done()));
+    await rm(home, { recursive: true, force: true });
+  }
+});
