@@ -20,10 +20,10 @@ GET /v1/health
 ```
 
 ```json
-{ "protocol": "flycut-provider", "version": 1, "name": "FunASR", "capabilities": ["asr"] }
+{ "protocol": "flycut-provider", "version": 1, "name": "FunASR", "capabilities": ["asr", "tts"] }
 ```
 
-`protocol` 和 `version` 必须匹配，否则 Host 拒绝接入并提示版本不兼容。`capabilities` 列出服务实现了哪些能力接口，当前定义的只有 `asr`。
+`protocol` 和 `version` 必须匹配，否则 Host 拒绝接入并提示版本不兼容。`capabilities` 列出服务实现了哪些能力接口，当前支持 `asr` 与 `tts`；同一个服务可以同时声明两种能力，不必拆成两个服务。
 
 ### 模型列表
 
@@ -63,6 +63,42 @@ GET /v1/models
 | `status` | 是 | `ready` 可直接使用；`download` 需要先下载；`unavailable` 不能使用（同时给出 `reason`） |
 | `reason` | 否 | `unavailable` 的原因，例如缺少依赖 |
 | `options` | 否 | 识别时可调的选项，字段定义见下表 |
+| `tts` | 否 | `role` 为 `tts` 时的能力声明（音色列表、克隆开关、时长控制与输出格式） |
+
+`role: "tts"` 模型示例与 `tts` 字段说明：
+
+```json
+{
+  "id": "kokoro-v1",
+  "name": "Kokoro v1",
+  "role": "tts",
+  "languages": ["zh", "en"],
+  "status": "ready",
+  "tts": {
+    "voices": [
+      { "id": "zf_xiaobei", "name": "晓北", "languages": ["zh"], "gender": "female" },
+      { "id": "af_heart", "name": "Heart", "languages": ["en"], "gender": "female" }
+    ],
+    "voiceCloning": false,
+    "durationControl": true,
+    "streaming": false,
+    "outputFormats": ["wav"]
+  },
+  "options": {
+    "pitch": { "type": "number", "label": "音高偏移", "default": 0, "min": -6, "max": 6, "step": 1 }
+  }
+}
+```
+
+| `tts` 字段 | 必填 | 说明 |
+|---|---|---|
+| `voices` | 否 | 内置固定音色列表 `[{ id, name, languages?, gender?, description? }]`；缺省视为空列表 |
+| `voiceCloning` | 否 | 是否支持参考音频克隆；缺省 `false`。不支持的模型严禁接受克隆请求 |
+| `cloningTerms` | 否 | 发送参考样本前向用户展示的保留与处理条款 |
+| `maxReferenceSeconds` | 否 | 允许的参考样本最大时长（秒） |
+| `streaming` | 否 | 是否支持流式输出 |
+| `durationControl` | 否 | 是否支持语速/时长控制 |
+| `outputFormats` | 否 | 支持的输出音频格式：`wav`、`mp3`、`ogg`、`flac` 之一 |
 
 选项字段：
 
@@ -103,6 +139,65 @@ X-Flycut-Options: {"vad":"fsmn-vad","hotword":"飞剪 字幕"}
 - `X-Flycut-Language` 是语言代码或 `auto`。
 - `X-Flycut-Options` 是 JSON 对象，只包含模型声明过的选项；服务遇到未声明的选项应返回 `400`。HTTP 头只能放 ASCII，所以非 ASCII 字符（例如中文热词）会以 `\uXXXX` 转义，标准 JSON 解析器能直接还原。
 - 音频上限 500 MB，超过时服务返回 `413`。
+
+### 创建语音合成（TTS）任务
+
+服务需要在 `GET /v1/health` 的 `capabilities` 中包含 `"tts"`。
+
+#### 1. 固定音色 / 常规合成
+
+```http
+POST /v1/tts/jobs
+Content-Type: application/json; charset=utf-8
+
+{
+  "model": "kokoro-v1",
+  "text": "你好，这是一句试听文本。",
+  "voiceId": "zf_xiaobei",
+  "language": "zh",
+  "speed": 1.0,
+  "format": "wav",
+  "options": {}
+}
+→ 202 { "id": "<job-id>" }
+```
+
+#### 2. 授权声音克隆合成
+
+仅当目标模型声明 `tts.voiceCloning: true` 时允许发起。与 `/v1/asr/jobs` 一致，参考样本 WAV 放在请求体，避免服务端额外引入 multipart 解析依赖；完整参数和可核验的本人授权记录通过 ASCII 转义 JSON 放在 `X-Flycut-TTS-Request` 请求头：
+
+```http
+POST /v1/tts/jobs
+Content-Type: audio/wav
+X-Flycut-TTS-Request: {"model":"cosyvoice","text":"你好","language":"zh","authorization":{"confirmed":true,"statement":"这是我本人的声音，或我已获得说话人授权","confirmedAt":"2026-11-13T10:00:00.000Z"}}
+
+<wav bytes>
+→ 202 { "id": "<job-id>" }
+```
+
+服务端应核验 `authorization.confirmed === true` 与 `authorization.statement` 非空；未确认授权时返回 `403`，对 `voiceCloning: false` 的模型发送克隆请求时返回 `400`。
+
+#### 3. 获取 TTS 音频产物
+
+任务完成时，`GET /v1/jobs/{id}` 的 `result` 返回同源音频地址与元数据（不要返回跨源或需重定向的外链，Host 会使用 `redirect: 'error'` 与同源检查并带鉴权下载后校验音频头与时长完整性）：
+
+```json
+{
+  "id": "tts-job-1",
+  "status": "complete",
+  "result": {
+    "audioUrl": "/v1/jobs/tts-job-1/audio",
+    "mimeType": "audio/wav",
+    "format": "wav",
+    "durationSeconds": 1.85,
+    "sampleRate": 24000
+  }
+}
+```
+
+Host 随后请求 `GET /v1/jobs/{id}/audio`（带 `Authorization: Bearer <key>`），接收音频字节流并校验音频格式头（WAV/MP3/OGG/FLAC）后存入资产库；空文件、错误 HTML/JSON 或截断音频将被拒绝。
+
+可复现的本地参考服务端实现见仓库内 `scripts/examples/tts-provider-server.mjs`（`node scripts/examples/tts-provider-server.mjs --port 9053`）。
 
 ### 查询和取消任务
 
@@ -161,4 +256,4 @@ Host 会再校验一次：越界、倒序、重叠的句段直接判为失败；
 
 ## 用 OpenAI 兼容服务接入
 
-已有 OpenAI 兼容 `/audio/transcriptions` 接口的服务（各家云 ASR、自建 whisper 服务等）不需要实现本协议，添加服务时把协议选为「OpenAI 兼容」，并填写模型名和时间戳级别即可。细节见 [custom-asr-providers.md](custom-asr-providers.md)。
+已有 OpenAI 兼容 `/audio/transcriptions`（ASR）或 `/audio/speech`（TTS）接口的服务（各家云服务、Kokoro-FastAPI、自建 whisper 等）不需要实现本协议，添加服务时把协议选为「OpenAI 兼容」，配置模型角色（`asr` / `tts`）、音色名或时间戳级别即可。细节见 [custom-asr-providers.md](custom-asr-providers.md)。

@@ -9,6 +9,8 @@ import { createHost } from '../../server/app';
 import { encodePcmWav } from '../../shared/asr/apiProtocol';
 import { TTS_CLONE_AUTH_STATEMENT_ZH, type ModelInfo } from '../../shared/providers';
 import type { JobSnapshot } from '../../shared/protocol';
+import { validateTtsAudio } from '../../shared/tts/audio';
+import { startExampleTtsServer } from '../../scripts/examples/tts-provider-server.mjs';
 
 function makeValidWav(durationSeconds = 0.25, sampleRate = 24000) {
   const numSamples = Math.max(1, Math.round(durationSeconds * sampleRate));
@@ -467,5 +469,48 @@ test('F-0053/AC-1 AC-2 OpenAI-compatible endpoint supports mixed ASR+TTS models 
   } finally {
     await host.close();
     await new Promise<void>(resolve => upstream.close(() => resolve()));
+  }
+});
+
+test('F-0053/AC-2 AC-4 reference HTTP TTS server contract is reproducible end-to-end with Host', async () => {
+  const example = await startExampleTtsServer({ port: 0, token: 'demo-tts-secret' });
+  const host = await bootHost();
+  try {
+    await host.call('endpoints.save', {
+      name: 'example-tts',
+      label: 'Example TTS Server',
+      protocol: 'flycut',
+      baseUrl: example.url,
+      apiKey: 'demo-tts-secret',
+    });
+    const groups = await host.call('providers.models');
+    const group = groups.find((g: any) => g.provider.id === 'flycut:example-tts');
+    assert.ok(group);
+    assert.equal(group.models.length, 2);
+    assert.equal(group.models[0].tts.voiceCloning, false);
+    assert.equal(group.models[1].tts.voiceCloning, true);
+
+    const synth = await host.waitJob((await host.call<JobSnapshot>('tts.synthesize', {
+      request: {
+        providerId: 'flycut:example-tts',
+        modelId: 'kokoro-demo',
+        text: '测试示例服务试听',
+        voiceId: 'zf_xiaobei',
+        language: 'zh',
+        speed: 1.0,
+      },
+    })).id);
+    assert.equal(synth.status, 'complete', synth.error);
+    const assetRes = await fetch(`${host.base}/assets/${(synth.result as any).assetId}`, {
+      headers: { Authorization: 'Bearer f0053-token' },
+    });
+    assert.equal(assetRes.status, 200);
+    const audioBytes = Buffer.from(await assetRes.arrayBuffer());
+    const checked = validateTtsAudio(audioBytes, 'audio/wav');
+    assert.equal(checked.format, 'wav');
+    assert.ok((checked.durationSeconds ?? 0) > 0.2);
+  } finally {
+    await host.close();
+    await example.close();
   }
 });
