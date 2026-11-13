@@ -97,7 +97,7 @@ approved_at: 2026-11-13
 ## 实现清单
 
 - [x] 定义单条配音共享契约、状态评估与默认模型不自动选收费服务逻辑（`shared/tts/dubbing.ts`、`shared/projects.ts`、`shared/protocol.ts`）及单元测试（`tests/cue-dubbing.test.mjs`）
-- [ ] 实现 Host 项目配音产物落盘、两阶段修订并发锁、`operationId` 幂等与只读流式路由（`server/projects/store.ts`、`server/plugins/dubbing.ts`、`server/profile.ts`）及架构集成测试（`tests/architecture/dubbing-f0035.test.ts`）
+- [x] 实现 Host 项目配音产物落盘、两阶段修订并发锁、`operationId` 幂等与只读流式路由（`server/projects/store.ts`、`server/plugins/dubbing.ts`、`server/profile.ts`）及架构集成测试（`tests/architecture/dubbing-f0035.test.ts`）
 - [ ] 打通前端 `historyStore`、`ProjectService`、`recovery/copy.ts` 与 `DubbingService` 持久化与不确定重试核对逻辑，并补前端持久化/同步测试
 - [ ] 实现 `src/locales/dubbing.ts`、`useCueDubbing`、`SingleCueDubbingPanel` 与 `SubtitleList` / `SubtitleItem` 入口与完整生命周期状态 UI
 - [ ] 编写 Web 端到端测试 `tests/e2e/features/F-0035.spec.ts`（覆盖 AC-1 至 AC-8 全状态 × 中英文 × 明暗主题），执行 Red check 与 `PW_PORT=5304 pnpm e2e:evidence F-0035`

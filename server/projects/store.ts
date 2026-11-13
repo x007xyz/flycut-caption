@@ -1,5 +1,6 @@
 import { migrateLegacy, type Cue } from '../../shared/editing/edl';
 import { normalizeLanguageTracks, projectLanguageTrack, validateLanguageTracks } from '../../shared/languageTracks';
+import { DUBBING_FILE_PATTERN, validateCueDubbings } from '../../shared/tts/dubbing';
 // File layout of one Host's projects (ADR-0001). The `projects` plugin is the only caller.
 //
 //   <home>/projects/<projectId>/
@@ -56,6 +57,11 @@ export class ProjectStore {
 
   dir(id: string) { if (!ID.test(id)) throw new Error('Invalid project ID'); return join(this.root, id); }
   videoDir(id: string, videoId: string) { if (!ID.test(videoId)) throw new Error('Invalid video ID'); return join(this.dir(id), 'videos', videoId); }
+  dubbingDir(id: string, videoId: string) { return join(this.videoDir(id, videoId), 'dubbing'); }
+  dubbingFile(id: string, videoId: string, file: string) {
+    if (!DUBBING_FILE_PATTERN.test(file)) throw new Error('Invalid dubbing file');
+    return join(this.videoDir(id, videoId), file);
+  }
   mediaFile(id: string, file: string) {
     // `file` comes from project.json; keep it inside the project's media folder.
     if (!/^media\/[0-9a-f-]{36}(\.[a-z0-9]{1,8})?$/i.test(file)) throw new Error('Invalid media file');
@@ -214,6 +220,7 @@ export class ProjectStore {
       throw new Error('Active language track does not exist');
     const tracks = normalizeLanguageTracks(edits.chunks, edits.languageTracks, edits.activeLanguageTrackId);
     validateLanguageTracks(tracks.languageTracks, tracks.activeLanguageTrackId, edits.chunks);
+    validateCueDubbings(edits.dubbings, tracks.languageTracks, edits.chunks);
     edits.languageTracks = tracks.languageTracks;
     edits.activeLanguageTrackId = tracks.activeLanguageTrackId;
     // secondText is the active-track projection; write it to keep old display/export readers compatible.

@@ -15,6 +15,7 @@ import { sherpaAsrPlugin } from './plugins/asr';
 import { endpointsPlugin } from './plugins/endpoints';
 import { cloudPlugin } from './plugins/cloud';
 import { ttsPlugin } from './plugins/tts';
+import { dubbingPlugin } from './plugins/dubbing';
 import { aiSettingsPlugin } from './plugins/aiSettings';
 import { deleteSilenceEditingPlugin, editingPlugin, removeFillersEditingPlugin } from './plugins/editing';
 import { textPlugin } from './plugins/text';
@@ -50,6 +51,7 @@ export const BUILTINS: Record<string, Builtin> = {
   text: { plugin: textPlugin, provides: ['text'] },
   export: { plugin: exportPlugin, provides: ['export'] },
   projects: { plugin: projectsPlugin, provides: ['projectStore'] },
+  dubbing: { plugin: dubbingPlugin, provides: [] },
   confirmations: { plugin: confirmationsPlugin, provides: [] },
   'project-ops': { plugin: projectOpsPlugin, provides: [] },
   jianying: { plugin: jianyingPlugin, provides: [] },
