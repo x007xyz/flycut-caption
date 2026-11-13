@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import { afterEach, describe, it } from 'node:test';
+import { OpenAICompatibleEngine } from '../shared/text/OpenAICompatibleEngine.ts';
 import {
   DEFAULT_TRANSLATION_LIMITS,
   evaluateTranslationConstraints,
@@ -105,5 +106,65 @@ describe('F-0031/AC-4 line length and reading speed constraints', () => {
       { maxCharsPerLine: 42, maxCps: 20 },
     );
     assert.equal(wrappedOk.tooLong, false);
+  });
+});
+
+describe('F-0031/AC-1 AC-2 OpenAICompatibleEngine.translate with semantic groups and context', () => {
+  const realFetch = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = realFetch; });
+
+  const model = { id: 'm', name: 'm', baseUrl: 'http://ai.test/v1', apiKey: 'k', model: 'x' };
+
+  it('sends semanticSentences and read-only context and maps translations back to original cue IDs', async () => {
+    let capturedBody = null;
+    globalThis.fetch = async (_url, init) => {
+      capturedBody = JSON.parse(String(init.body));
+      return new Response(JSON.stringify({
+        choices: [{
+          message: {
+            content: JSON.stringify([
+              { id: 'c2', text: 'Let us talk about' },
+              { id: 'c3', text: 'video editing tips.' },
+            ]),
+          },
+        }],
+      }));
+    };
+
+    const cues = [
+      { id: 'c1', text: '大家好。', timestamp: [0, 1] },
+      { id: 'c2', text: '今天我们来聊聊', timestamp: [1, 2] },
+      { id: 'c3', text: '视频剪辑技巧。', timestamp: [2, 3] },
+      { id: 'c4', text: '先看第一点。', timestamp: [3, 4] },
+    ];
+    const [batch] = splitTranslationBatches(cues, ['c2', 'c3'], { contextWindow: 1 });
+    const result = await new OpenAICompatibleEngine().translate(batch.items, model, 'en', {
+      sourceLang: 'zh',
+      semanticGroups: batch.semanticGroups,
+      contextBefore: batch.contextBefore,
+      contextAfter: batch.contextAfter,
+    });
+
+    assert.deepEqual(result, [
+      { id: 'c2', text: 'Let us talk about' },
+      { id: 'c3', text: 'video editing tips.' },
+    ]);
+    const userPayload = JSON.parse(capturedBody.messages[1].content);
+    assert.equal(userPayload.sourceLanguage, 'zh');
+    assert.deepEqual(userPayload.contextBefore, ['大家好。']);
+    assert.deepEqual(userPayload.contextAfter, ['先看第一点。']);
+    assert.deepEqual(userPayload.semanticSentences, [
+      { sentence: '今天我们来聊聊视频剪辑技巧。', itemIds: ['c2', 'c3'] },
+    ]);
+  });
+
+  it('fails the whole batch with Invalid translation result on missing or empty output without source fallback', async () => {
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      choices: [{ message: { content: JSON.stringify([{ id: 'c2', text: 'Only one' }]) } }],
+    }));
+    await assert.rejects(
+      new OpenAICompatibleEngine().translate([{ id: 'c2', text: 'A' }, { id: 'c3', text: 'B' }], model, 'en'),
+      /翻译结果无效（Invalid translation result）：缺少 1 条（id: c3）/,
+    );
   });
 });

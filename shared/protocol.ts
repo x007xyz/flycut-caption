@@ -52,6 +52,13 @@ export interface ExportResult { assetId: string; filename: string; mimeType: str
 export const jobIdSchema = z.object({ id: z.string().uuid() });
 export const textInputSchema = z.object({ mode: z.enum(['correction', 'translation']),
   items: z.array(z.object({ id: z.string(), text: z.string() })), targetLang: z.string().optional(),
+  sourceLang: z.string().optional(),
+  semanticGroups: z.array(z.object({
+    sentence: z.string(),
+    itemIds: z.array(z.string().min(1)),
+  })).optional(),
+  contextBefore: z.array(z.object({ id: z.string().optional(), text: z.string() })).optional(),
+  contextAfter: z.array(z.object({ id: z.string().optional(), text: z.string() })).optional(),
   /** Preferred: the Host resolves the configured model and secret. */
   configId: z.uuid().optional(),
   /** Compatibility for clients released before F-0056. New clients never send this. */

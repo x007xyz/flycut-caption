@@ -4,6 +4,14 @@ import {
   SEMANTIC_PROMPT_VERSION, validateSemanticModelResponse,
   type SemanticAnalysisResult, type SemanticWindow,
 } from '../editing/semanticFillers.ts'
+import { validateTranslationResults, type TranslationContextItem } from './translation.ts'
+
+export interface TranslateOptions {
+  sourceLang?: string
+  semanticGroups?: Array<{ sentence: string; itemIds: string[] }>
+  contextBefore?: TranslationContextItem[]
+  contextAfter?: TranslationContextItem[]
+}
 
 const SEMANTIC_SYSTEM_PROMPT = `You review Chinese talking-head transcripts and propose only deletions that are safe when removed from the spoken video.
 
@@ -112,11 +120,45 @@ export class OpenAICompatibleEngine {
     items: AISubtitleItem[],
     model: AIModelConfig,
     targetLang: string,
+    options?: TranslateOptions,
   ): Promise<AISubtitleItem[]> {
+    if (items.length === 0) return []
+    const sourceHint = options?.sourceLang && options.sourceLang !== 'auto'
+      ? `源语言为「${options.sourceLang}」，`
+      : ''
+    const hasContext = Boolean(
+      options?.semanticGroups?.length || options?.contextBefore?.length || options?.contextAfter?.length,
+    )
     const system =
-      `你是专业字幕翻译。请将每条字幕翻译为「${targetLang}」，保持简洁口语化，符合字幕阅读习惯。` +
-      '严格保持输入顺序与条数，只输出 JSON 数组，元素为 {"id": <原id>, "text": <译文>}，不含额外解释。'
-    return this.runItems(items, model, system, `翻译为 ${targetLang}`)
+      `你是专业字幕翻译。${sourceHint}请将待翻译的字幕条目翻译为「${targetLang}」，保持简洁口语化，符合字幕阅读习惯。` +
+      (hasContext
+        ? '输入的 contextBefore/contextAfter 仅作上下文语境参考，切勿输出；请结合 semanticSentences 中合并的完整语义句理解句意后再逐条切分对应回每个 item 的 id。'
+        : '') +
+      '严格保持待翻译 items 的顺序、数量与原 id，不可缺失、重复、增加或留空，只输出 JSON 数组，元素为 {"id": <原id>, "text": <译文>}，不含额外解释。'
+
+    this.report({
+      status: 'running',
+      progress: 0,
+      data: `翻译为 ${targetLang} ${items.length} 条字幕...`,
+    })
+
+    const userContent = hasContext
+      ? JSON.stringify({
+        targetLanguage: targetLang,
+        ...(options?.sourceLang ? { sourceLanguage: options.sourceLang } : {}),
+        ...(options?.contextBefore?.length ? { contextBefore: options.contextBefore.map((c) => c.text) } : {}),
+        ...(options?.semanticGroups?.length ? { semanticSentences: options.semanticGroups } : {}),
+        ...(options?.contextAfter?.length ? { contextAfter: options.contextAfter.map((c) => c.text) } : {}),
+        items: items.map((item) => ({ id: item.id, text: item.text })),
+      })
+      : JSON.stringify(items.map((item) => ({ id: item.id, text: item.text })))
+
+    const content = await this.requestContent(model, system, userContent)
+    const parsed = this.parseContent(content)
+    const results = validateTranslationResults(items, parsed)
+
+    this.report({ status: 'complete', progress: 100, data: `翻译为 ${targetLang}完成` })
+    return results
   }
 
   /** F-0009: model returns word IDs only; the shared validator derives and checks the final range. */

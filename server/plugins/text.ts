@@ -11,7 +11,14 @@ export const textPlugin = { name: 'flycut-text-provider', inject: ['jobs', 'rpc'
         const engine = new OpenAICompatibleEngine();
         engine.setAbortSignal(signal); engine.setProgressCallback(report);
         const model = input.configId ? await ctx.aiSettings.resolve(input.configId) : input.model!;
-        return input.mode === 'correction' ? engine.correct(input.items, model) : engine.translate(input.items, model, input.targetLang ?? 'English');
+        return input.mode === 'correction'
+          ? engine.correct(input.items, model)
+          : engine.translate(input.items, model, input.targetLang ?? 'English', {
+            sourceLang: input.sourceLang,
+            semanticGroups: input.semanticGroups,
+            contextBefore: input.contextBefore,
+            contextAfter: input.contextAfter,
+          });
       });
     },
     suggestCuts(input) {
