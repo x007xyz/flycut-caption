@@ -23,7 +23,8 @@ approved_at:
 | 2026-11-13 | 1. 签名基础契约与配置 | cc0f8ba | plutil -lint, node --check, cargo check |
 | 2026-11-13 | 2. macOS 签名与自包含检查 | 1a55734 | node --check scripts/signing/macos.mjs |
 | 2026-11-13 | 3. macOS 幂等公证、装订与验证 | 04842ac | node --check scripts/signing/macos-notarize.mjs |
-| 2026-11-13 | 4. Windows 代码签名与验证 | pending | node --check scripts/signing/windows.mjs |
+| 2026-11-13 | 4. Windows 代码签名与验证 | 8d53d8d | node --check scripts/signing/windows.mjs |
+| 2026-11-13 | 5. 发版流水线、本地闸门与运维文档 | pending | node --check scripts/release-signing.mjs && release.yml YAML |
 
 ## 自行决定的事项
 
