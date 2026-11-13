@@ -4,12 +4,13 @@ import {
   emptySubtitleGraphicStyle,
   type SubtitleDisplayMode,
   type SubtitleGraphicCue,
+  type SubtitleGraphicKeyword,
   type SubtitleGraphicScene,
   type SubtitleGraphicStyle,
   type SubtitleGraphicWord,
 } from './scene';
 import { mapCueWordRanges } from './layout';
-import { stripSubtitleDisplayPunctuation } from './text';
+import { mapRawRangesToDisplay, stripSubtitleDisplayPunctuation, type RawRangeInput } from './text';
 
 export interface ExportableChunk {
   id: string;
@@ -20,6 +21,7 @@ export interface ExportableChunk {
   isBlankSpacer?: boolean;
   sentenceId?: string;
   wordIds?: string[];
+  keywords?: RawRangeInput[];
 }
 
 export interface ExportStyleConfig extends SubtitleGraphicStyle {
@@ -96,6 +98,11 @@ function toGraphicStyle(style: ExportStyleConfig): SubtitleGraphicStyle {
     backgroundPadding: style.backgroundPadding,
     wordHighlightMode: style.wordHighlightMode ?? 'none',
     wordHighlightColor: style.wordHighlightColor ?? '#FFE100',
+    keywordColorEnabled: style.keywordColorEnabled ?? true,
+    keywordColor: style.keywordColor ?? '#FFE100',
+    keywordScale: style.keywordScale ?? 1.2,
+    keywordBackgroundColor: style.keywordBackgroundColor ?? '#FF5B57',
+    keywordBackgroundOpacity: style.keywordBackgroundOpacity ?? 0,
     visible: style.visible,
   };
 }
@@ -121,14 +128,27 @@ function wordsForChunk(
   return words.length ? words : undefined;
 }
 
-function toGraphicCue(chunk: ExportableChunk, words?: SubtitleGraphicWord[]): SubtitleGraphicCue | undefined {
+function toGraphicCue(
+  chunk: ExportableChunk,
+  words?: SubtitleGraphicWord[],
+  keywords?: SubtitleGraphicKeyword[],
+): SubtitleGraphicCue | undefined {
   const start = Math.max(0, chunk.timestamp[0]);
   const end = Math.max(0, chunk.timestamp[1]);
   if (!(end > start)) return undefined;
   const text = stripSubtitleDisplayPunctuation(chunk.text ?? '');
   const secondText = stripSubtitleDisplayPunctuation(chunk.secondText ?? '');
   if (!text && !secondText) return undefined;
-  const cue: SubtitleGraphicCue = { id: chunk.id, start, end, text, secondText: secondText || undefined, words };
+  const validKeywords = keywords?.length ? keywords : undefined;
+  const cue: SubtitleGraphicCue = {
+    id: chunk.id,
+    start,
+    end,
+    text,
+    secondText: secondText || undefined,
+    words,
+    ...(validKeywords ? { keywords: validKeywords } : {}),
+  };
   if (words && !mapCueWordRanges(cue)) delete cue.words;
   return cue;
 }
@@ -149,6 +169,7 @@ export function buildProjectExportSubtitleScene(input: {
     .filter(chunk => !chunk.deleted && !chunk.isBlankSpacer)
     .map(chunk => ({
       ...chunk,
+      keywords: mapRawRangesToDisplay(chunk.text ?? '', chunk.keywords),
       text: stripSubtitleDisplayPunctuation(chunk.text ?? ''),
       secondText: chunk.secondText ? stripSubtitleDisplayPunctuation(chunk.secondText) : chunk.secondText,
     }))
@@ -177,7 +198,7 @@ export function buildProjectExportSubtitleScene(input: {
       const marker = chunk.id.lastIndexOf('@');
       const sourceId = marker < 0 ? chunk.id : chunk.id.slice(0, marker);
       const suffix = marker < 0 ? '' : chunk.id.slice(marker + 1);
-      return toGraphicCue(chunk, wordsBySentence.get(`${sourceId}\0${suffix}`));
+      return toGraphicCue(chunk, wordsBySentence.get(`${sourceId}\0${suffix}`), chunk.keywords as SubtitleGraphicKeyword[] | undefined);
     })
     .filter((cue): cue is SubtitleGraphicCue => Boolean(cue))
     .sort((a, b) => a.start - b.start);

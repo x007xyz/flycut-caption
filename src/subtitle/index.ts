@@ -55,6 +55,34 @@ export {
 export type { AspectPreset, StylePresetId } from './subtitlePresets';
 
 export {
+  PLATFORM_PRESET_REFERENCE_DATE,
+  PLATFORM_PRESETS,
+  PLATFORM_PRESET_IDS,
+  isPlatformPresetId,
+  getPlatformPreset,
+  clampSafeZoneInsets,
+  resolveSafeZoneInsets,
+  isBottomInSafeZoneOcclusion,
+  getFontLanguageCoverage,
+  hasUncoveredCjkSubtitles,
+  applyPlatformPreset,
+  toggleSafeZoneGuide,
+  selectSafeZonePlatform,
+  updateSafeZoneInsets,
+  resetSafeZoneInsets,
+  alignSubtitleAboveSafeZone,
+  resolveEffectiveSafeZone,
+  matchActivePlatformPreset,
+  type PlatformPresetId,
+  type PlatformAspectPreset,
+  type SafeZoneInsets,
+  type PlatformVerificationInfo,
+  type PlatformPresetStylePatch,
+  type PlatformPresetDefinition,
+  type ResolvedSafeZoneState,
+} from './platformPresets';
+
+export {
   chunksToSrt,
   chunksToVtt,
   chunksToJson,
