@@ -113,8 +113,8 @@ approved_at: 2026-11-13
 - [x] 1. **关键词数据模型、偏移安全与图形层混排渲染**：新增 `shared/text/keywords.ts` 与 `shared/subtitle-graphics/` 关键词样式/区间/混排/分层绘制/`frameKey`/`subtitleBand` 扩展，编写架构单测验证三种画幅宽度预留、不遮挡不裁边、1080p 包围盒偏移 `≤ 2px` 与旧场景兼容（AC-1、AC-2）。
 - [x] 2. **Host AI 推荐接口与协议校验**：在 `shared/protocol.ts`、`server/services.ts`、`shared/text/OpenAICompatibleEngine.ts`、`server/plugins/text.ts` 实现独立 `text.suggestKeywords` RPC，不改动 `text.start`，编写真实 Host RPC 与校验测试（AC-3、AC-4、AC-8）。
 - [x] 3. **前端样式、预览、历史与持久化接线**：扩展 `SubtitleStyle`、`SubtitleChunk`、`graphicsScene.ts`（剔除标点后的区间映射与 EDL 投影）、`historyStore.ts`（关键词标记/取消不改原文/时间戳/EDL、原文编辑后调和失效偏移）与 `SubtitleSettings.tsx`（换色、缩放、底色控制），确认样式与标记自动保存及重开恢复（AC-1、AC-4、AC-7）。
-- [ ] 4. **字幕行内手动标注与 AI 推荐审阅 UI**：在 `SubtitleItem.tsx` 实现划选标注/取消、分词点选与标签移除；新建 `useKeywordRecommendation.ts` 与 `KeywordEmphasisPanel.tsx` 接入 `SubtitleEditorPanel.tsx`，完整覆盖空态、无模型、发送前模型/范围确认、加载/处理/取消/防重复/切项目隔离、手改/排除/确认生效、失败重试与内容更新重检，补充中英文 `locales`（AC-1、AC-3、AC-4、AC-5、AC-6、AC-7、AC-8）。
-- [ ] 5. **端到端验收、真实 Host 导出验证与文档更新**：新增 `tests/architecture/keyword-emphasis-export-f0025.test.ts`（真实 Host Skia + FFmpeg 导出三种画幅及重开持久化）与 `tests/e2e/features/F-0025.spec.ts`（覆盖所有状态与中英文、明暗主题），运行全量静态检查、单测与 `PW_PORT=5192 pnpm e2e:evidence F-0025`，更新子系统文档并提交审核（AC-1～AC-9）。
+- [x] 4. **字幕行内手动标注与 AI 推荐审阅 UI**：在 `SubtitleItem.tsx` 实现划选标注/取消、分词点选与标签移除；新建 `useKeywordRecommendation.ts` 与 `KeywordEmphasisPanel.tsx` 接入 `SubtitleEditorPanel.tsx`，完整覆盖空态、无模型、发送前模型/范围确认、加载/处理/取消/防重复/切项目隔离、手改/排除/确认生效、失败重试与内容更新重检，补充中英文 `locales`（AC-1、AC-3、AC-4、AC-5、AC-6、AC-7、AC-8）。
+- [x] 5. **端到端验收、真实 Host 导出验证与文档更新**：新增 `tests/architecture/keyword-emphasis-export-f0025.test.ts`（真实 Host Skia + FFmpeg 导出三种画幅及重开持久化）与 `tests/e2e/features/F-0025.spec.ts`（覆盖所有状态与中英文、明暗主题），运行全量静态检查、单测与 `PW_PORT=5192 pnpm e2e:evidence F-0025`，更新子系统文档并提交审核（AC-1～AC-9）。
 
 ## 验证计划
 
