@@ -302,8 +302,10 @@ test('F-0003/AC-16 AC-12: a format-1 project opens with nothing lost; its style 
     const opened = await host.call('projects.open', { projectId });
     assert.equal(opened.status, 'ok');
     assert.equal(opened.media.status, 'ok');
-    const { editing, ...unchangedEdits } = opened.edits;
+    const { editing, languageTracks, activeLanguageTrackId, ...unchangedEdits } = opened.edits;
     assert.deepEqual(unchangedEdits, v1Edits, 'subtitles, deletions, translations, style and aspect');
+    assert.equal(activeLanguageTrackId, 'legacy-second-text');
+    assert.deepEqual(languageTracks[0].entries.s1.text, 'old edit');
     assert.equal(editing.edl.origin, 'legacy-export');
     assert.deepEqual(editing.history, [], 'migration does not invent user history');
     assert.deepEqual(opened.transcript.chunks, transcript.chunks);
@@ -315,7 +317,7 @@ test('F-0003/AC-16 AC-12: a format-1 project opens with nothing lost; its style 
     // A second video added to the old project follows the style that came from format 1.
     const { videoId: two } = await host.call('projects.addVideo', { projectId, videoName: 'new.mp4', media: { assetId: await host.upload('n'), mimeType: 'video/mp4' } });
     const upgraded = JSON.parse(await readFile(join(dir, 'project.json'), 'utf8'));
-    assert.equal(upgraded.formatVersion, 3);
+    assert.equal(upgraded.formatVersion, 4);
     assert.deepEqual(JSON.parse(await readFile(join(dir, 'project.v1.json'), 'utf8')), project, 'the format-1 file is kept');
     assert.deepEqual((await host.call('projects.open', { projectId, videoId: two })).projectStyle, opened.projectStyle);
     // Removing the video the style came from keeps the style.

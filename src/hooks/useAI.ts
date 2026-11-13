@@ -5,6 +5,7 @@ import { useHistoryStore } from '@/stores/historyStore'
 import { useShowSuccess, useShowError, useShowWarning } from '@/stores/messageStore'
 import type { AIProgress, AISubtitleItem } from '@/types/ai'
 import { useClientRuntime } from '@/runtime/context';
+import { getLanguageName } from '@/constants/languages';
 
 export interface UseAIReturn {
   isAILoading: boolean
@@ -27,7 +28,7 @@ export function useAI(): UseAIReturn {
   const setAITask = useAppStore((s) => s.setAITask)
 
   const chunks = useHistoryStore((s) => s.chunks)
-  const batchUpdateText = useHistoryStore((s) => s.batchUpdateText)
+  const applyLanguageTranslations = useHistoryStore((s) => s.applyLanguageTranslations)
 
   const showSuccess = useShowSuccess()
   const showError = useShowError()
@@ -79,7 +80,11 @@ export function useAI(): UseAIReturn {
 
       try {
         const results = await aiService.translate(activeItems, model.id, targetLang)
-        batchUpdateText(results.map((r) => ({ id: r.id, secondText: r.text })))
+        applyLanguageTranslations({
+          languageCode: targetLang,
+          name: getLanguageName(targetLang),
+          updates: results.map((r) => ({ id: r.id, text: r.text })),
+        })
 
         setAIProgress({ status: 'complete', progress: 100, data: '完成' })
         showSuccess('字幕翻译完成', `共处理 ${results.length} 条`)
@@ -97,7 +102,7 @@ export function useAI(): UseAIReturn {
     [
       getSelectedModel,
       chunks,
-      batchUpdateText,
+      applyLanguageTranslations,
       setAIProgress,
       setAITask,
       clearAIProgress,

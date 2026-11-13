@@ -7,6 +7,7 @@ import type { Editing } from '../../shared/editing/edl';
 import type { Context } from '@deepseek-ai/cordis';
 import type { ModelRef } from '../../shared/providers';
 import type { ProjectEdits, ProjectOpenResult, ProjectPlayback, ProjectStyle, SaveResultV2 } from '../../shared/projects';
+import type { LanguageTrack } from '../../shared/languageTracks';
 import type { ProjectsSort } from '@/components/Project/types';
 import type { SubtitleChunk, SubtitleTranscript } from '@/types/subtitle';
 import type { VideoFile } from '@/types/video';
@@ -109,22 +110,26 @@ export function mergeEdits(transcript: SubtitleTranscript, edits?: ProjectEdits)
 
 /** 自动保存写入的内容：字幕修改、删除标记、译文、画幅，以及（单独设置样式时）这个视频的样式。不重发转写结果。 */
 export function buildEdits(chunks: SubtitleChunk[], wordChunks: SubtitleChunk[], stylePair: SubtitleStylePair, custom = true, editing?: Editing,
-  textHistory?: TextRecord[]): ProjectEdits {
+  textHistory?: TextRecord[], languageTracks: LanguageTrack[] = [], activeLanguageTrackId: string | null = null): ProjectEdits {
   return { editing, chunks: chunks as unknown as ProjectEdits['chunks'], deletedWordIds: wordChunks.filter(word => word.deleted).map(word => word.id),
     stylePair: custom ? stylePair as unknown as ProjectEdits['stylePair'] : undefined, aspectPreset: aspectOf(stylePair),
-    textHistory: textHistory?.length ? textHistory : undefined };
+    textHistory: textHistory?.length ? textHistory : undefined, languageTracks,
+    activeLanguageTrackId };
 }
 
 /** 恢复副本要写进 Host 的这个视频的修改（与 buildEdits 相同，只是删除的字词编号直接来自副本）。 */
 function editsFromContent(content: RecoveryContent): ProjectEdits {
   const pair = content.stylePair as unknown as SubtitleStylePair;
-  return { ...buildEdits(content.chunks as unknown as SubtitleChunk[], [], pair, content.styleSource === 'custom', content.editing, content.textHistory),
+  return { ...buildEdits(content.chunks as unknown as SubtitleChunk[], [], pair, content.styleSource === 'custom', content.editing,
+    content.textHistory, content.languageTracks ?? [], content.activeLanguageTrackId ?? null),
     deletedWordIds: content.deletedWordIds, editing: content.editing };
 }
 
-interface Snapshot { editing?: Editing; chunks: SubtitleChunk[]; wordChunks: SubtitleChunk[]; textHistory: TextRecord[]; style: SubtitleStylePair; styleSource: 'project' | 'custom' }
+interface Snapshot { editing?: Editing; chunks: SubtitleChunk[]; wordChunks: SubtitleChunk[]; textHistory: TextRecord[];
+  languageTracks: LanguageTrack[]; activeLanguageTrackId: string | null; style: SubtitleStylePair; styleSource: 'project' | 'custom' }
 /** 最后一次写进 Host（或刚载入）的内容。按视频保存的部分和项目样式分开记，各自保存成功后各自更新。 */
-interface Baseline { editing?: Editing; chunks: SubtitleChunk[]; wordChunks: SubtitleChunk[]; textHistory: TextRecord[]; aspect: string; styleSource: 'project' | 'custom';
+interface Baseline { editing?: Editing; chunks: SubtitleChunk[]; wordChunks: SubtitleChunk[]; textHistory: TextRecord[];
+  languageTracks: LanguageTrack[]; activeLanguageTrackId: string | null; aspect: string; styleSource: 'project' | 'custom';
   /** 单独设置的样式（styleSource 为 custom 时有意义） */ customKey: string;
   /** 项目样式 */ projectKey: string }
 type TranscriptRecord = { text: string; chunks: unknown[]; wordChunks?: unknown[]; hasWordTimestamps?: boolean; language: string; duration: number };
@@ -448,7 +453,8 @@ export class ProjectService {
       this.loadEditor({ projectId, videoId: video.id, name: project.name, revision: project.revision, hasTranscript: video.hasTranscript,
         media: { status: media.status, name: media.name }, videoName: video.name, videoRevision: video.revision, styleRevision: project.styleRevision,
         styleSource: video.styleSource, projectStyle: projectStyle ?? withAspect(defaultSubtitleStylePair, aspectOf(style.pair)), videos },
-      videoFile, transcript ? mergeEdits(transcript as unknown as SubtitleTranscript, edits) : undefined, style.pair, style.restored, edits?.textHistory);
+      videoFile, transcript ? mergeEdits(transcript as unknown as SubtitleTranscript, edits) : undefined, style.pair, style.restored,
+      edits?.textHistory, edits?.languageTracks, edits?.activeLanguageTrackId ?? null);
   }
 
   /** 回到首页（AC-19）。有没写入的修改时先保存，仍失败则弹 AC-24 的对话框。 */
@@ -501,12 +507,15 @@ export class ProjectService {
   private snapshot(): Snapshot {
     const history = this.stores.history.getState();
     return { editing: editingOf(history), chunks: history.chunks, wordChunks: history.wordChunks, textHistory: history.textHistory,
+      languageTracks: history.languageTracks, activeLanguageTrackId: history.activeLanguageTrackId,
       style: this.stores.app.getState().subtitleStylePair,
       styleSource: this.state.current?.styleSource ?? 'project' };
   }
 
   private baselineOf(snap: Snapshot, projectStyle: SubtitleStylePair): Baseline {
-    return { editing: snap.editing, chunks: snap.chunks, wordChunks: snap.wordChunks, textHistory: snap.textHistory, aspect: aspectOf(snap.style), styleSource: snap.styleSource,
+    return { editing: snap.editing, chunks: snap.chunks, wordChunks: snap.wordChunks, textHistory: snap.textHistory,
+      languageTracks: snap.languageTracks, activeLanguageTrackId: snap.activeLanguageTrackId,
+      aspect: aspectOf(snap.style), styleSource: snap.styleSource,
       customKey: styleKey(snap.style), projectKey: styleKey(projectStyle) };
   }
 
@@ -514,7 +523,8 @@ export class ProjectService {
   private videoDirty(now = this.snapshot()) {
     const base = this.baseline; if (!base) return false;
     return JSON.stringify(now.editing) !== JSON.stringify(base.editing) || now.chunks !== base.chunks || now.wordChunks !== base.wordChunks
-      || now.textHistory !== base.textHistory || aspectOf(now.style) !== base.aspect || now.styleSource !== base.styleSource
+      || now.textHistory !== base.textHistory || now.languageTracks !== base.languageTracks
+      || now.activeLanguageTrackId !== base.activeLanguageTrackId || aspectOf(now.style) !== base.aspect || now.styleSource !== base.styleSource
       || (now.styleSource === 'custom' && styleKey(now.style) !== base.customKey);
   }
 
@@ -582,7 +592,8 @@ export class ProjectService {
       const results: Array<['video' | 'style', SaveResultV2]> = [];
       try {
         if (saveVideo) results.push(['video', await this.enqueue(() => this.connection.call('projects.saveVideoEdits', { projectId: current.projectId,
-          videoId: current.videoId, edits: buildEdits(snap.chunks, snap.wordChunks, snap.style, snap.styleSource === 'custom', snap.editing, snap.textHistory), styleSource: snap.styleSource,
+          videoId: current.videoId, edits: buildEdits(snap.chunks, snap.wordChunks, snap.style, snap.styleSource === 'custom', snap.editing,
+            snap.textHistory, snap.languageTracks, snap.activeLanguageTrackId), styleSource: snap.styleSource,
           baseRevision: this.state.current?.videoRevision ?? current.videoRevision, force }))]);
         if (saveStyle) results.push(['style', await this.enqueue(() => this.connection.call('projects.saveProjectStyle', { projectId: current.projectId,
           style: toProjectStyle(snap.style), baseRevision: this.state.current?.styleRevision ?? current.styleRevision, force }))]);
@@ -631,7 +642,8 @@ export class ProjectService {
       const result = await this.connection.call('projects.open', { projectId: current.projectId, videoId: current.videoId });
       if (this.state.current !== current || result.status !== 'ok') return false;
       const content: RecoveryContent = { editing: snap.editing, chunks: snap.chunks as unknown as RecoveryContent['chunks'],
-        deletedWordIds: snap.wordChunks.filter(word => word.deleted).map(word => word.id), textHistory: snap.textHistory, styleSource: snap.styleSource,
+        deletedWordIds: snap.wordChunks.filter(word => word.deleted).map(word => word.id), textHistory: snap.textHistory,
+        languageTracks: snap.languageTracks, activeLanguageTrackId: snap.activeLanguageTrackId, styleSource: snap.styleSource,
         stylePair: snap.style as unknown as RecoveryContent['stylePair'] };
       if (!diffWithHost(content, this.hostContent(result)).same) return false;
       this.applySaved([['video', { status: 'saved', revision: result.video.revision,
@@ -652,6 +664,7 @@ export class ProjectService {
       savedAt = result.updatedAt;
       if (part === 'video') {
         this.baseline = { ...this.baseline, editing: snap.editing, chunks: snap.chunks, wordChunks: snap.wordChunks, textHistory: snap.textHistory,
+          languageTracks: snap.languageTracks, activeLanguageTrackId: snap.activeLanguageTrackId,
           aspect: aspectOf(snap.style), styleSource: snap.styleSource,
           customKey: styleKey(snap.style) };
         this.state.set({ current: { ...current, revision: result.projectRevision, videoRevision: result.revision } });
@@ -687,7 +700,8 @@ export class ProjectService {
     const snap = this.snapshot();
     const custom = snap.styleSource === 'custom';
     const copy = await this.connection.call('projects.duplicate', { projectId: current.projectId, videoId: current.videoId, name,
-      edits: buildEdits(snap.chunks, snap.wordChunks, snap.style, custom, snap.editing, snap.textHistory) });
+      edits: buildEdits(snap.chunks, snap.wordChunks, snap.style, custom, snap.editing, snap.textHistory,
+        snap.languageTracks, snap.activeLanguageTrackId) });
     if (!custom) await this.connection.call('projects.saveProjectStyle', { projectId: copy.projectId, style: toProjectStyle(snap.style), baseRevision: 0, force: true });
     this.baseline = null; this.state.setSave({ status: 'saved' }); this.state.set({ projectDeleted: null });
     this.leaveEditor();
@@ -720,7 +734,8 @@ export class ProjectService {
       const custom = snap.styleSource === 'custom';
       const created = await this.connection.call('projects.createFromSnapshot', { name: copyName, videoName: current.videoName,
         durationSeconds: this.stores.app.getState().videoFile?.duration || 0, transcript: this.transcriptRecord as never,
-        edits: buildEdits(snap.chunks, snap.wordChunks, snap.style, custom, snap.editing, snap.textHistory), styleSource: snap.styleSource, style: custom ? undefined : toProjectStyle(snap.style) });
+        edits: buildEdits(snap.chunks, snap.wordChunks, snap.style, custom, snap.editing, snap.textHistory,
+          snap.languageTracks, snap.activeLanguageTrackId), styleSource: snap.styleSource, style: custom ? undefined : toProjectStyle(snap.style) });
       this.baseline = null; this.state.set({ projectDeleted: null }); this.state.setSave({ status: 'saved' });
       this.leaveEditor();
       await this.open(created.projectId, created.videoId);
@@ -914,7 +929,8 @@ export class ProjectService {
       }
       const snap = this.snapshot();
       const content: RecoveryContent = { editing: snap.editing, chunks: snap.chunks as unknown as RecoveryContent['chunks'],
-        deletedWordIds: snap.wordChunks.filter(word => word.deleted).map(word => word.id), styleSource: snap.styleSource,
+        deletedWordIds: snap.wordChunks.filter(word => word.deleted).map(word => word.id),
+        languageTracks: snap.languageTracks, activeLanguageTrackId: snap.activeLanguageTrackId, styleSource: snap.styleSource,
         stylePair: snap.style as unknown as RecoveryContent['stylePair'] };
       const diff = diffWithHost(content, this.hostContent(opened));
       const projectStyle = fromProjectStyle(opened.projectStyle) ?? current.projectStyle;
@@ -1006,7 +1022,8 @@ export class ProjectService {
     if (!this.hostId) throw new Error('还没有读到 Host 身份');
     const snap = this.snapshot();
     const content: RecoveryContent = { editing: snap.editing, chunks: snap.chunks as unknown as RecoveryContent['chunks'],
-      deletedWordIds: snap.wordChunks.filter(word => word.deleted).map(word => word.id), textHistory: snap.textHistory, styleSource: snap.styleSource,
+      deletedWordIds: snap.wordChunks.filter(word => word.deleted).map(word => word.id), textHistory: snap.textHistory,
+      languageTracks: snap.languageTracks, activeLanguageTrackId: snap.activeLanguageTrackId, styleSource: snap.styleSource,
       stylePair: snap.style as unknown as RecoveryContent['stylePair'] };
     return { schemaVersion: 1, key: keyOf(this.hostId, current.projectId, current.videoId, sessionId), scope: scopeOf(this.hostId, current.projectId, current.videoId),
       hostId: this.hostId, projectId: current.projectId, videoId: current.videoId, sessionId, baseVideoRevision: current.videoRevision,
@@ -1020,7 +1037,7 @@ export class ProjectService {
     const effective = effectiveStyle(video.styleSource, edits, projectStyle).pair;
     return { editing: edits?.editing ?? transcript?.editing, chunks: edits?.chunks ?? transcript?.chunks ?? [],
       deletedWordIds: edits ? edits.deletedWordIds ?? [] : (transcript?.wordChunks ?? []).filter(word => word.deleted).map(word => word.id),
-      textHistory: edits?.textHistory,
+      textHistory: edits?.textHistory, languageTracks: edits?.languageTracks, activeLanguageTrackId: edits?.activeLanguageTrackId,
       styleSource: video.styleSource, effectiveStyle: effective as unknown as HostContent['effectiveStyle'],
       projectStyle: (projectStyle ?? withAspect(defaultSubtitleStylePair, aspectOf(effective))) as unknown as HostContent['projectStyle'] };
   }
@@ -1247,7 +1264,7 @@ export class ProjectService {
   }
 
   private loadEditor(current: CurrentProject, videoFile: VideoFile | null, transcript?: SubtitleTranscript, stylePair?: SubtitleStylePair, restored = !!stylePair,
-    textHistory?: TextRecord[]) {
+    textHistory?: TextRecord[], languageTracks?: LanguageTrack[], activeLanguageTrackId: string | null = null) {
     clearTimeout(this.timer); clearTimeout(this.retryTimer); this.failures = 0;
     // 换了视频（或重新载入）：上一个会话的修改已经保存或被放弃（confirmLeave、恢复流程）
     this.endSession(true);
@@ -1259,7 +1276,7 @@ export class ProjectService {
     app.setSubtitleStylePair(stylePair ?? defaultSubtitleStylePair, restored);
     app.setVideoFile(videoFile);
     if (transcript) {
-      history.setTranscript(transcript);
+      history.setTranscript(transcript, languageTracks, activeLanguageTrackId);
       this.stores.history.getState().setTextHistory(textHistory ?? []);
       // 重新打开后从保存时的状态开始，撤销栈为空
       this.stores.history.setState({ undoStack: [], redoStack: [], canUndo: false, canRedo: false });
@@ -1312,7 +1329,9 @@ export const projectsClientPlugin = { name: 'flycut-projects-client', inject: ['
   }));
   // 自动保存（AC-3）：字幕文本、删除 / 恢复、译文的变化
   ctx.effect(() => ctx.stores.history.subscribe((history, previous) => {
-    if (history.chunks !== previous.chunks || history.wordChunks !== previous.wordChunks || history.edl !== previous.edl || history.cutHistory !== previous.cutHistory) service.onEdit();
+    if (history.chunks !== previous.chunks || history.wordChunks !== previous.wordChunks || history.edl !== previous.edl
+      || history.cutHistory !== previous.cutHistory || history.languageTracks !== previous.languageTracks
+      || history.activeLanguageTrackId !== previous.activeLanguageTrackId) service.onEdit();
   }));
   ctx.effect(() => ctx.on('flycut/transcribed', ({ videoFile, transcript, model }) => {
     // useASR 在发出事件后同步写入字幕编辑器；等它写完再记下保存起点

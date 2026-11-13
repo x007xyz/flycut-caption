@@ -4,13 +4,15 @@ import { useCallback, useState, useEffect, useRef, type ReactNode } from 'react'
 import { cn } from '@/lib/utils';
 import type { SubtitleChunk } from '@/types/subtitle';
 import { Trash2, RotateCcw, Plus, SplitSquareHorizontal } from 'lucide-react';
-import { useUpdate, useDelete } from '@/stores/historyStore';
+import { useUpdate, useDelete, useHistoryStore } from '@/stores/historyStore';
 import { useAppStore } from '@/stores/appStore';
 import { useTranslation } from '@/contexts/LocaleProvider';
 import { findCopy } from '@/locales/findReplace';
 import { correctionCopy } from '@/locales/correction';
 import type { FindMatch } from '../../../shared/text/findReplace';
 import { markTextDiff, type CorrectionSuggestion } from '../../../shared/text/corrections';
+import { isTranslationOutdated } from '../../../shared/languageTracks';
+import { languageTrackCopy } from '@/locales/languageTracks';
 
 interface SubtitleItemProps {
   chunk: SubtitleChunk;
@@ -59,11 +61,15 @@ export function SubtitleItem(props: SubtitleItemProps) {
   } = props;
   
   const { t, language } = useTranslation();
+  const trackCopy = languageTrackCopy(language);
   const findText = findCopy(language);
   const correctionText = correctionCopy(language);
   const update = useUpdate();
   const deleteChunk = useDelete();
   const displayMode = useAppStore(state => state.display);
+  const setDisplayMode = useAppStore(state => state.setDisplay);
+  const activeTrack = useHistoryStore(state => state.languageTracks.find(track => track.id === state.activeLanguageTrackId));
+  const keepTranslation = useHistoryStore(state => state.keepLanguageTranslation);
 
   // 本地状态，用于即时编辑
   const [mainText, setMainText] = useState(chunk.text);
@@ -136,6 +142,15 @@ export function SubtitleItem(props: SubtitleItemProps) {
       update(chunk.id, { secondText: trimmed || undefined });
     }
   }, [chunk.id, secondText, chunk.secondText, update]);
+
+  const translationEntry = activeTrack?.entries[chunk.id];
+  const translationOutdated = !!translationEntry && isTranslationOutdated(translationEntry, chunk);
+
+  const handleRetranslate = useCallback((event: React.MouseEvent) => {
+    event.stopPropagation();
+    if (displayMode === 'Main') setDisplayMode('Second');
+    window.setTimeout(() => secondTextareaRef.current?.focus(), 0);
+  }, [displayMode, setDisplayMode]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.nativeEvent.isComposing) return;
@@ -326,10 +341,21 @@ export function SubtitleItem(props: SubtitleItemProps) {
 
         {/* 副字幕输入框 */}
         {(displayMode === 'Bilingual' || displayMode === 'Second') && (
-          <div className={cn('flex-1 flex', isExpanded ? 'items-start' : 'items-center')}>
+          <div className="flex-1 flex flex-col items-stretch">
+            {translationOutdated && (
+              <div className="mb-1 flex items-center gap-2 self-start rounded border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 text-[10px] whitespace-nowrap text-amber-700 dark:text-amber-300"
+                data-testid="translation-outdated">
+                <span>{trackCopy.outdated}</span>
+                <button type="button" className="underline underline-offset-2" onClick={event => {
+                  event.stopPropagation(); keepTranslation(chunk.id);
+                }}>{trackCopy.keep}</button>
+                <button type="button" className="underline underline-offset-2" onClick={handleRetranslate}>{trackCopy.retranslate}</button>
+              </div>
+            )}
             <textarea
               ref={secondTextareaRef}
               value={secondText}
+              data-testid="subtitle-secondary-text"
               onChange={(e) => setSecondText(e.target.value)}
               onBlur={handleSecondBlur}
               onKeyDown={handleKeyDown}

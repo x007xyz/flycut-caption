@@ -98,6 +98,8 @@
     "package:host": "pnpm build:host && node scripts/package-host.mjs",
     "eval:asr": "node scripts/eval-asr.mjs",
     "acceptance:web": "tsx --tsconfig server/tsconfig.json tests/acceptance/web.ts",
+    "acceptance:f0030": "tsx --tsconfig server/tsconfig.json tests/acceptance/multilingual-tracks.ts",
+    "acceptance:f0030:tauri": "tsx --tsconfig server/tsconfig.json tests/acceptance/multilingual-tracks-tauri.ts",
     "acceptance:tauri": "tsx --tsconfig server/tsconfig.json tests/acceptance/tauri.ts",
     "acceptance:bundle": "tsx --tsconfig server/tsconfig.json tests/acceptance/bundle-smoke.ts"
   },

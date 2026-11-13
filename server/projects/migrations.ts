@@ -5,6 +5,8 @@ import { PROJECT_FORMAT_VERSION } from '../../shared/projects';
 type RawProject = Record<string, unknown> & { formatVersion: number };
 
 export const migrations: Record<number, (raw: RawProject) => RawProject> = {
+  // Format 4: language tracks live in edits.json and migrate lazily there; project.json itself only changes version.
+  3: raw => ({ ...raw }),
   // Format 3: versioned EDL and cut history in each video edits snapshot; old edits migrate lazily.
   2: raw => ({ ...raw }),
   /**
