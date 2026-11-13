@@ -48,7 +48,7 @@ approved_at:
 
 ## 验证计划
 
-<!-- 每一项完成时要跑的检查（对照 docs/code-standards.md）；涉及界面的 AC 写哪些端到端测试；哪些 AC 需要真实使用验证 -->
+<!-- 对照 docs/30-engineering/acceptance-testing.md：逐条 AC 写目标平台、自动化用例/命令、预期断言；需真实环境时注明，无法自动化则写具体原因和补验步骤。 -->
 
 ## 验收标准覆盖
 

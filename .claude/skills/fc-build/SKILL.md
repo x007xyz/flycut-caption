@@ -26,7 +26,7 @@ description: FlyCut 需求流程第二步：需求说明确认后，由 agent �
    - 技术方案：遵守子系统文档的规则（例如新 RPC 由插件注册并在 `shared/protocol.ts` 声明、Tauri 只做外壳）。写出至少一个备选方案和取舍。没有架构变化时可以写得很短。
    - 「验收标准覆盖」表覆盖每一条 AC。
    - 「实现清单」：每项是一段能单独验证的功能，按功能纵向切（从存储到界面打通），不按技术层切；按依赖顺序排，一般 3–8 项。几个需求共用的契约放在第一项里定好。
-   - 「验证计划」：每项完成时要跑的检查（对照 `docs/code-standards.md`），涉及界面的 AC 对应哪些端到端测试，哪些 AC 需要真实使用验证。
+   - 「验证计划」：按 `docs/30-engineering/acceptance-testing.md` 逐条 AC 写目标平台、自动化命令和断言；注明哪些需要真实环境、哪些只能实机补验及原因。
 3. 需要长期遵守的架构决定：`pnpm feature adr <slug> "<标题>" --feature <F-编号>`，状态保持 `proposed`，验收确认时一并改为 `accepted`。
 4. `pnpm feature review <F-编号>`。依赖的需求还没验收完时，脚本不会创建 `03-implementation.md`：告诉维护者在等什么，停下。
 
@@ -37,7 +37,7 @@ description: FlyCut 需求流程第二步：需求说明确认后，由 agent �
    - 跑验证计划里这一项的检查；
    - 提交一次，commit 正文带 Verification 段，并加一行 `Refs: <F-编号>/AC-n`；
    - 在 `02-design.md` 勾选这一项，在 `03-implementation.md` 的进度表追加一行（日期、清单项、提交、检查）。
-3. 测试名称带 AC 编号，例如 `F-0001/AC-3 ……`。界面直接写真实代码，接真实的 stores 和 Host，不另做原型或假数据版本；涉及界面的 AC，端到端测试和代码一起提交（`tests/e2e/features/<F-编号>.spec.ts`）。
+3. 测试名称带 AC 编号，例如 `F-0001/AC-3 ……`。界面直接写真实代码，接真实的 stores 和 Host，不另做原型或假数据版本；涉及界面的 AC，按目标平台写端到端测试，和代码一起提交。
 4. 清单的顺序和粒度、设计里的实现细节可以按实际调整，写进「与设计的偏差」。
 5. 清单全部勾选后 `pnpm feature review <F-编号>`（脚本检查清单）。
 
@@ -46,11 +46,10 @@ description: FlyCut 需求流程第二步：需求说明确认后，由 agent �
 1. 在一个固定的 commit 上验收，把 sha 写在报告开头；之后代码有改动就重新验收。
 2. 逐条验证每一条 AC：
    - 自动测试：写出测试名和命令。
-   - 涉及界面的 AC：Playwright 端到端测试，放在 `tests/e2e/features/<F-编号>.spec.ts`，测试名带 AC 编号；覆盖需求说明写到的每个界面状态，明暗主题各跑一遍；断言关键文字和可操作的控件，不只截图。需要 Host 的状态用 `page.route` 拦截构造；必须真实运行 Host 的，在测试里注明并用 `pnpm dev` 跑。每个状态用 `tests/e2e/lib/evidence.ts` 的 `shot(page, '<F-编号>', '<界面>-<状态>-<主题>')` 截图。
-   - 运行 `pnpm e2e:evidence <F-编号>`：截图写进 `screenshots/`（进 git），录屏写进 `recordings/`（只在本地），摘要在 `recordings/summary.json`。
-   - 截图之外，用内置浏览器把主流程实际点一遍，测试没覆盖的问题记在「发现的问题」。
+   - 涉及界面的 AC：先在目标平台跑端到端测试，测试名带 AC 编号；覆盖需求说明写到的每个界面状态和明暗主题，断言关键文字和可操作的控件。Web 现用 Playwright（`tests/e2e/features/<F-编号>.spec.ts`）；可用 `page.route` 构造异常状态，需要真实 Host 时用 `pnpm dev` 并注明。桌面专属行为不得用 Web 通过代替。
+   - Web 界面证据用 `shot()` 和 `pnpm e2e:evidence <F-编号>`：截图写进 `screenshots/`（进 git），录屏和摘要写进 `recordings/`（只在本地）。桌面证据注明应用构建和运行平台。
    - 修 bug 类的 AC 做 Red check：撤掉修复后测试必须失败。
-   - 需要真实使用的 AC（真实模型、真实视频、Tauri 桌面端、真实 API），实际操作一遍并记录结果。
+   - 需要真实使用的 AC（真实模型、真实视频、Tauri 桌面端、真实 API），优先自动化驱动真实环境；只有现有自动化无法验证的步骤才用 Computer Use 或人工补验，记录原因、步骤和观察结果。
    - 做不到的写 `⏸ Not run` 和原因，**不能省略或写成通过**。
 3. 回归检查：跑 `docs/code-standards.md` 第 1、2 条的全部命令，记录结果。
 4. 测试没通过：回到开发修复，再重新验收，不要把 ❌ 留给维护者。修不了的写清原因。

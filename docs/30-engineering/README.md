@@ -5,6 +5,7 @@
 | 内容 | 位置 |
 |---|---|
 | 验收标准 | [code-standards.md](../code-standards.md) |
+| 自动化验收方案 | [acceptance-testing.md](acceptance-testing.md) |
 | 已拍板的决定 | [decisions.md](../decisions.md) |
 | 错题本 | [LESSONS.md](../../LESSONS.md) |
 | Agent loop 与夜审 | [agent/](../agent/) |
