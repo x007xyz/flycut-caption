@@ -102,8 +102,10 @@ Host 和前端都不再内置 Transformers.js 推理；设置页的下载操作�
 - `POST /rpc`：`{type:'client-request', rpcId, method, payload}`。
 - 响应：`{type:'server-response', rpcId, result:{ok,value}|{ok:false,error}}`。
 - `POST /assets`：上传音频，返回 assetId；RPC 不接收任意本地媒体路径。
+- `POST/GET/PUT/DELETE /uploads[/:id]`：F-0015 项目源媒体的持久分片会话、原子分片确认、完整性完成和取消；浏览器 session 与 bearer 均先经既有鉴权，查询/写入主体不一致返回 404。
 - `WS /events`：先发送 `host/ready`（含已暴露事件列表）、`jobs/snapshot`，再推送 `{type:'event', generation, seq, name, payload}`；只有经 `ctx.rpc.expose` 的 Cordis 事件会被转发，`job/updated` 也走这一通道。
 - 客户端重连后恢复任务快照；等待任务时也查询状态，覆盖订阅前完成和连接中断。
+- 项目媒体上传按 `uploads.capabilities` 判断是否支持；客户端只在 localStorage 保存 Host 隔离的会话定位，原文件句柄不跨刷新，重选后按完整摘要核验再补缺失分片。
 - Host 使用 Bearer 凭证、loopback 监听和 Origin 检查；WebSocket 使用同一凭证。
 
 RPC 方法由各插件注册，完整列表见 `shared/protocol.ts` 的 `RpcMethods` 或运行时 `host.info.methods`：`host.*`、`jobs.*`、`providers.list/models/prepare`、`endpoints.list/save/remove`、`editing.list`、`agent.tools/start`、`workflow.start`、`text.start`、`export.start`。

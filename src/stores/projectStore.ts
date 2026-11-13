@@ -8,6 +8,27 @@ import { bindRuntimeStore } from './runtimeStore';
 export type ProjectRoute = { name: 'home' } | { name: 'trash' } | { name: 'project'; projectId: string }
   | { name: 'editor'; projectId: string; videoId: string };
 
+export type MediaUploadPhase = 'checking' | 'unsupported' | 'rejected' | 'hashing' | 'uploading' | 'paused' | 'interrupted'
+  | 'needs-file' | 'mismatch' | 'verifying' | 'failed' | 'expired' | 'complete';
+
+/** F-0015: view state only. The source File stays in ProjectService, never in localStorage. */
+export interface MediaUploadView {
+  key: string;
+  kind: 'create' | 'add';
+  projectId?: string;
+  operationId: string;
+  sessionId?: string;
+  fileName: string;
+  size: number;
+  mimeType: string;
+  target: string;
+  phase: MediaUploadPhase;
+  uploadedBytes: number;
+  sha256?: string;
+  error?: string;
+  attempts: number;
+}
+
 /** 往项目详情页添加中的文件（F-0003 AC-27）：成功后由 Host 返回的视频行取代 */
 export interface AddingVideo { key: string; name: string; status: 'adding' | 'failed' }
 
@@ -105,6 +126,8 @@ export interface ProjectState {
   projectDeleted: { state: 'trashed' | 'deleted'; busy: boolean; error?: string } | null;
   /** 崩溃恢复的检查与选择（F-0004） */
   recovery: RecoveryState;
+  /** F-0015: resumable media transfers (home create or project add). */
+  uploads: MediaUploadView[];
   /** 本地恢复副本最近一次是否记录成功（F-0004 AC-10） */
   recoveryHealth: 'ok' | 'unavailable';
 }
@@ -133,6 +156,7 @@ const initialState: ProjectState = {
   projectDeleted: null,
   recovery: { phase: 'idle', candidates: [], selectedKey: null },
   recoveryHealth: 'ok',
+  uploads: [],
 };
 
 export const createProjectStore = () => createStore<ProjectState & ProjectActions>()((set) => ({

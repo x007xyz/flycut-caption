@@ -30,7 +30,13 @@ export const storagePlugin = { name: 'flycut-storage', inject: ['hostConfig', 'r
       catch (error) { await rm(partial, { force: true }); throw error; }
       return id;
     },
-    async adopt(file) { const id = randomUUID(); await rename(file, join(assetsRoot, id)); return id; },
+    async adopt(file, id = randomUUID()) {
+      if (!ASSET_ID.test(id)) throw new Error('Invalid asset ID');
+      const target = join(assetsRoot, id);
+      const existing = await stat(target).catch(() => undefined);
+      if (existing?.isFile()) { await rm(file, { force: true }); return id; }
+      await rename(file, target); return id;
+    },
     async claim(id, target) { await mkdir(dirname(target), { recursive: true }); await rename(assetPath(id), target); },
     async read(id) { return readFile(assetPath(id)); },
     async size(id) { return (await stat(assetPath(id))).size; },
@@ -58,6 +64,7 @@ export const storagePlugin = { name: 'flycut-storage', inject: ['hostConfig', 'r
     await assets.delete(assetId); return { deleted: assetId };
   }));
   const records = new Map<string, JobSnapshot>();
+  const operationJobs = new Map<string, string>();
   const controllers = new Map<string, AbortController>();
   const running = new Map<string, Promise<void>>();
   let stopping = false;
@@ -78,6 +85,7 @@ export const storagePlugin = { name: 'flycut-storage', inject: ['hostConfig', 'r
       job.updatedAt = new Date().toISOString(); await persist(job);
     }
     records.set(job.id, job);
+    if (job.operationId) operationJobs.set(job.operationId, job.id);
   }
   // Job changes are ordinary Cordis events; the RPC layer decides whether they cross the connection.
   const publish = (job: JobSnapshot) => {
@@ -98,12 +106,15 @@ export const storagePlugin = { name: 'flycut-storage', inject: ['hostConfig', 'r
   const service: JobService = {
     get(id) { const job = records.get(id); if (!job) throw new Error('Unknown job'); return structuredClone(job); },
     list() { return [...records.values()].map(job => structuredClone(job)); },
-    create(run) {
+    create(run, options = {}) {
       if (stopping) throw new Error('Host is stopping');
+      const existing = options.operationId ? records.get(operationJobs.get(options.operationId) ?? '') : undefined;
+      if (existing) return structuredClone(existing);
       const controller = new AbortController();
       const now = new Date().toISOString();
-      const job: JobSnapshot = { id: randomUUID(), status: 'queued', createdAt: now, updatedAt: now };
+      const job: JobSnapshot = { id: randomUUID(), status: 'queued', createdAt: now, updatedAt: now, ...(options.operationId ? { operationId: options.operationId } : {}) };
       records.set(job.id, job); controllers.set(job.id, controller);
+      if (options.operationId) operationJobs.set(options.operationId, job.id);
       const task = (async () => {
         try {
           await update(job, { status: 'running' });

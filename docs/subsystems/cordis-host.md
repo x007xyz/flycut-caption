@@ -51,3 +51,7 @@ pnpm tsc -b --noEmit
 shared/editing/suggestions.ts 定义 SuggestionBatch / CutSuggestion，historyStore.pendingSuggestions 是唯一临时建议层；选择、预览、audition、拒绝不写 EDL，确认时才一次提交。pendingCuts 保留为旧 F-0005 调用方的派生视图。
 
 F-0006 的 server/plugins/silence.ts 通过 ProjectStore 读取项目媒体，注册 silence.analyze job；VAD 走 ctx.providers.detectVoice，候选由 shared/editing/silence.ts 生成。F-0007 的 shared/editing/fillerPlugin.ts 注册为 remove-fillers 编辑器插件，Workflow / Agent 与前端共用 shared/editing/fillerRules.ts。
+
+## F-0015 实施
+
+`server/plugins/uploads.ts` 提供 `/uploads` 分片会话和 `uploads.capabilities`，会话元数据与确认分片持久化在 Host home，完成并通过大小、完整 SHA-256、媒体头校验后原子采用为资产。Gateway 在既有 session/bearer 鉴权后传入主体；浏览器另用签名 HttpOnly upload owner 跨普通刷新保持归属，bearer 使用 token 摘要。所有会话操作由同一把串行锁裁决，过期扫描也走该锁；重启恢复会重新计算已确认分片摘要并补完/回滚 finalizing 状态。`projects.create`、`projects.addVideo`、`workflow.start`、`export.start` 的可选 `operationId` 用于响应丢失后的幂等重试，Job 快照保留该编号。

@@ -209,7 +209,8 @@ export const exportPlugin = { name: 'flycut-export', inject: ['hostConfig', 'job
     report({ status: 'progress', purpose: 'transcribe', progress: 100, data: '导出完成' });
     return { assetId, filename: `cut_video_${id}.${extension}`, mimeType: extension === 'webm' ? 'video/webm' : 'video/mp4' };
   }
-  const service = { start(input: ExportInput) { return ctx.jobs.create((signal, report) => run(input, signal, progress => report(progress))); } };
+  const service = { start(input: ExportInput) { return ctx.jobs.create((signal, report) => run(input, signal, progress => report(progress)),
+    { operationId: input.operationId }); } };
   ctx.provide('export', service);
   ctx.effect(() => ctx.rpc.register('export.start', exportInputSchema, input => service.start(input)));
   ctx.effect(() => ctx.rpc.capability('export'));

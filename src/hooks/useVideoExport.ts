@@ -20,6 +20,9 @@ import type { SubtitleChunk } from '@/types/subtitle';
 import type { VideoFile, VideoSegment, VideoProcessingProgress } from '@/types/video';
 import type { VideoProcessingOptions } from '@/types/videoEngine';
 import type { FlyCutCaptionProps } from '@/types';
+import { taskOperationKey } from '@/services/taskOperation';
+import { loadMediaBlob } from '@/utils/mediaSource';
+import { hashFile } from '@/upload/sha256';
 
 interface UseVideoExportInput extends Pick<FlyCutCaptionProps, 'onProgress' | 'onVideoProcessed' | 'onExportComplete' | 'onError'> {
   videoFile: VideoFile | null;
@@ -39,7 +42,7 @@ export function useVideoExport({
   const edl = useHistoryStore(s => s.edl);
   const cutError = useHistoryStore(s => s.cutError);
   const updatingCuts = useHistoryStore(s => s.updatingCuts);
-  const { videoEngines } = useClientRuntime();
+  const { videoEngines, stores } = useClientRuntime();
   const setError = useAppStore(state => state.setError);
   const joinFadeMs = useAppStore(state => state.joinFadeMs);
 
@@ -55,6 +58,7 @@ export function useVideoExport({
   const processingMessageIdRef = useRef<string | null>(null);
   const exportSaveTargetRef = useRef<VideoExportSaveTarget | null>(null);
   const processorRef = useRef<UnifiedVideoProcessor | null>(null);
+  const processingRef = useRef(false);
 
   const handleProgress = useCallback((progressData: VideoProcessingProgress) => {
     setVideoProgress(progressData);
@@ -70,7 +74,7 @@ export function useVideoExport({
     segments: VideoSegment[],
     options?: VideoProcessingOptions
   ) => {
-    if (isProcessing) {
+    if (processingRef.current || isProcessing) {
       console.warn(t('messages.fileUpload.processingFile'));
       return;
     }
@@ -78,6 +82,7 @@ export function useVideoExport({
     let messageId: string | null = null;
 
     try {
+      processingRef.current = true;
       setIsProcessing(true);
       setVideoProgress({
         stage: 'analyzing',
@@ -102,6 +107,20 @@ export function useVideoExport({
         ...options,
         outputPath: options?.outputPath ?? exportSaveTargetRef.current?.outputPath,
       };
+      const current = stores.project.getState().current;
+      const sourceIdentity = videoFile.remotePath
+        ? `asset:${videoFile.remotePath}`
+        : `sha256:${await hashFile(videoFile.file.size ? videoFile.file : await loadMediaBlob(videoFile))}`;
+      resolvedOptions.operationKey = taskOperationKey('export', current?.projectId, current?.videoId,
+        videoFile.name, videoFile.size, sourceIdentity,
+        resolvedOptions.format ?? resolvedOptions.outputFormat, resolvedOptions.quality, resolvedOptions.subtitleProcessing,
+        segments.map(segment => `${segment.start}-${segment.end}-${segment.keep ? 1 : 0}`).join(','),
+        JSON.stringify({
+          subtitleChunks: chunks.filter(chunk => !chunk.deleted), wordChunks,
+          style: subtitleStylePair, videoMeta, subtitleExportMode: resolvedOptions.subtitleExportMode,
+          joinFadeMs: resolvedOptions.joinFadeMs, preserveAudio: resolvedOptions.preserveAudio,
+        }));
+      resolvedOptions.taskVerifyingMessage = t('messages.export.taskVerifying');
 
       // 初始化 Host 导出处理器
       await processorRef.current.initialize(videoFile);
@@ -151,11 +170,13 @@ export function useVideoExport({
       onError?.(error instanceof Error ? error : new Error('Unknown error'));
     } finally {
       setIsProcessing(false);
+      processingRef.current = false;
       setVideoProgress(null);
       processingMessageIdRef.current = null;
       exportSaveTargetRef.current = null;
     }
-  }, [videoEngines, isProcessing, startVideoProcessing, completeVideoProcessing, errorVideoProcessing, handleProgress, onVideoProcessed, onExportComplete, onError, t]);
+  }, [videoEngines, stores, isProcessing, chunks, wordChunks, subtitleStylePair, videoMeta, startVideoProcessing,
+    completeVideoProcessing, errorVideoProcessing, handleProgress, onVideoProcessed, onExportComplete, onError, t]);
 
   // 开始视频处理
   const handleStartProcessing = useCallback(async (options: VideoProcessingOptions) => {

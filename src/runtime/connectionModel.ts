@@ -144,6 +144,7 @@ export interface HostSessionService {
 /** 只读方法白名单：重连恢复只允许重放这些请求，副作用请求永不自动重发。 */
 export const READ_ONLY_RPC_METHODS = new Set<string>([
   'host.info',
+  'uploads.capabilities',
   'jobs.get',
   'jobs.list',
   'projects.list',

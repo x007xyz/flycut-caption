@@ -52,6 +52,12 @@ pnpm build
 
 `history.edl` 是剪辑真源，字幕 deleted 只作显示投影；播放器/导出/字幕映射读 shared/editing/edl。`pendingCuts` 和 `historyPreview` 只用于预览，不进入项目、恢复副本或导出。`editingOf` 生成正式持久快照；CutHistoryPanel 先保存再读历史，回退失败保留当前编辑，回执丢失先读回核对。
 
+## F-0015 实施
+
+Web 项目导入走 `ProjectService` 的 `ResumableMediaUpload`；桌面本地文件继续走 F-0002 的 `mediaRef`。源文件只保存在服务内存，localStorage 的 `flycut.upload.sessions.<hostId>` 仅记录 Host 会话定位与非敏感元数据。刷新或重连后逐条 GET 会话，活动会话进入 `needs-file`，重新选择文件先比较大小和完整 SHA-256；暂停中止当前片但保留 Host 会话，取消先 DELETE、响应丢失再 GET 判定。`MediaUploadPanel` 同时挂在项目首页和详情页，展示 checking/unsupported/rejected/hashing/uploading/paused/interrupted/needs-file/mismatch/verifying/failed/expired 状态，并把项目操作重试绑定到同一个 `operationId`。
+
+ASR/导出客户端通过 `TaskOperationRunner` 持久化非敏感任务定位：按 hostId 隔离，每次动作重新读取 Host 身份；同一 `operationId` 在回执丢失、刷新或重连后先查 `jobs.get`/`jobs.list`。等待中断只显示核验并保留定位，只有明确终态或成功交付才清理。ASR 输入键包含内容 SHA-256、项目/视频、模型、语言和选项；导出裸文件使用内容摘要，项目媒体使用受保护资产路径。ASR 仍通过 `flycut/transcribed` 通知所有订阅者，但使用可等待的并行分发；只有项目保存确认后才清理任务定位，保存失败时重试同一任务。
+
 ## F-0028 实施
 
 字幕画面统一走 `shared/subtitle-graphics/`：`drawFrame`、`frameKey`、`layoutScene`、`subtitleBand` 只依赖 Canvas 2D，预览和 Host 共用。`src/subtitle/graphicsScene.ts` 把现有 `SubtitleStylePair` 和 chunks 适配成场景，预览用原始时间轴，导出用 EDL 投影后的时间轴。

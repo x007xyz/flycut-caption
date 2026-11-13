@@ -1,5 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { createReadStream } from 'node:fs';
 import { access, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
@@ -33,6 +33,15 @@ const isMissing = (error: unknown) => (error as NodeJS.ErrnoException | undefine
 type Registered = { path: string; size: number; mtimeMs: number; fingerprint: string };
 const MEDIA_ROUTE = /^\/projects\/([0-9a-f-]{36})\/media\/([0-9a-f-]{36})$/i;
 const MAX_PENDING = 200;
+
+/** Stable UUID from a client operation id, used only for retry-safe creation. */
+function operationUuid(kind: string, operationId: string): string {
+  const bytes = createHash('sha256').update(`flycut:${kind}:${operationId}`).digest().subarray(0, 16);
+  bytes[6] = (bytes[6] & 0x0f) | 0x50;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = bytes.toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 
 async function readBody(req: IncomingMessage, limit: number) {
   const chunks: Buffer[] = []; let bytes = 0;
@@ -217,11 +226,26 @@ export const projectsPlugin = { name: 'flycut-projects', inject: ['hostConfig', 
   ctx.effect(() => ctx.rpc.register('projects.list', undefined, () => store.list((id, media) => mediaStatus(id, media))));
 
   ctx.effect(() => ctx.rpc.register('projects.create', projectCreateSchema, async input => {
-    const project = await store.create({ name: input.name, video: { name: input.videoName, durationSeconds: input.durationSeconds },
-      media: (projectId, videoId) => resolveMedia(projectId, videoId, input.media, input.videoName) });
-    if ('mediaRef' in input.media) registered.delete(input.media.mediaRef);
-    queueCover(project.id, project.videos[0].id);
-    return { projectId: project.id, videoId: project.videos[0].id, revision: project.revision, project };
+    const projectId = input.operationId ? operationUuid('project-create', input.operationId) : undefined;
+    const videoId = input.operationId ? operationUuid('project-video', input.operationId) : undefined;
+    const create = async () => {
+      if (projectId) {
+        const existing = await store.read(projectId).catch(() => undefined);
+        if (existing) {
+          const video = existing.videos.find(item => item.id === videoId) ?? existing.videos[0];
+          if (existing.deletedAt || !video) throw new Error('This project operation is no longer resumable');
+          return { projectId: existing.id, videoId: video.id, revision: existing.revision, project: existing };
+        }
+      }
+      const project = await store.create({ id: projectId, videoId, name: input.name, video: { name: input.videoName, durationSeconds: input.durationSeconds },
+        media: (projectId, videoId) => resolveMedia(projectId, videoId, input.media, input.videoName) });
+      if ('mediaRef' in input.media) registered.delete(input.media.mediaRef);
+      queueCover(project.id, project.videos[0].id);
+      return { projectId: project.id, videoId: project.videos[0].id, revision: project.revision, project };
+    };
+    // A deterministic project id makes retries share the same lock. Without this, concurrent response-loss
+    // retries can both pass the existence check and race their media adoption / project file write.
+    return projectId ? store.exclusive(projectId, create) : create();
   }));
 
   ctx.effect(() => ctx.rpc.register('projects.open', projectOpenSchema, async ({ projectId, videoId }): Promise<ProjectOpenResult> => {
@@ -360,10 +384,13 @@ export const projectsPlugin = { name: 'flycut-projects', inject: ['hostConfig', 
   });
 
   // Add a video to a project (AC-8): one file at a time; a failure leaves nothing behind.
-  ctx.effect(() => ctx.rpc.register('projects.addVideo', addVideoSchema, async ({ projectId, videoName, durationSeconds, media: source }) => {
+  ctx.effect(() => ctx.rpc.register('projects.addVideo', addVideoSchema, async ({ projectId, videoName, durationSeconds, media: source, operationId }) => {
     const result = await store.exclusive(projectId, async () => {
       const project = await readActive(projectId);
-      const videoId = randomUUID(); const now = new Date().toISOString();
+      const videoId = operationId ? operationUuid('video-add', operationId) : randomUUID();
+      const existing = project.videos.find(video => video.id === videoId);
+      if (existing) return { videoId, revision: project.revision };
+      const now = new Date().toISOString();
       const video: ProjectVideo = { id: videoId, name: videoName, durationSeconds, createdAt: now, updatedAt: now, hasTranscript: false,
         revision: 0, styleSource: 'project', media: { kind: 'stored', file: ProjectStore.storedName(videoId, videoName), size: 0, mimeType: '' } };
       try {

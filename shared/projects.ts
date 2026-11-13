@@ -181,7 +181,7 @@ export type SaveResultV2 =
 export const mediaSourceSchema = z.union([z.object({ assetId: z.uuid(), mimeType: z.string().default('') }), z.object({ mediaRef: z.uuid() })]);
 
 export const projectCreateSchema = z.object({ name: z.string().trim().min(1).max(200), videoName: z.string().min(1).max(260),
-  durationSeconds: z.number().min(0).default(0), media: mediaSourceSchema });
+  durationSeconds: z.number().min(0).default(0), media: mediaSourceSchema, operationId: z.uuid().optional() });
 export const projectOpenSchema = z.object({ projectId: projectIdSchema, videoId: z.uuid().optional() });
 export const saveTranscriptSchema = z.object({ projectId: projectIdSchema, videoId: z.uuid(), transcript: transcriptRecordSchema,
   model: modelRefSchema.optional(), durationSeconds: z.number().min(0).optional() });
@@ -208,7 +208,7 @@ export const renameSchema = z.object({ projectId: projectIdSchema, name: project
 /** The Trash rows the user saw: projects trashed after that are not deleted (F-0003 AC-24). */
 export const emptyTrashSchema = z.object({ projectIds: z.array(projectIdSchema).max(10_000) });
 export const addVideoSchema = z.object({ projectId: projectIdSchema, videoName: z.string().min(1).max(260),
-  durationSeconds: z.number().min(0).default(0), media: mediaSourceSchema });
+  durationSeconds: z.number().min(0).default(0), media: mediaSourceSchema, operationId: z.uuid().optional() });
 export const removeVideoSchema = z.object({ projectId: projectIdSchema, videoId: z.uuid() });
 export const saveVideoEditsSchema = z.object({ projectId: projectIdSchema, videoId: z.uuid(), edits: projectEditsSchema,
   styleSource: z.enum(['project', 'custom']), baseRevision: z.number().int().min(0), force: z.boolean().default(false) });

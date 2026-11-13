@@ -34,6 +34,10 @@ export interface VideoProcessingOptions {
   /** Verified word timestamps for the subtitle scene; stale or invalid entries fall back per cue. */
   subtitleWordChunks?: SubtitleChunk[];
   hasWordTimestamps?: boolean;
+  /** F-0015: stable identity for retrying one export without creating another Host job. */
+  operationKey?: string;
+  /** Localized status shown while an uncertain start response is verified against Host jobs. */
+  taskVerifyingMessage?: string;
 }
 
 // 引擎能力检测结果

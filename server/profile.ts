@@ -8,6 +8,7 @@ import { load as loadYaml } from 'js-yaml';
 import type { PluginStatus } from '../shared/protocol';
 import { rpcPlugin } from './plugins/rpc';
 import { storagePlugin } from './plugins/storage';
+import { uploadsPlugin } from './plugins/uploads';
 import { providerRegistryPlugin } from './plugins/providers';
 import { modelsPlugin } from './plugins/models';
 import { sherpaAsrPlugin } from './plugins/asr';
@@ -30,6 +31,7 @@ export const BUILTINS: Record<string, Builtin> = {
   rpc: { plugin: rpcPlugin, provides: ['rpc'] },
   'plugin-manager': { plugin: undefined as unknown as Plugin, provides: [] }, // filled below to avoid a cycle
   storage: { plugin: storagePlugin, provides: ['assets', 'jobs'] },
+  uploads: { plugin: uploadsPlugin, provides: [] },
   providers: { plugin: providerRegistryPlugin, provides: ['providers'] },
   models: { plugin: modelsPlugin, provides: ['models'] },
   'asr-sherpa': { plugin: sherpaAsrPlugin, provides: [] },
