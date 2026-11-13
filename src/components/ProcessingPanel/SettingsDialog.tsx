@@ -1,6 +1,7 @@
 // 设置弹窗 - 模型（Provider）+ 编辑插件 / 智能剪切空白段阈值
 
 import { ModelsPanel } from '@/components/ASR/ModelsPanel';
+import { TTSSettingsPanel } from '@/components/TTS/TTSSettingsPanel';
 import { PluginRegistryPanel } from '@/components/ProcessingPanel/PluginRegistryPanel';
 import { ConnectionDetails } from '@/components/Connection';
 import {
@@ -11,12 +12,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Slider } from '@/components/ui/slider';
-import { Boxes, Package, PlugZap, Puzzle, Wand2 } from 'lucide-react';
+import { Boxes, Package, PlugZap, Puzzle, Volume2, Wand2 } from 'lucide-react';
 import { useAppStore } from '@/stores/appStore';
 import { useTranslation } from '@/contexts/LocaleProvider';
+import { ttsCopy } from '@/locales/tts';
 import { useState, type ReactNode } from 'react';
 
-type SettingsSection = 'models' | 'plugins' | 'connection';
+type SettingsSection = 'models' | 'tts' | 'plugins' | 'connection';
 
 interface SettingsDialogProps {
   open: boolean;
@@ -24,7 +26,8 @@ interface SettingsDialogProps {
 }
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
+  const ttsText = ttsCopy(language);
   const [section, setSection] = useState<SettingsSection>('models');
   const smartCutSilenceThreshold = useAppStore(state => state.smartCutSilenceThreshold);
   const setSmartCutSilenceThreshold = useAppStore(state => state.setSmartCutSilenceThreshold);
@@ -46,9 +49,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           <div className="flex min-h-[460px] flex-col md:flex-row">
             <nav className="border-b border-aimu-border bg-muted/20 p-2 md:w-44 md:border-b-0 md:border-r">
               <div className="grid grid-cols-2 gap-1 md:grid-cols-1">
-                <SectionButton active={section === 'models'} icon={<Boxes className="h-4 w-4" />} label="模型" onClick={() => setSection('models')} />
-                <SectionButton active={section === 'plugins'} icon={<Puzzle className="h-4 w-4" />} label="编辑插件" onClick={() => setSection('plugins')} />
-                <SectionButton active={section === 'connection'} icon={<PlugZap className="h-4 w-4" />} label="连接" onClick={() => setSection('connection')} />
+                <SectionButton active={section === 'models'} icon={<Boxes className="h-4 w-4" />} label="模型" testId="settings-tab-models" onClick={() => setSection('models')} />
+                <SectionButton active={section === 'tts'} icon={<Volume2 className="h-4 w-4" />} label={ttsText.navLabel} testId="settings-tab-tts" onClick={() => setSection('tts')} />
+                <SectionButton active={section === 'plugins'} icon={<Puzzle className="h-4 w-4" />} label="编辑插件" testId="settings-tab-plugins" onClick={() => setSection('plugins')} />
+                <SectionButton active={section === 'connection'} icon={<PlugZap className="h-4 w-4" />} label="连接" testId="settings-tab-connection" onClick={() => setSection('connection')} />
               </div>
             </nav>
 
@@ -60,6 +64,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 </div>
                 <ModelsPanel />
               </>}
+
+              {section === 'tts' && <TTSSettingsPanel onOpenModels={() => setSection('models')} />}
 
               {section === 'plugins' && <>
                 <PluginRegistryPanel />
@@ -93,8 +99,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   );
 }
 
-function SectionButton({ active, icon, label, onClick }: { active: boolean; icon: ReactNode; label: string; onClick: () => void }) {
-  return <button type="button" onClick={onClick} className={`flex min-h-9 items-center justify-center gap-2 rounded-md px-2 text-xs transition-colors md:justify-start ${active ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}>
+function SectionButton({ active, icon, label, testId, onClick }: { active: boolean; icon: ReactNode; label: string; testId?: string; onClick: () => void }) {
+  return <button type="button" data-testid={testId} onClick={onClick} className={`flex min-h-9 items-center justify-center gap-2 rounded-md px-2 text-xs transition-colors md:justify-start ${active ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}>
     {icon}<span className="hidden md:inline">{label}</span><span className="md:hidden">{label.slice(0, 2)}</span>
   </button>;
 }
