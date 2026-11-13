@@ -18,7 +18,11 @@ export type HostErrorCode =
   | 'VERSION_CONFLICT'
   | 'JOB_FAILED'
   | 'JOB_CANCELLED'
-  | 'INTERRUPTED';
+  | 'INTERRUPTED'
+  | 'CONTENT_CHANGED'
+  | 'BACKUP_INVALID'
+  | 'INSUFFICIENT_SPACE'
+  | 'MISSING_MEDIA';
 
 export class HostRpcError extends Error {
   readonly code: HostErrorCode;
