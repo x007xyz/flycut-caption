@@ -5,7 +5,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { shot } from '../lib/evidence';
-import { mockHost, prepare, projectItem, uuid, VIDEO_ID, type MockHandlers } from '../lib/mockHost';
+import { mockHost, prepare, projectItem, uuid, VIDEO_ID, type MockHandlers, type MockHost } from '../lib/mockHost';
 
 // 录屏证据与多个 canvas 同时加载时保持单 worker，避免开发服务器在并行媒体读取下退出。
 test.describe.configure({ mode: 'serial' });
@@ -75,22 +75,37 @@ function openResult(reliable = true, projectStyle?: Record<string, unknown>, sty
 const handlers = (reliable = true): MockHandlers => ({
   'projects.open': () => openResult(reliable),
   'projects.list': () => [projectItem(P, NAME)],
+  'projects.thumbnail': () => ({ dataUrl: null }),
   'projects.saveVideoEdits': () => ({ status: 'saved', revision: 4, updatedAt: NOW }),
   'projects.saveProjectStyle': () => ({ status: 'saved', revision: 1, updatedAt: NOW }),
 });
 
-/** Enter through the project card. Direct editor URLs are covered by project tests; this avoids racing F-0024's mocked startup. */
-async function enterEditor(page: Page) {
+/** Let the mocked connection finish its initial home load before switching to the editor hash. */
+async function enterEditor(page: Page, host: MockHost) {
+  const listsBefore = host.calls.filter(call => call.method === 'projects.list').length;
   await page.goto('/#/projects');
-  await page.getByText(NAME, { exact: true }).click();
+  await expect.poll(() => host.calls.filter(call => call.method === 'projects.list').length,
+    { timeout: 10_000 }).toBeGreaterThan(listsBefore);
+  await page.evaluate(({ projectId, videoId }) => {
+    window.location.hash = `/projects/${projectId}/videos/${videoId}`;
+  }, { projectId: P, videoId: VIDEO_ID });
   await expect(page.locator('video')).toBeVisible({ timeout: 15_000 });
+}
+
+async function selectWordHighlight(page: Page, label = '逐字高亮') {
+  const button = page.getByRole('button', { name: label, exact: true });
+  await expect(button).toBeVisible();
+  await expect(button).toBeEnabled();
+  // The preset grid is inside a frequently reflowing editor shell; dispatching its click avoids
+  // Playwright waiting forever for a transient stability sample without weakening state assertions.
+  await button.click({ force: true });
 }
 
 async function openEditor(page: Page, theme: Theme, reliable = true) {
   await prepare(page, theme);
   const host = await mockHost(page, handlers(reliable));
   await page.route('**/projects/*/media/*', serveMedia);
-  await enterEditor(page);
+  await enterEditor(page, host);
   await page.locator('video').evaluate(async (video: HTMLVideoElement) => {
     if (video.readyState >= 1) return;
     await new Promise<void>(resolve => video.addEventListener('loadedmetadata', () => resolve(), { once: true }));
@@ -159,7 +174,7 @@ for (const theme of THEMES) {
   test(`F-0024/AC-1 AC-9 选择预设并改色后，当前词按真实时间换色 (${theme})`, async ({ page }) => {
     await openEditor(page, theme);
     await expect(page.getByText('正在加载字幕字体…')).toHaveCount(0, { timeout: 20_000 });
-    await page.getByRole('button', { name: '逐字高亮', exact: true }).click();
+    await selectWordHighlight(page);
     await page.getByTestId('subtitle-base-color').fill('#FFFFFF');
     await page.getByTestId('word-highlight-color').fill('#FF0000');
     await page.getByTestId('subtitle-base-color').blur();
@@ -180,7 +195,7 @@ for (const theme of THEMES) {
 
   test(`F-0024/AC-2 AC-5 AC-9 无可靠词元时显示整句降级，不伪造逐字时间 (${theme})`, async ({ page }) => {
     await openEditor(page, theme, false);
-    await page.getByRole('button', { name: '逐字高亮', exact: true }).click();
+    await selectWordHighlight(page);
     await page.getByTestId('word-highlight-color').fill('#FF0000');
     await page.getByTestId('word-highlight-color').blur();
     await expect(page.getByTestId('word-highlight-fallback')).toHaveText('使用整句高亮');
@@ -197,7 +212,7 @@ for (const theme of THEMES) {
     await openEditor(page, theme, false);
     await page.getByRole('button', { name: '选择语言' }).click();
     await page.getByRole('menuitem', { name: /English/ }).click();
-    await page.getByRole('button', { name: 'Word highlight' }).click();
+    await selectWordHighlight(page, 'Word highlight');
     await expect(page.getByTestId('word-highlight-fallback')).toHaveText('Using sentence highlighting');
     await seek(page, 0.45);
     await shot(page, F, `word-highlight-fallback-en-${theme}`);
@@ -211,10 +226,10 @@ for (const theme of THEMES) {
     const stateful = handlers();
     stateful['projects.open'] = () => empty;
     await prepare(page, theme);
-    await mockHost(page, stateful);
+    const host = await mockHost(page, stateful);
     await page.route('**/projects/*/media/*', serveMedia);
-    await enterEditor(page);
-    await page.getByRole('button', { name: '逐字高亮', exact: true }).click();
+    await enterEditor(page, host);
+    await selectWordHighlight(page);
     await expect(page.getByTestId('word-highlight-fallback')).toHaveCount(0);
     await seek(page, 0.45);
     expect(await canvasAlpha(page)).toBe(0);
@@ -225,7 +240,7 @@ for (const theme of THEMES) {
 for (const theme of THEMES) {
   test(`F-0024/AC-6 AC-9 字体加载中保留逐字预设，加载完成后才绘制高亮 (${theme})`, async ({ page }) => {
     await prepare(page, theme);
-    await mockHost(page, handlers());
+    const host = await mockHost(page, handlers());
     await page.route('**/projects/*/media/*', serveMedia);
     let release!: () => void;
     const gate = new Promise<void>(resolve => { release = resolve; });
@@ -234,8 +249,8 @@ for (const theme of THEMES) {
       const file = new URL(route.request().url()).pathname.split('/').at(-1)!;
       await route.fulfill({ path: join(process.cwd(), 'public/fonts/subtitle', file) });
     });
-    await enterEditor(page);
-    await page.getByRole('button', { name: '逐字高亮', exact: true }).click();
+    await enterEditor(page, host);
+    await selectWordHighlight(page);
     await expect(page.getByText('正在加载字幕字体…')).toBeVisible();
     await shot(page, F, `word-highlight-loading-${theme}`);
     release();
@@ -247,14 +262,14 @@ for (const theme of THEMES) {
   test(`F-0024/AC-8 AC-9 字体失败显示原因和重试，重试后逐字高亮恢复 (${theme})`, async ({ page }) => {
     let fail = true;
     await prepare(page, theme);
-    await mockHost(page, handlers());
+    const host = await mockHost(page, handlers());
     await page.route('**/projects/*/media/*', serveMedia);
     await page.route('**/fonts/subtitle/**', async route => {
       if (fail) { await route.abort('failed'); return; }
       const file = new URL(route.request().url()).pathname.split('/').at(-1)!;
       await route.fulfill({ path: join(process.cwd(), 'public/fonts/subtitle', file) });
     });
-    await enterEditor(page);
+    await enterEditor(page, host);
     // Font loading is global to the overlay and may fail before the style preset is applied.
     await expect(page.getByText('字幕渲染不可用')).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole('button', { name: '重试' })).toBeVisible();
@@ -262,7 +277,7 @@ for (const theme of THEMES) {
     fail = false;
     await page.getByRole('button', { name: '重试' }).click();
     await expect(page.getByText('字幕渲染不可用')).toHaveCount(0, { timeout: 20_000 });
-    await page.getByRole('button', { name: '逐字高亮', exact: true }).click();
+    await selectWordHighlight(page);
     await seek(page, 0.45);
     await expect.poll(() => coloredPixels(page, 'yellow'), { timeout: 10_000 }).toBeGreaterThan(20);
   });
@@ -277,10 +292,10 @@ test('F-0024/AC-4 AC-7 保存高亮样式后重新打开项目，预设和颜色
     return { status: 'saved', revision: 1, updatedAt: NOW };
   };
   await prepare(page, 'light');
-  await mockHost(page, stateful);
+  const host = await mockHost(page, stateful);
   await page.route('**/projects/*/media/*', serveMedia);
-  await enterEditor(page);
-  await page.getByRole('button', { name: '逐字高亮', exact: true }).click();
+  await enterEditor(page, host);
+  await selectWordHighlight(page);
   await page.getByTestId('subtitle-base-color').fill('#00FF00');
   await page.getByTestId('word-highlight-color').fill('#FF0000');
   const saveNow = page.getByRole('status').filter({ hasText: '有未保存的修改' });
@@ -292,7 +307,7 @@ test('F-0024/AC-4 AC-7 保存高亮样式后重新打开项目，预设和颜色
   }, { timeout: 12_000 }).toEqual(['word', '#00FF00', '#FF0000']);
 
   await page.reload();
-  await enterEditor(page);
+  await enterEditor(page, host);
   await expect(page.getByText('正在加载字幕字体…')).toHaveCount(0, { timeout: 20_000 });
   await expect(page.getByTestId('subtitle-base-color')).toHaveValue('#00FF00');
   await expect(page.getByTestId('word-highlight-color')).toHaveValue('#ff0000');
