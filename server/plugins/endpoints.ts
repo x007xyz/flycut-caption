@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { endpointInputSchema, type EndpointInfo } from '../../shared/protocol';
+import type { ModelInfo } from '../../shared/providers';
 import { encodePcmWav, mergeASRApiTranscripts, normalizeASRApiResponse, transcriptionEndpoint } from '../../shared/asr/apiProtocol';
 import type { SubtitleTranscript } from '../../src/types/subtitle';
 import type { Provider } from '../services';
@@ -21,14 +22,35 @@ export interface EndpointsConfig {
 /** OpenAI-compatible `/audio/transcriptions`: 300 s chunks, no automatic retry of billed requests. */
 function openAiProvider(endpoint: Endpoint, apiKey: () => string | undefined): Provider {
   const url = transcriptionEndpoint(endpoint.baseUrl);
-  return { id: `openai:${endpoint.name}`, name: endpoint.label, kind: 'endpoint',
+  const speechUrl = `${endpoint.baseUrl.trim().replace(/\/+$/, '')}/audio/speech`;
+  const models = endpoint.models ?? [];
+  const hasAsr = models.some(m => (m.role ?? 'asr') === 'asr');
+  const hasTts = models.some(m => m.role === 'tts');
+  const provider: Provider = {
+    id: `openai:${endpoint.name}`, name: endpoint.label, kind: 'endpoint',
     async models() {
-      return (endpoint.models ?? []).map(model => ({ id: model.id, name: model.id, role: 'asr', languages: ['auto'],
-        timestampLevel: model.timestamps, status: 'ready' }));
+      return models.map((model): ModelInfo => model.role === 'tts'
+        ? {
+          id: model.id, name: model.id, role: 'tts',
+          languages: model.languages?.length ? model.languages : ['auto'],
+          status: 'ready',
+          tts: {
+            voices: (model.voices?.length ? model.voices : ['alloy']).map(voice => ({ id: voice, name: voice })),
+            voiceCloning: false,
+            durationControl: true,
+            outputFormats: ['mp3', 'wav'],
+          },
+        }
+        : {
+          id: model.id, name: model.id, role: 'asr', languages: ['auto'],
+          timestampLevel: model.timestamps, status: 'ready',
+        });
     },
-    async transcribe(request, audioPath, signal, report) {
-      const model = endpoint.models?.find(item => item.id === request.modelId);
-      if (!model) throw new Error(`未配置模型 ${request.modelId}`);
+  };
+  if (hasAsr) {
+    provider.transcribe = async (request, audioPath, signal, report) => {
+      const model = models.find(item => item.id === request.modelId && (item.role ?? 'asr') === 'asr');
+      if (!model) throw new Error(`未配置识别模型 ${request.modelId}`);
       const samples = wavSamples(await readFile(audioPath));
       const parts: SubtitleTranscript[] = [];
       const key = apiKey();
@@ -50,7 +72,49 @@ function openAiProvider(endpoint: Endpoint, apiKey: () => string | undefined): P
       }
       if (!parts.length) throw new Error('Empty audio');
       return mergeASRApiTranscripts(parts, samples.length / 16000);
-    } };
+    };
+  }
+  if (hasTts) {
+    provider.synthesize = async (request, signal, report) => {
+      const model = models.find(item => item.id === request.modelId && item.role === 'tts');
+      if (!model) throw new Error(`未配置 TTS 模型 ${request.modelId}`);
+      if (request.referenceAudioPath) throw new Error(`${endpoint.label} 不支持声音克隆`);
+      const key = apiKey();
+      report({ status: 'running', purpose: 'synthesize', progress: 25, data: `正在调用 ${endpoint.label}...` });
+      let response: Response;
+      try {
+        response = await fetch(speechUrl, {
+          method: 'POST',
+          redirect: 'error',
+          signal: AbortSignal.any([signal, AbortSignal.timeout(endpoint.timeoutSeconds * 1000)]),
+          headers: {
+            'Content-Type': 'application/json',
+            ...(key ? { Authorization: `Bearer ${key}` } : {}),
+          },
+          body: JSON.stringify({
+            model: model.id,
+            input: request.text,
+            voice: request.voiceId ?? model.voices?.[0] ?? 'alloy',
+            ...(request.speed !== undefined ? { speed: request.speed } : {}),
+            ...(request.format ? { response_format: request.format } : {}),
+          }),
+        });
+      } catch (error) {
+        if (signal.aborted) throw error;
+        if (error instanceof Error && (error.name === 'TimeoutError' || /timed out/i.test(error.message))) {
+          throw new Error(`${endpoint.label} 请求超时（超过 ${endpoint.timeoutSeconds} 秒）`);
+        }
+        throw error;
+      }
+      if (response.status === 401 || response.status === 403) {
+        throw new Error(`${endpoint.label} 鉴权失败（HTTP ${response.status}），请检查 API Key`);
+      }
+      if (!response.ok) throw new Error(`TTS API HTTP ${response.status}; no automatic retry`);
+      const bytes = Buffer.from(await response.arrayBuffer());
+      return { bytes, mimeType: response.headers.get('content-type') ?? undefined };
+    };
+  }
+  return provider;
 }
 
 /** User-added HTTP Providers (`flycut:<name>`, `openai:<name>`). Addresses persist; API keys stay in memory. */
@@ -70,7 +134,7 @@ export const endpointsPlugin = { name: 'flycut-endpoints', inject: ['providers',
   function activate(endpoint: Stored) {
     const apiKey = () => keys.get(endpoint.name);
     const provider = endpoint.protocol === 'openai' ? openAiProvider(endpoint, apiKey) : createHttpProvider({
-      id: `flycut:${endpoint.name}`, name: endpoint.label, kind: 'endpoint',
+      id: `flycut:${endpoint.name}`, name: endpoint.label, kind: 'endpoint', timeoutMs: endpoint.timeoutSeconds * 1000,
       async connect() { const key = apiKey(); return { baseUrl: endpoint.baseUrl, headers: key ? { Authorization: `Bearer ${key}` } : undefined }; } });
     endpoints.get(endpoint.name)?.dispose();
     endpoints.set(endpoint.name, { endpoint, dispose: ctx.providers.register(provider) });
