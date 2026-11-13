@@ -12,13 +12,12 @@ const transcript = { text: '我觉得这个很好 但是那个东西', language:
     { id: 'a', text: '我觉得这个很好', timestamp: [0, 3], secondText: '译文A' },
     { id: 'b', text: '但是那个东西', timestamp: [4, 7], secondText: '译文B' },
   ] };
-const aiSettings = JSON.stringify({ state: { aiModels: [{ id: 'mock-ai', name: 'Mock AI', baseUrl: 'http://ai.test/v1',
-  apiKey: 'test-key', model: 'mock-model' }], selectedAIModelId: 'mock-ai' }, version: 1 });
+const AI_ID = uuid(901);
 
 let mediaDir: string; let media: string;
 test.beforeAll(() => {
   mediaDir = mkdtempSync(join(tmpdir(), 'flycut-f0013-ui-')); media = join(mediaDir, 'marker.mp4');
-  const run = spawnSync(resolve('src-tauri/binaries/ffmpeg'), ['-y', '-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=25:duration=60',
+  const run = spawnSync(process.env.FFMPEG_PATH ?? resolve('src-tauri/binaries/ffmpeg'), ['-y', '-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=25:duration=60',
     '-c:v', 'libx264', '-preset', 'ultrafast', media], { encoding: 'utf8' });
   if (run.status !== 0) throw new Error(run.stderr);
 });
@@ -30,6 +29,8 @@ interface ConnectOptions {
   /** `undefined` leaves the job running; the test can complete it later. */
   resultFor?: (payload: { items: Array<{ id: string; text: string }> }, index: number) => unknown;
   handlers?: Partial<MockHandlers>;
+  /** Defaults to one Host-backed model. */
+  model?: boolean;
 }
 
 async function connect(page: Page, options: ConnectOptions = {}) {
@@ -39,6 +40,10 @@ async function connect(page: Page, options: ConnectOptions = {}) {
   const resultFor = options.resultFor ?? ((payload: { items: Array<{ id: string; text: string }> }) =>
     payload.items.map(item => ({ id: item.id, text: `${item.text}。` })));
   const handlers: MockHandlers = {
+    'aiSettings.list': () => ({ hostId: '00000000-0000-4000-8000-0000000000cc', revision: 0,
+      selectedId: options.model === false ? null : AI_ID,
+      configs: options.model === false ? [] : [{ id: AI_ID, name: 'Mock AI', baseUrl: 'http://ai.test/v1',
+        model: 'mock-model', hasApiKey: true }] }),
     'projects.open': () => ({ status: 'ok',
       project: { id: P, name: 'Correction', formatVersion: 3, revision, styleRevision: 0, videos: [], createdAt: T, updatedAt: T },
       video: { id: VIDEO_ID, name: 'Correction.mp4', durationSeconds: 60, revision, styleSource: 'project', hasTranscript: true,
@@ -74,8 +79,8 @@ async function setEnglish(page: Page) {
   await page.getByRole('menuitem', { name: /English/ }).click();
 }
 
-const openEditor = async (page: Page, theme: 'light' | 'dark', lang: string, withModel = true) => {
-  await prepare(page, theme, { 'flycut-locale': lang, ...(withModel ? { 'app-settings': aiSettings } : {}) });
+const openEditor = async (page: Page, theme: 'light' | 'dark', lang: string) => {
+      await prepare(page, theme, { 'flycut-locale': lang });
   await page.goto(`/?lang=${lang}#/projects/${P}/videos/${VIDEO_ID}`);
   if (lang === 'en') await setEnglish(page);
 };
@@ -165,8 +170,8 @@ for (const theme of ['light', 'dark'] as const) for (const english of [false, tr
 for (const theme of ['light', 'dark'] as const) {
   test.describe(`${theme}-zh`, () => {
     test('F-0013/AC-1 no model shows settings and editing stays available', async ({ page }) => {
-      const { saved } = await connect(page);
-      await openEditor(page, theme, 'zh', false);
+      const { saved } = await connect(page, { model: false });
+      await openEditor(page, theme, 'zh');
       const boxes = page.getByTestId('subtitle-main-text');
       await page.getByTestId('correction-open').click();
       const panel = page.getByTestId('correction-review');

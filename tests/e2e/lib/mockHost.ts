@@ -32,6 +32,7 @@ const defaults: MockHandlers = {
   'endpoints.list': () => [],
   'projects.list': () => [],
   'projects.identity': () => ({ hostId: E2E_HOST_ID, recovery: 1 }),
+  'aiSettings.list': () => ({ hostId: E2E_HOST_ID, revision: 0, selectedId: null, configs: [] }),
 };
 
 export interface MockHostOptions {

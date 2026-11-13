@@ -1,6 +1,7 @@
 /** F-0006/F-0007 shared pending-suggestion contract. Never persisted before confirmation. */
 
 export type SuggestionKind = 'silence' | 'filler';
+export type SuggestionSource = 'rule' | 'semantic' | 'silence';
 
 export interface CutSuggestion {
   id: string;
@@ -11,14 +12,26 @@ export interface CutSuggestion {
   label?: string;
   confidence?: number;
   selected: boolean;
+  /** F-0009: provenance is additive so F-0006/F-0007 callers remain compatible. */
+  source?: SuggestionSource;
+  sources?: SuggestionSource[];
+  semanticCategory?: string;
+  semanticReason?: string;
+  semanticConfidence?: 'high' | 'medium' | 'low';
+  scope?: 'word' | 'sentence';
+  wordIds?: string[];
 }
 
 export interface SuggestionBatch {
   kind: SuggestionKind;
   /** Formal edit revision this analysis was based on. */
   base: string;
+  /** Optional exact history-store snapshot key when base is an external hash (F-0009). */
+  stateKey?: string;
   preview: boolean;
   items: CutSuggestion[];
+  /** F-0009: a batch may combine unchanged rule candidates with semantic candidates. */
+  origin?: 'rule' | 'semantic' | 'mixed';
 }
 
 export interface PendingRangesView {

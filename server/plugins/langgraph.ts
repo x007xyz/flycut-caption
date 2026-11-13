@@ -9,7 +9,7 @@ import type { SubtitleTranscript } from '../../src/types/subtitle';
 import type { AgentTool, AgentToolRegistry, ProgressReporter, WorkflowService } from '../services';
 
 /** Default orchestration plugin. Domain services do not expose LangGraph objects. */
-export const langgraphPlugin = { name: 'flycut-langgraph', inject: ['providers', 'jobs', 'assets', 'editorPlugins', 'rpc'], apply(ctx: Context) {
+export const langgraphPlugin = { name: 'flycut-langgraph', inject: ['providers', 'jobs', 'assets', 'editorPlugins', 'rpc', 'aiSettings'], apply(ctx: Context) {
   const PipelineState = Annotation.Root({
     input: Annotation<PipelineInput>(), transcript: Annotation<SubtitleTranscript>(),
     cuts: Annotation<PipelineResult['cuts']>(),
@@ -83,8 +83,9 @@ export const langgraphPlugin = { name: 'flycut-langgraph', inject: ['providers',
       // Snapshot the registry per run so a tool unloading mid-run cannot change the schema the model saw.
       const available = agentTools.list();
       const bound = available.map(item => tool(async () => '', { name: item.name, description: item.description, schema: item.schema }));
-      const model = new ChatOpenAI({ model: input.model.model, apiKey: input.model.apiKey || 'local',
-        configuration: { baseURL: input.model.baseUrl }, maxRetries: 0 }).bindTools(bound);
+      const resolved = input.configId ? await ctx.aiSettings.resolve(input.configId) : input.model!;
+      const model = new ChatOpenAI({ model: resolved.model, apiKey: resolved.apiKey || 'local',
+        configuration: { baseURL: resolved.baseUrl }, maxRetries: 0 }).bindTools(bound);
       const publish = (messages: BaseMessage[]) => { for (const message of messages) ctx.emit('agent/message', { jobId, message: toWire(message) }); };
       const graph = new StateGraph(AgentState)
         .addNode('model', async state => {

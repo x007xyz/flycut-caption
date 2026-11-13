@@ -7,7 +7,7 @@ import { useAppStore } from '@/stores/appStore';
 import { useHistoryStore } from '@/stores/historyStore';
 import { useTranslation } from '@/contexts/LocaleProvider';
 import { correctionCopy, fillCorrection } from '@/locales/correction';
-import type { AIModelConfig, AISubtitleItem } from '@/types/ai';
+import type { AIModelView, AISubtitleItem } from '@/types/ai';
 import { splitCorrectionBatches, validateCorrectionResults, validateTextUpdates,
   type CorrectionSuggestion, type TextUpdate } from '../../shared/text/corrections';
 import { applyTextBatchWithPersistence } from '@/services/textPersistence';
@@ -34,7 +34,7 @@ export interface CorrectionReview {
   error: CorrectionError;
   discardPrompt: boolean;
   appliedCount: number;
-  model: AIModelConfig | null;
+  model: AIModelView | null;
   hasModels: boolean;
   activeCount: number;
   changeCount: number;
@@ -117,7 +117,7 @@ export function useCorrectionReview(): CorrectionReview {
       if (runRef.current !== run) return;
       setBatchesSafe(previous => previous.map(batch => batch.id === target.id ? { ...batch, status: 'generating', error: undefined } : batch));
       try {
-        const raw = await requestCorrection(target.items, model, controller.signal);
+        const raw = await requestCorrection(target.items, model.id, controller.signal);
         if (runRef.current !== run) return;
         let results: AISubtitleItem[];
         try {

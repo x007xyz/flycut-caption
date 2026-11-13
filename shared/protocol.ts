@@ -4,6 +4,12 @@ import type { SubtitleTranscript, ASRProgress } from '../src/types/subtitle';
 import type { EditorPluginManifest } from '../src/types/plugin';
 import { asrRequestSchema, modelRefSchema, type ProviderModels, type ProviderSummary } from './providers';
 import { subtitleGraphicSceneSchema } from './subtitle-graphics/scene';
+import { semanticWindowSchema } from './editing/semanticFillers';
+import {
+  aiSettingsImportInputSchema, aiSettingsRemoveInputSchema, aiSettingsSaveInputSchema, aiSettingsSelectInputSchema,
+  aiSettingsTestInputSchema, type AISettingsImportResult, type AISettingsMutationResult, type AISettingsRemoveResult,
+  type AISettingsSaveResult, type AISettingsSnapshot, type AISettingsTestResult,
+} from './aiSettings';
 import type { ProjectFile, ProjectListItem, ProjectOpenResult, SaveResult, projectCreateSchema, projectOpenSchema, saveTranscriptSchema,
   saveEditsSchema, duplicateSchema, relinkSchema, thumbnailSchema,
   createEmptySchema, projectRefSchema, renameSchema, emptyTrashSchema, addVideoSchema, removeVideoSchema, saveVideoEditsSchema, saveProjectStyleSchema, createFromSnapshotSchema,
@@ -42,10 +48,23 @@ export interface ExportResult { assetId: string; filename: string; mimeType: str
 export const jobIdSchema = z.object({ id: z.string().uuid() });
 export const textInputSchema = z.object({ mode: z.enum(['correction', 'translation']),
   items: z.array(z.object({ id: z.string(), text: z.string() })), targetLang: z.string().optional(),
-  model: z.object({ id: z.string(), name: z.string(), baseUrl: z.url(), apiKey: z.string(), model: z.string(), temperature: z.number().optional() }) });
+  /** Preferred: the Host resolves the configured model and secret. */
+  configId: z.uuid().optional(),
+  /** Compatibility for clients released before F-0056. New clients never send this. */
+  model: z.object({ id: z.string(), name: z.string(), baseUrl: z.url(), apiKey: z.string(), model: z.string(), temperature: z.number().optional() }).optional() })
+  .refine(input => !!input.configId !== !!input.model, '必须且只能提供 configId 或旧 model 之一');
 export type TextInput = z.infer<typeof textInputSchema>;
+/** F-0009: Host resolves the saved AI config; only its opaque config ID crosses RPC. */
+export const semanticCutsInputSchema = z.strictObject({
+  configId: z.uuid(),
+  request: semanticWindowSchema,
+});
+export type SemanticCutsInput = z.infer<typeof semanticCutsInputSchema>;
 export const agentInputSchema = z.object({ prompt: z.string().min(1).max(100000), asr: asrInputSchema.optional(),
-  model: z.object({ baseUrl: z.url(), model: z.string().min(1), apiKey: z.string().optional() }) });
+  configId: z.uuid().optional(),
+  /** Compatibility for clients released before F-0056. */
+  model: z.object({ baseUrl: z.url(), model: z.string().min(1), apiKey: z.string().optional() }).optional() })
+  .refine(input => !!input.configId !== !!input.model, '必须且只能提供 configId 或旧 model 之一');
 export type AgentInput = z.infer<typeof agentInputSchema>;
 export interface AgentMessage { role: string; content: unknown; toolCalls?: Array<{ id?: string; name: string; args: unknown }> }
 export const providerPrepareSchema = modelRefSchema;
@@ -101,12 +120,19 @@ export interface RpcMethods {
   'endpoints.remove': { input: { name: string }; output: { removed: string } };
   'cloud.status': { input: void; output: CloudStatus };
   'cloud.setApiKey': { input: { apiKey: string }; output: CloudStatus };
+  'aiSettings.list': { input: void; output: AISettingsSnapshot };
+  'aiSettings.save': { input: z.input<typeof aiSettingsSaveInputSchema>; output: AISettingsSaveResult };
+  'aiSettings.remove': { input: z.input<typeof aiSettingsRemoveInputSchema>; output: AISettingsRemoveResult };
+  'aiSettings.select': { input: z.input<typeof aiSettingsSelectInputSchema>; output: AISettingsMutationResult };
+  'aiSettings.test': { input: z.input<typeof aiSettingsTestInputSchema>; output: AISettingsTestResult };
+  'aiSettings.import': { input: z.input<typeof aiSettingsImportInputSchema>; output: AISettingsImportResult };
   'editing.list': { input: void; output: EditorPluginManifest[] };
   'silence.analyze': { input: z.input<typeof silenceAnalyzeInputSchema>; output: JobSnapshot };
   'agent.tools': { input: void; output: Array<{ name: string; description: string }> };
   'workflow.start': { input: z.input<typeof pipelineInputSchema>; output: JobSnapshot };
   'agent.start': { input: z.input<typeof agentInputSchema>; output: JobSnapshot };
   'text.start': { input: z.input<typeof textInputSchema>; output: JobSnapshot };
+  'text.suggestCuts': { input: z.input<typeof semanticCutsInputSchema>; output: JobSnapshot };
   'export.start': { input: z.input<typeof exportInputSchema>; output: JobSnapshot };
   'plugins.list': { input: void; output: { profile: string; layers: string[]; plugins: PluginStatus[] } };
   'plugins.reload': { input: { id: string }; output: PluginStatus };

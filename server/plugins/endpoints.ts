@@ -1,6 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { isIP } from 'node:net';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { endpointInputSchema, type EndpointInfo } from '../../shared/protocol';
@@ -8,6 +7,7 @@ import { encodePcmWav, mergeASRApiTranscripts, normalizeASRApiResponse, transcri
 import type { SubtitleTranscript } from '../../src/types/subtitle';
 import type { Provider } from '../services';
 import { createHttpProvider } from '../providers/httpProvider';
+import { assertServiceUrl } from '../urlPolicy';
 import { wavSamples } from './asr';
 
 type Endpoint = z.infer<typeof endpointInputSchema>;
@@ -16,18 +16,6 @@ type Stored = Omit<Endpoint, 'apiKey'>;
 export interface EndpointsConfig {
   /** Allows loopback and private-network service addresses. Off in the `server` profile (SSRF). */
   privateNetwork?: boolean;
-}
-
-const PRIVATE_HOSTS = /^(localhost|.*\.local|.*\.internal)$/i;
-function isPrivateAddress(hostname: string) {
-  const host = hostname.replace(/^\[|\]$/g, '').toLowerCase();
-  if (PRIVATE_HOSTS.test(host)) return true;
-  if (isIP(host) === 4) {
-    const [a, b] = host.split('.').map(Number);
-    return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127);
-  }
-  if (isIP(host) === 6) return host === '::1' || host === '::' || /^(fc|fd|fe8|fe9|fea|feb)/.test(host) || host.startsWith('::ffff:');
-  return false;
 }
 
 /** OpenAI-compatible `/audio/transcriptions`: 300 s chunks, no automatic retry of billed requests. */
@@ -73,11 +61,7 @@ export const endpointsPlugin = { name: 'flycut-endpoints', inject: ['providers',
   const keys = new Map<string, string>();
 
   function check(endpoint: Endpoint) {
-    const url = new URL(endpoint.baseUrl);
-    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
-      throw new Error('服务地址必须是 HTTP(S)，且不能包含账号密码、查询参数或锚点');
-    }
-    if (!privateNetwork && isPrivateAddress(url.hostname)) throw new Error('当前 Host 不允许连接本机或内网地址');
+    assertServiceUrl(endpoint.baseUrl, privateNetwork);
     if (endpoint.protocol === 'openai') {
       transcriptionEndpoint(endpoint.baseUrl);
       if (!endpoint.models?.length) throw new Error('OpenAI 兼容服务至少要填写一个模型名');

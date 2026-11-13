@@ -13,6 +13,7 @@ import { modelsPlugin } from './plugins/models';
 import { sherpaAsrPlugin } from './plugins/asr';
 import { endpointsPlugin } from './plugins/endpoints';
 import { cloudPlugin } from './plugins/cloud';
+import { aiSettingsPlugin } from './plugins/aiSettings';
 import { deleteSilenceEditingPlugin, editingPlugin, removeFillersEditingPlugin } from './plugins/editing';
 import { textPlugin } from './plugins/text';
 import { exportPlugin } from './plugins/export';
@@ -34,6 +35,7 @@ export const BUILTINS: Record<string, Builtin> = {
   'asr-sherpa': { plugin: sherpaAsrPlugin, provides: [] },
   'asr-cloud': { plugin: cloudPlugin, provides: [] },
   endpoints: { plugin: endpointsPlugin, provides: [] },
+  'ai-settings': { plugin: aiSettingsPlugin, provides: ['aiSettings'] },
   editing: { plugin: editingPlugin, provides: ['editorPlugins'] },
   'editing-delete-silence': { plugin: deleteSilenceEditingPlugin, provides: [] },
   'editing-remove-fillers': { plugin: removeFillersEditingPlugin, provides: [] },
@@ -59,7 +61,8 @@ export const PROFILES: Record<string, string[]> = {
 };
 /** Per-profile default plugin configs. A patch's `config.<id>` replaces the whole default for that row. */
 export const PROFILE_CONFIG: Record<string, Record<string, unknown>> = {
-  server: { gateway: { shutdown: false }, endpoints: { privateNetwork: false }, projects: { linkedMedia: false } },
+  server: { gateway: { shutdown: false }, endpoints: { privateNetwork: false },
+    'ai-settings': { privateNetwork: false, secretBackend: 'encrypted-file' }, projects: { linkedMedia: false } },
 };
 
 export const profilePatchSchema = z.object({

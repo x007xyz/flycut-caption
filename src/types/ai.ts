@@ -1,4 +1,5 @@
 // AI 模型相关类型定义
+import type { AIConfigView } from '../../shared/aiSettings'
 
 /**
  * AI 模型配置（OpenAI 兼容）
@@ -11,6 +12,9 @@ export interface AIModelConfig {
   model: string; // 例如 gpt-4o-mini
   temperature?: number;
 }
+
+/** Public Host projection used by the UI. It intentionally has no API-key field. */
+export type AIModelView = AIConfigView
 
 /**
  * AI 任务进度
