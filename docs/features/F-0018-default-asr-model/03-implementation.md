@@ -1,9 +1,9 @@
 ---
 id: F-0018
 stage: 03-implementation
-status: draft
-approved_by:
-approved_at:
+status: approved
+approved_by: auto
+approved_at: 2026-11-13
 ---
 
 # F-0018 默认模型推荐与下载引导：开发记录
