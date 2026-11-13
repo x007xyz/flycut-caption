@@ -11,6 +11,7 @@ import {
   type AISettingsSaveResult, type AISettingsSnapshot, type AISettingsTestResult,
 } from './aiSettings';
 import type { UploadCapabilities } from './uploads';
+import type { JianyingCapabilities, JianyingPreflightInput, JianyingPreflightResult, JianyingStartInput } from './jianying/draft';
 import type { ProjectFile, ProjectListItem, ProjectOpenResult, SaveResult, projectCreateSchema, projectOpenSchema, saveTranscriptSchema,
   saveEditsSchema, duplicateSchema, relinkSchema, thumbnailSchema,
   createEmptySchema, projectRefSchema, renameSchema, emptyTrashSchema, addVideoSchema, removeVideoSchema, saveVideoEditsSchema, saveProjectStyleSchema, createFromSnapshotSchema,
@@ -139,6 +140,10 @@ export interface RpcMethods {
   'text.start': { input: z.input<typeof textInputSchema>; output: JobSnapshot };
   'text.suggestCuts': { input: z.input<typeof semanticCutsInputSchema>; output: JobSnapshot };
   'export.start': { input: z.input<typeof exportInputSchema>; output: JobSnapshot };
+  /** F-0011: normal builds are read-only; internal-validation builds also register the two opaque-grant methods. */
+  'jianying.capabilities': { input: void; output: JianyingCapabilities };
+  'jianying.preflight': { input: JianyingPreflightInput; output: JianyingPreflightResult };
+  'jianying.start': { input: JianyingStartInput; output: JobSnapshot };
   'plugins.list': { input: void; output: { profile: string; layers: string[]; plugins: PluginStatus[] } };
   'plugins.reload': { input: { id: string }; output: PluginStatus };
   /** Projects (F-0002): `server/plugins/projects.ts`, contract in `shared/projects.ts`. */

@@ -1,5 +1,6 @@
 mod commands;
 mod host;
+mod jianying_output;
 mod media_link;
 
 #[tauri::command]
@@ -91,6 +92,7 @@ pub fn run() {
             commands::media::stage_media_file,
             commands::media::download_media_to_temp,
             pick_model_directory,
+            jianying_output::pick_jianying_output_directory,
             host::save_host_asset,
             media_link::link_project_media,
         ])

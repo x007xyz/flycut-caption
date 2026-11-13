@@ -33,9 +33,10 @@ export async function resolveHostProfile(config: HostConfig, options: CreateHost
 
 export async function createHost(config: HostConfig, options: CreateHostOptions = {}) {
   const ctx = new Context();
-  ctx.provide('hostConfig', config);
   try {
-    await bootProfile(ctx, await resolveHostProfile(config, options));
+    const profile = await resolveHostProfile(config, options);
+    ctx.provide('hostConfig', { ...config, profileName: profile.name });
+    await bootProfile(ctx, profile);
     return ctx;
   } catch (error) { await ctx.fiber.dispose(); throw error; }
 }

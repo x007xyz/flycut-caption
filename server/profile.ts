@@ -22,6 +22,7 @@ import { projectsPlugin } from './plugins/projects';
 import { builtinAgentToolsPlugin, langgraphPlugin } from './plugins/langgraph';
 import { gatewayPlugin } from './plugins/gateway';
 import { silencePlugin } from './plugins/silence';
+import { jianyingPlugin } from './plugins/jianying';
 
 /** A built-in or external plugin row. `provides` lets the resolver reject a profile with unmet `inject`s before boot. */
 export interface PluginRow { id: string; plugin: Plugin; provides: string[]; config?: unknown; source: 'builtin' | 'external'; module?: string }
@@ -45,6 +46,7 @@ export const BUILTINS: Record<string, Builtin> = {
   text: { plugin: textPlugin, provides: ['text'] },
   export: { plugin: exportPlugin, provides: ['export'] },
   projects: { plugin: projectsPlugin, provides: [] },
+  jianying: { plugin: jianyingPlugin, provides: [] },
   langgraph: { plugin: langgraphPlugin, provides: ['workflows', 'agents', 'agentTools'] },
   'agent-tools': { plugin: builtinAgentToolsPlugin, provides: [] },
   gateway: { plugin: gatewayPlugin, provides: ['httpServer'] },
@@ -63,8 +65,10 @@ export const PROFILES: Record<string, string[]> = {
 };
 /** Per-profile default plugin configs. A patch's `config.<id>` replaces the whole default for that row. */
 export const PROFILE_CONFIG: Record<string, Record<string, unknown>> = {
+  desktop: { jianying: { allowLinkedMedia: true } },
   server: { gateway: { shutdown: false }, endpoints: { privateNetwork: false },
-    'ai-settings': { privateNetwork: false, secretBackend: 'encrypted-file' }, projects: { linkedMedia: false } },
+    'ai-settings': { privateNetwork: false, secretBackend: 'encrypted-file' }, projects: { linkedMedia: false },
+    jianying: { allowLinkedMedia: false } },
 };
 
 export const profilePatchSchema = z.object({

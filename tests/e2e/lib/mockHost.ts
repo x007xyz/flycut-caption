@@ -149,3 +149,30 @@ export async function prepare(page: Page, theme: 'light' | 'dark', extra: Record
     for (const [key, value] of Object.entries(extra)) localStorage.setItem(key, value);
   }, { theme, extra });
 }
+
+/** Minimal Tauri IPC double for desktop-only UI tests. Directory selection returns an opaque grant. */
+export async function installTauriMock(page: Page, options: { hostUrl: string; csrf: string; grant: string }): Promise<void> {
+  await page.addInitScript(({ hostUrl, csrf, grant }) => {
+    let callbackId = 0;
+    const callbacks = new Map<number, (value: unknown) => unknown>();
+    const internals = {
+      metadata: { currentWindow: { label: 'main' } },
+      transformCallback(callback: (value: unknown) => unknown, once = false) {
+        const id = ++callbackId;
+        callbacks.set(id, value => { if (once) callbacks.delete(id); return callback(value); });
+        return id;
+      },
+      unregisterCallback(id: number) { callbacks.delete(id); },
+      convertFileSrc(path: string) { return path; },
+      async invoke(command: string) {
+        if (command === 'ensure_host') return { url: hostUrl, auth: { kind: 'session', csrf } };
+        if (command === 'pick_jianying_output_directory') return { grant, expiresAt: new Date(Date.now() + 15 * 60_000).toISOString() };
+        if (command === 'plugin:event|listen') return ++callbackId;
+        if (command === 'plugin:event|unlisten') return null;
+        return null;
+      },
+    };
+    (window as unknown as { __TAURI_INTERNALS__: unknown }).__TAURI_INTERNALS__ = internals;
+    (window as unknown as { __TAURI_EVENT_PLUGIN_INTERNALS__: unknown }).__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
+  }, options);
+}

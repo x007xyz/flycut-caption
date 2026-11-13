@@ -8,6 +8,8 @@ import type { EditorPlugin } from '../src/types/plugin';
 import type { z } from 'zod';
 
 export interface HostConfig { home: string; port: number; token: string; resourceRoot: string; 
+  /** Resolved profile name (after profile patches). Used for non-overridable deployment boundaries. */
+  profileName?: string;
   /** User model catalog and downloads (desktop app data dir). Defaults to `<home>/app-data`. */
   appData?: string;
   /** Assets unused for this long are deleted (default 24). */
@@ -56,7 +58,8 @@ export interface ProviderRegistry {
   detectVoice(ref: ModelRef, audioPath: string, signal: AbortSignal, report: ProgressReporter): Promise<VoiceActivityResult>;
 }
 export interface JobService {
-  create(run: (signal: AbortSignal, report: ProgressReporter, id: string) => Promise<unknown>, options?: { operationId?: string }): JobSnapshot;
+  /** `id` and `operationId` are optional for idempotent producers; clients cannot choose a job ID over RPC. */
+  create(run: (signal: AbortSignal, report: ProgressReporter, id: string) => Promise<unknown>, options?: string | { id?: string; operationId?: string }): JobSnapshot;
   get(id: string): JobSnapshot;
   list(): JobSnapshot[];
   cancel(id: string): Promise<JobSnapshot>;
