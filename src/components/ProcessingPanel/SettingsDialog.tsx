@@ -14,6 +14,7 @@ import { Slider } from '@/components/ui/slider';
 import { Boxes, Package, PlugZap, Puzzle, Wand2 } from 'lucide-react';
 import { useAppStore } from '@/stores/appStore';
 import { useTranslation } from '@/contexts/LocaleProvider';
+import { asrModelsCopy } from '@/locales/models';
 import { useState, type ReactNode } from 'react';
 
 type SettingsSection = 'models' | 'plugins' | 'connection';
@@ -24,7 +25,8 @@ interface SettingsDialogProps {
 }
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
+  const mc = asrModelsCopy(language);
   const [section, setSection] = useState<SettingsSection>('models');
   const smartCutSilenceThreshold = useAppStore(state => state.smartCutSilenceThreshold);
   const setSmartCutSilenceThreshold = useAppStore(state => state.setSmartCutSilenceThreshold);
@@ -37,7 +39,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             <Package className="h-5 w-5" />
             <div>
               <span>{t('components.workstation.tools')}</span>
-              <p className="mt-0.5 text-xs font-normal text-muted-foreground">管理识别模型、接入服务和编辑插件</p>
+              <p className="mt-0.5 text-xs font-normal text-muted-foreground">{mc.settingsSubtitle}</p>
             </div>
           </DialogTitle>
         </DialogHeader>
@@ -46,17 +48,17 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           <div className="flex min-h-[460px] flex-col md:flex-row">
             <nav className="border-b border-aimu-border bg-muted/20 p-2 md:w-44 md:border-b-0 md:border-r">
               <div className="grid grid-cols-2 gap-1 md:grid-cols-1">
-                <SectionButton active={section === 'models'} icon={<Boxes className="h-4 w-4" />} label="模型" onClick={() => setSection('models')} />
-                <SectionButton active={section === 'plugins'} icon={<Puzzle className="h-4 w-4" />} label="编辑插件" onClick={() => setSection('plugins')} />
-                <SectionButton active={section === 'connection'} icon={<PlugZap className="h-4 w-4" />} label="连接" onClick={() => setSection('connection')} />
+                <SectionButton active={section === 'models'} icon={<Boxes className="h-4 w-4" />} label={mc.tabModels} onClick={() => setSection('models')} />
+                <SectionButton active={section === 'plugins'} icon={<Puzzle className="h-4 w-4" />} label={mc.tabPlugins} onClick={() => setSection('plugins')} />
+                <SectionButton active={section === 'connection'} icon={<PlugZap className="h-4 w-4" />} label={mc.tabConnection} onClick={() => setSection('connection')} />
               </div>
             </nav>
 
             <div className="min-w-0 flex-1 overflow-y-auto px-4 pb-5 md:px-6">
               {section === 'models' && <>
                 <div className="pt-4">
-                  <h2 className="text-sm font-semibold text-aimu-text-primary">模型</h2>
-                  <p className="mt-1 text-xs text-muted-foreground">内置 Provider 的模型在这里下载；自己的模型通过「添加服务」接入，不需要改代码。</p>
+                  <h2 className="text-sm font-semibold text-aimu-text-primary">{mc.tabModels}</h2>
+                  <p className="mt-1 text-xs text-muted-foreground">{mc.modelsSectionDesc}</p>
                 </div>
                 <ModelsPanel />
               </>}
@@ -80,8 +82,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
               {section === 'connection' && <>
                 <div className="pt-4">
-                  <h2 className="text-sm font-semibold text-aimu-text-primary">连接</h2>
-                  <p className="mt-1 text-xs text-muted-foreground">当前 Host、身份、能力与会话。切换 Host 前会先处理未保存修改。</p>
+                  <h2 className="text-sm font-semibold text-aimu-text-primary">{mc.tabConnection}</h2>
+                  <p className="mt-1 text-xs text-muted-foreground">{mc.connectionSectionDesc}</p>
                 </div>
                 <div className="mt-4"><ConnectionDetails /></div>
               </>}

@@ -15,6 +15,7 @@ import { useTranslation } from '@/contexts/LocaleProvider';
 import { useEffect, useState, type RefObject } from 'react';
 import type { EnhancedVideoPlayerRef } from '@/components/VideoPlayer/EnhancedVideoPlayer';
 import type { ASRProgress } from '@/types/subtitle';
+import type { ProviderModels } from '../../../shared/providers';
 import { Scissors, Languages, AlertCircle } from 'lucide-react';
 import { useWordChunks, useHasWordTimestamps, useHistoryStore } from '@/stores/historyStore';
 import { canDeleteByWordAtRuntime } from '@/utils/wordLevelEdit';
@@ -26,6 +27,12 @@ interface SubtitleEditorPanelProps {
   videoPlayerRef?: RefObject<EnhancedVideoPlayerRef>;
   isASRLoading?: boolean;
   asrProgress?: ASRProgress | null;
+  onStartASR?: () => void;
+  onOpenSettings?: () => void;
+  modelGroups?: ProviderModels[];
+  modelsLoading?: boolean;
+  modelsError?: string;
+  onRefreshModels?: () => void;
 }
 
 export function SubtitleEditorPanel({
@@ -33,6 +40,12 @@ export function SubtitleEditorPanel({
   videoPlayerRef,
   isASRLoading,
   asrProgress,
+  onStartASR,
+  onOpenSettings,
+  modelGroups,
+  modelsLoading,
+  modelsError,
+  onRefreshModels,
 }: SubtitleEditorPanelProps) {
   const { t } = useTranslation();
   const [view, setView] = useState<SubtitleEditorView>('processed');
@@ -103,6 +116,12 @@ export function SubtitleEditorPanel({
             videoPlayerRef={videoPlayerRef}
             isASRLoading={isASRLoading}
             asrProgress={asrProgress}
+            onStartASR={onStartASR}
+            onOpenSettings={onOpenSettings}
+            modelGroups={modelGroups}
+            modelsLoading={modelsLoading}
+            modelsError={modelsError}
+            onRefreshModels={onRefreshModels}
           />
         ) : (
           <OriginalEditor isASRLoading={isASRLoading} />

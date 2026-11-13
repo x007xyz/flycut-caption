@@ -29,6 +29,9 @@ import { CorrectionReviewPanel } from './CorrectionReviewPanel';
 import type { FindReplaceActions, FindReplaceState } from '@/hooks/useFindReplace';
 import type { FindMatch } from '../../../shared/text/findReplace';
 import { languageTrackCopy } from '@/locales/languageTracks';
+import type { ProviderModels } from '../../../shared/providers';
+import { RecommendedModelCard } from '@/components/ASR/RecommendedModelCard';
+import { asrModelsCopy } from '@/locales/models';
 
 interface StoredSubtitleDraft extends SubtitleItemDraft {
   baseMainText: string;
@@ -68,6 +71,12 @@ interface SubtitleListProps {
   isASRLoading?: boolean;
   /** ASR 进度信息 */
   asrProgress?: ASRProgress | null;
+  onStartASR?: () => void;
+  onOpenSettings?: () => void;
+  modelGroups?: ProviderModels[];
+  modelsLoading?: boolean;
+  modelsError?: string;
+  onRefreshModels?: () => void;
 }
 
 export function SubtitleList({
@@ -76,6 +85,12 @@ export function SubtitleList({
   videoPlayerRef,
   isASRLoading,
   asrProgress,
+  onStartASR,
+  onOpenSettings,
+  modelGroups,
+  modelsLoading,
+  modelsError,
+  onRefreshModels,
 }: SubtitleListProps) {
   const { t, language: uiLanguage } = useTranslation();
   const chunks = useChunks();
@@ -101,6 +116,7 @@ export function SubtitleList({
     [chunks]
   );
   
+  const videoFile = useAppStore(state => state.videoFile);
   const currentTime = useAppStore(state => state.currentTime);
   const setCurrentTime = useAppStore(state => state.setCurrentTime);
   const displayMode = useAppStore(state => state.display);
@@ -409,6 +425,28 @@ export function SubtitleList({
   }
 
   if (!transcript.chunks || transcript.chunks.length === 0) {
+    if (videoFile) {
+      const mc = asrModelsCopy(uiLanguage);
+      return (
+        <div data-testid="subtitle-model-guide" className={cn('flex flex-col items-center justify-center overflow-y-auto p-6 bg-aimu-panel h-full', className)}>
+          <div className="w-full max-w-xl space-y-3">
+            <div className="space-y-1">
+              <h2 className="text-sm font-semibold text-aimu-text-primary">{mc.missingTitle}</h2>
+              <p className="text-xs text-aimu-text-muted">{mc.missingDesc}</p>
+            </div>
+            <RecommendedModelCard
+              showTranscribeAction
+              groups={modelGroups ?? []}
+              loading={Boolean(modelsLoading)}
+              error={modelsError}
+              onRefresh={onRefreshModels}
+              onOpenSettings={onOpenSettings}
+              onStartASR={onStartASR}
+            />
+          </div>
+        </div>
+      );
+    }
     return (
       <div className={cn('flex flex-col items-center justify-center p-8 bg-aimu-panel h-full', className)}>
         <FileText className="h-12 w-12 text-aimu-text-muted mb-4" />

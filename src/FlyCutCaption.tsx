@@ -4,6 +4,10 @@ import { projectCues, outputDuration } from '../shared/editing/edl';
 
 import { useCallback, useMemo, useState, useRef, useEffect } from 'react';
 import { useAppStore } from '@/stores/appStore';
+import { useRuntimeStoreApi } from '@/stores/runtimeStore';
+import { findModel, useProviderModels } from '@/hooks/useProviderModels';
+import { getModelLanguageConfig, resolveLanguageForModel } from '@/utils/modelLanguageConfig';
+import { pickDefaultOfflineAsrModel, shouldPreserveUserSelection } from '@/utils/modelRecommendation';
 import { useChunks, useWordChunks, useHasWordTimestamps, useHistoryStore } from '@/stores/historyStore';
 import { useThemeStore } from '@/stores/themeStore';
 import { useHotkeys } from '@/hooks/useHotkeys';
@@ -267,21 +271,43 @@ export function FlyCutCaptionContent(props: FlyCutCaptionProps) {
     };
   }, [videoFile]);
 
-  // ASR 语音识别：进入 transcribe 阶段后自动开始识别，
-  // 不再弹出 ASR 窗口与消息，改由字幕编辑器/时间轴展示加载状态。
+  const appStoreApi = useRuntimeStoreApi('app');
+  const asrModel = useAppStore(state => state.asrModel);
+  const { groups: providerGroups, loading: modelsLoading, error: modelsError, refresh: refreshModels } = useProviderModels();
+
+  // First run or missing model: pick a ready offline built-in ASR model without ever switching to paid/cloud.
+  useEffect(() => {
+    if (modelsLoading || !providerGroups.length) return;
+    const current = appStoreApi.getState().asrModel;
+    if (shouldPreserveUserSelection(providerGroups, current)) return;
+    const pick = pickDefaultOfflineAsrModel(providerGroups);
+    if (pick) {
+      appStoreApi.getState().setASRModel({ providerId: pick.provider.id, modelId: pick.model.id });
+      appStoreApi.getState().setLanguage(
+        resolveLanguageForModel(getModelLanguageConfig(pick.model), appStoreApi.getState().language),
+      );
+    }
+  }, [modelsLoading, providerGroups, appStoreApi]);
+
+  const activeAsrModel = findModel(providerGroups, asrModel);
+  const canAutoStartASR = !modelsLoading && activeAsrModel?.model.status === 'ready';
+
+  // ASR 语音识别：仅在选定模型已就绪且通过校验时进入 transcribe 后自动开始识别；
+  // 否则由字幕区展示推荐模型下载与验证引导，校验完成前不能识别。
   const { isASRLoading, asrProgress, startASR } = useASR({ onSubtitleGenerated });
   const asrStartedRef = useRef(false);
 
   useEffect(() => {
     if (stage === 'transcribe' && videoFile && !isASRLoading && !asrStartedRef.current) {
+      if (!canAutoStartASR) return;
       asrStartedRef.current = true;
-      startASR(videoFile);
+      void startASR(videoFile);
     }
     // 进入非 transcribe 阶段时重置标记，允许下次重新触发
     if (stage !== 'transcribe') {
       asrStartedRef.current = false;
     }
-  }, [stage, videoFile, isASRLoading, startASR]);
+  }, [stage, videoFile, isASRLoading, canAutoStartASR, startASR]);
 
   // Component ready effect
   useEffect(() => {
@@ -591,6 +617,12 @@ export function FlyCutCaptionContent(props: FlyCutCaptionProps) {
                       videoPlayerRef={videoPlayerRef}
                       isASRLoading={isASRLoading}
                       asrProgress={asrProgress}
+                      onStartASR={videoFile ? () => void startASR(videoFile) : undefined}
+                      onOpenSettings={() => setSettingsOpen(true)}
+                      modelGroups={providerGroups}
+                      modelsLoading={modelsLoading}
+                      modelsError={modelsError}
+                      onRefreshModels={() => void refreshModels()}
                     />
                   </div>
                 </div>
