@@ -114,7 +114,7 @@ approved_at: 2026-11-13
 - [x] 3. **Tauri 桌面外壳对话框与流式暂存桥接**：新增 `src-tauri/src/backup.rs`（`pick_backup_file`、`pick_save_backup_file`、`stage_host_backup`），接入 `src-tauri/src/lib.rs` 并补 Rust 路径白名单安全测试（AC-1、AC-2、AC-4、AC-5）。
 - [x] 4. **前端备份服务、任务追踪与双语本地化**：扩展 `src/runtime/connection.ts`、`src/runtime/connectionModel.ts`、`src/services/taskOperation.ts`、`src/stores/projectStore.ts`、`src/services/projectService.ts` 与 `src/locales/{zh_CN,en_US}.ts`，支持迟到响应隔离、进度/取消与不确定结果查询（AC-1–AC-8）。
 - [x] 5. **项目菜单入口与备份导出/导入 UI 对话框**：新增 `src/components/Project/BackupDialogs.tsx`，接入 `ProjectActionsMenu.tsx`、`ProjectDetail.tsx`、`ProjectsHome.tsx`、`ProjectsApp.tsx` 与 `WorkstationHeader.tsx`，覆盖全部 AC 界面状态（AC-1–AC-8）。
-- [ ] 6. **E2E 回归、真实媒体跨 Host 验证与验收报告**：编写 `tests/e2e/features/F-0023.spec.ts`（中英文、明暗主题全状态），运行 `PW_PORT=5302 pnpm e2e:evidence F-0023`、真实双 Host + 真实视频迁移/播放/导出验证、全量静态检查与单测，产出 `04-test-report.md`（AC-1–AC-9）。
+- [x] 6. **E2E 回归、真实媒体跨 Host 验证与验收报告**：编写 `tests/e2e/features/F-0023.spec.ts`（中英文、明暗主题全状态），运行 `PW_PORT=5302 pnpm e2e:evidence F-0023`、真实双 Host + 真实视频迁移/播放/导出验证、全量静态检查与单测，产出 `04-test-report.md`（AC-1–AC-9）。
 
 ## 验证计划
 

@@ -21,6 +21,9 @@ approved_at:
 | 日期 | 清单项 | 提交 | 检查 |
 |---|---|---|---|
 | 2026-11-13 | 1. 共享备份契约与纯 TS 流式 ZIP/ZIP64 归档引擎 | 9b54b7e | pnpm tsc -b --noEmit, pnpm check:host, pnpm lint, backup-archive-f0023.test.ts (3/3) |
+| 2026-11-13 | 2. Host 备份导出/预检/导入服务与安全隔离 | ac00a52 | pnpm check:host, pnpm tsc -b --noEmit, pnpm eslint, projects-f0023.test.ts (2/2) |
+| 2026-11-13 | 3. Tauri 桌面外壳对话框与流式暂存桥接 | 0048dfc | cargo test backup::tests (2/2) |
+| 2026-11-13 | 4–5. 前端备份服务、任务追踪、双语与导出/导入 UI | 8d79092 | pnpm tsc -b --noEmit, pnpm check:host, pnpm eslint |
 
 ## 自行决定的事项
 
