@@ -9,9 +9,11 @@ import { useAppStore } from '@/stores/appStore';
 import { useTranslation } from '@/contexts/LocaleProvider';
 import { findCopy } from '@/locales/findReplace';
 import { correctionCopy } from '@/locales/correction';
+import { translationCopy, fillTranslation } from '@/locales/translation';
 import type { FindMatch } from '../../../shared/text/findReplace';
 import { markTextDiff, type CorrectionSuggestion } from '../../../shared/text/corrections';
 import { isTranslationOutdated } from '../../../shared/languageTracks';
+import { evaluateTranslationConstraints } from '../../../shared/text/translation';
 import { languageTrackCopy } from '@/locales/languageTracks';
 
 interface SubtitleItemProps {
@@ -77,10 +79,12 @@ export function SubtitleItem(props: SubtitleItemProps) {
   const trackCopy = languageTrackCopy(language);
   const findText = findCopy(language);
   const correctionText = correctionCopy(language);
+  const translationText = translationCopy(language);
   const update = useUpdate();
   const deleteChunk = useDelete();
   const displayMode = useAppStore(state => state.display);
   const setDisplayMode = useAppStore(state => state.setDisplay);
+  const translationLimits = useAppStore(state => state.translationLimits);
   const activeTrack = useHistoryStore(state => state.languageTracks.find(track => track.id === state.activeLanguageTrackId));
   const keepTranslation = useHistoryStore(state => state.keepLanguageTranslation);
   const suggestionEditable = textPreview && !!textSuggestion?.selected;
@@ -167,6 +171,9 @@ export function SubtitleItem(props: SubtitleItemProps) {
 
   const translationEntry = activeTrack?.entries[chunk.id];
   const translationOutdated = !!translationEntry && isTranslationOutdated(translationEntry, chunk);
+  const translationConstraints = secondText.trim()
+    ? evaluateTranslationConstraints(secondText, chunk.timestamp, translationLimits)
+    : null;
 
   const handleRetranslate = useCallback((event: React.MouseEvent) => {
     event.stopPropagation();
@@ -373,6 +380,17 @@ export function SubtitleItem(props: SubtitleItemProps) {
                   event.stopPropagation(); keepTranslation(chunk.id);
                 }}>{trackCopy.keep}</button>
                 <button type="button" className="underline underline-offset-2" onClick={handleRetranslate}>{trackCopy.retranslate}</button>
+              </div>
+            )}
+            {translationConstraints?.tooLong && (
+              <div className="mb-1 self-start rounded border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 text-[10px] whitespace-nowrap text-amber-700 dark:text-amber-300"
+                data-testid="subtitle-translation-too-long">
+                {translationText.tooLong} · {fillTranslation(translationText.tooLongDetail, {
+                  line: translationConstraints.maxLineChars,
+                  maxLine: translationLimits.maxCharsPerLine,
+                  cps: translationConstraints.cps.toFixed(1),
+                  maxCps: translationLimits.maxCps,
+                })}
               </div>
             )}
             <textarea

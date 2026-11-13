@@ -22,7 +22,8 @@ approved_at:
 |---|---|---|---|
 | 2026-11-13 | 1. 语义句合并、上下文分批、严格校验与行字数/读速纯逻辑 | a67b443 | pnpm test (112 passed, 5 skipped for missing optional ASR models) |
 | 2026-11-13 | 2. 扩展 textInputSchema、OpenAICompatibleEngine 与 Host text 插件 | 98f7a53 | pnpm check:host, pnpm test (114 passed, 5 skipped) |
-| 2026-11-13 | 3. 扩展 stores/aiService/useAI 与 translationPersistence 持久化回查回滚 | 待提交 | pnpm tsc -b --noEmit, pnpm test:architecture (145/145 passed) |
+| 2026-11-13 | 3. 扩展 stores/aiService/useAI 与 translationPersistence 持久化回查回滚 | 7a2fe2c | pnpm tsc -b --noEmit, pnpm test:architecture (145/145 passed) |
+| 2026-11-13 | 4. 实现 useBatchTranslation、TranslationPanel、文案与编辑器入口接入 | 待提交 | pnpm lint, pnpm tsc -b --noEmit, pnpm build |
 
 ## 自行决定的事项
 

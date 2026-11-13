@@ -25,7 +25,9 @@ import {
 import { COMMON_LANGUAGES } from '@/constants/languages';
 import { useAI } from '@/hooks/useAI';
 import { useCorrectionReview } from '@/hooks/useCorrectionReview';
+import { useBatchTranslation } from '@/hooks/useBatchTranslation';
 import { CorrectionReviewPanel } from './CorrectionReviewPanel';
+import { TranslationPanel } from './TranslationPanel';
 import type { FindReplaceActions, FindReplaceState } from '@/hooks/useFindReplace';
 import type { FindMatch } from '../../../shared/text/findReplace';
 import { languageTrackCopy } from '@/locales/languageTracks';
@@ -109,7 +111,7 @@ export function SubtitleList({
   const selectedAIModelId = useAppStore(state => state.selectedAIModelId);
   const setSelectedAIModelId = useAppStore(state => state.setSelectedAIModelId);
 
-  const { isAILoading, aiProgress, hasModels, runTranslation } = useAI();
+  const { isAILoading, aiProgress, hasModels } = useAI();
   const review = useCorrectionReview();
   const [targetLang, setTargetLang] = useState<string>('en');
 
@@ -120,6 +122,7 @@ export function SubtitleList({
   const videoDuration = useAppStore(state => state.videoPlayerState.duration);
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const translation = useBatchTranslation(targetLang, setTargetLang, selectedIds);
   const projectId = useProjectStore(state => state.current?.projectId ?? '');
   const videoId = useProjectStore(state => state.current?.videoId ?? '');
   const activeById = useMemo(() => new Map(activeChunks.map(chunk => [chunk.id, chunk])), [activeChunks]);
@@ -528,8 +531,9 @@ export function SubtitleList({
 
           {/* 翻译 */}
           <button
-            onClick={() => runTranslation(targetLang)}
-            disabled={isAILoading || !selectedAIModelId}
+            data-testid="translation-open"
+            onClick={() => translation.openPanel()}
+            disabled={isAILoading && translation.phase !== 'running'}
             className={cn(
               'flex items-center gap-1 px-2 py-0.5 text-xs rounded font-medium transition-colors',
               isAILoading
@@ -538,17 +542,18 @@ export function SubtitleList({
             )}
             title={t('components.workstation.translateStart')}
           >
-            {isAILoading ? (
+            {translation.phase === 'running' ? (
               <Loader2 className="w-3 h-3 animate-spin" />
             ) : (
               <Languages className="w-3 h-3" />
             )}
-            <span>{isAILoading ? t('components.workstation.translating') : t('components.workstation.translateStart')}</span>
+            <span>{translation.phase === 'running' ? t('components.workstation.translating') : t('components.workstation.translateStart')}</span>
           </button>
         </div>
       </div>
 
       <CorrectionReviewPanel review={review} />
+      <TranslationPanel translation={translation} />
 
       {/* Subtitle List (virtualized scroll window) */}
       <div
