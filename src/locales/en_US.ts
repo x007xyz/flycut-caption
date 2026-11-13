@@ -222,6 +222,11 @@ const enUS: FlyCutCaptionLocale = {
     },
     project: {
       navProjects: "Projects",
+      confirmationsNav: "Pending confirmations",
+      confirmationsHint: "Delete, remove or overwrite requests from CLI / MCP / Agent run only after you confirm them here.",
+      confirmationsEmpty: "Nothing here yet",
+      confirmationsApprove: "Approve",
+      confirmationsReject: "Reject",
       navSettings: "Settings",
       navHelp: "Help",
       homeTitle: "My projects",

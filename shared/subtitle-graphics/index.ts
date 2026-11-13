@@ -58,3 +58,13 @@ export {
   type RawRangeInput,
   type DisplayRangeResult,
 } from './text';
+
+export {
+  defaultExportStylePair,
+  resolveProjectExportStylePair,
+  buildProjectExportSubtitleScene,
+  serializeProjectSubtitles,
+  type ExportableChunk,
+  type ExportStyleConfig,
+  type ExportStylePair,
+} from './projectExport';

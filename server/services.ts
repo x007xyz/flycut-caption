@@ -1,4 +1,5 @@
 import type { JobSnapshot, PipelineInput, PipelineResult, ExportInput, AgentInput, TextInput, SemanticCutsInput, KeywordSuggestInput } from '../shared/protocol';
+import type { ExportResult } from '../shared/protocol';
 import type { AsrRequest, ModelInfo, ModelRef, ProviderKind, ProviderModels, ProviderSummary, TtsAudioFormat, TtsRequest, VoiceActivityResult } from '../shared/providers';
 import type { ValidatedTtsAudio } from '../shared/tts/audio';
 import type { ASRProgress, SubtitleTranscript } from '../src/types/subtitle';
@@ -7,6 +8,7 @@ import type { AISettingsImportInput, AISettingsMutationResult, AISettingsRemoveR
 import type { Server } from 'node:http';
 import type { EditorPlugin } from '../src/types/plugin';
 import type { z } from 'zod';
+import type { ProjectStore } from './projects/store';
 
 export interface HostConfig { home: string; port: number; token: string; resourceRoot: string; 
   /** Resolved profile name (after profile patches). Used for non-overridable deployment boundaries. */
@@ -114,7 +116,12 @@ export interface AgentTool<S extends z.ZodObject = z.ZodObject> {
 }
 export interface AgentToolRegistry { register<S extends z.ZodObject>(tool: AgentTool<S>): () => void; list(): AgentTool[] }
 export interface AgentService { start(input: AgentInput): JobSnapshot }
-export interface ExportService { start(input: ExportInput): JobSnapshot }
+export interface ExportProbeInfo { width?: number; height?: number; fps?: number; duration?: number; hasAudio: boolean }
+export interface ExportService {
+  start(input: ExportInput): JobSnapshot;
+  probeFile(source: string, signal?: AbortSignal): Promise<ExportProbeInfo>;
+  runFromFile(source: string, input: Omit<ExportInput, 'assetId'>, signal: AbortSignal, report: ProgressReporter): Promise<ExportResult>;
+}
 export interface EditorPluginRegistry {
   register(plugin: EditorPlugin): () => void;
   get(id: string): EditorPlugin;
@@ -152,6 +159,7 @@ declare module '@deepseek-ai/cordis' {
     editorPlugins: EditorPluginRegistry;
     text: TextService;
     aiSettings: AISettingsService;
+    projectStore: ProjectStore;
   }
   interface Events {
     /**

@@ -222,6 +222,11 @@ const zhCN: FlyCutCaptionLocale = {
     },
     project: {
       navProjects: "项目",
+      confirmationsNav: "待确认操作",
+      confirmationsHint: "来自 CLI / MCP / Agent 的删除、移除或覆盖请求需要你在这里确认后才会执行。",
+      confirmationsEmpty: "暂无待确认请求",
+      confirmationsApprove: "确认执行",
+      confirmationsReject: "拒绝",
       navSettings: "设置",
       navHelp: "帮助",
       homeTitle: "我的项目",

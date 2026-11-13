@@ -7,6 +7,9 @@
   "main": "dist/index.js",
   "module": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "flycut": "./dist-cli/flycut.mjs"
+  },
   "files": [
     "dist/index.js",
     "dist/index.d.ts",
@@ -94,6 +97,8 @@
     "serve": "node dist-host/main.mjs --profile web --web-root dist",
     "serve:server": "node dist-host/main.mjs --profile server --web-root dist",
     "build:host": "pnpm build:core && node scripts/build-host.mjs",
+    "build:cli": "pnpm build:core && node scripts/build-cli.mjs",
+    "cli": "tsx --tsconfig server/tsconfig.json cli/flycut.ts",
     "dev:web": "vite",
     "test:architecture": "tsx --tsconfig server/tsconfig.json --test tests/architecture/*.test.ts",
     "check:host": "tsc -p server/tsconfig.json --noEmit",

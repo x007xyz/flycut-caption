@@ -20,6 +20,8 @@ import { deleteSilenceEditingPlugin, editingPlugin, removeFillersEditingPlugin }
 import { textPlugin } from './plugins/text';
 import { exportPlugin } from './plugins/export';
 import { projectsPlugin } from './plugins/projects';
+import { confirmationsPlugin } from './plugins/confirmations';
+import { projectOpsPlugin } from './plugins/projectOps';
 import { builtinAgentToolsPlugin, langgraphPlugin } from './plugins/langgraph';
 import { gatewayPlugin } from './plugins/gateway';
 import { silencePlugin } from './plugins/silence';
@@ -47,7 +49,9 @@ export const BUILTINS: Record<string, Builtin> = {
   silence: { plugin: silencePlugin, provides: [] },
   text: { plugin: textPlugin, provides: ['text'] },
   export: { plugin: exportPlugin, provides: ['export'] },
-  projects: { plugin: projectsPlugin, provides: [] },
+  projects: { plugin: projectsPlugin, provides: ['projectStore'] },
+  confirmations: { plugin: confirmationsPlugin, provides: [] },
+  'project-ops': { plugin: projectOpsPlugin, provides: [] },
   jianying: { plugin: jianyingPlugin, provides: [] },
   langgraph: { plugin: langgraphPlugin, provides: ['workflows', 'agents', 'agentTools'] },
   'agent-tools': { plugin: builtinAgentToolsPlugin, provides: [] },
@@ -70,7 +74,7 @@ export const PROFILE_CONFIG: Record<string, Record<string, unknown>> = {
   desktop: { jianying: { allowLinkedMedia: true } },
   server: { gateway: { shutdown: false }, endpoints: { privateNetwork: false },
     'ai-settings': { privateNetwork: false, secretBackend: 'encrypted-file' }, projects: { linkedMedia: false },
-    jianying: { allowLinkedMedia: false } },
+    'project-ops': { linkedMedia: false }, jianying: { allowLinkedMedia: false } },
 };
 
 export const profilePatchSchema = z.object({

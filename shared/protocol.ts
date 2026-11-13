@@ -17,6 +17,14 @@ import {
 } from './tts/settings';
 import type { UploadCapabilities } from './uploads';
 import type { JianyingCapabilities, JianyingPreflightInput, JianyingPreflightResult, JianyingStartInput } from './jianying/draft';
+import type {
+  confirmationConsumeInputSchema, confirmationCreateInputSchema, confirmationDecideInputSchema,
+  confirmationIdSchema, confirmationListInputSchema, ConfirmationRequest,
+} from './confirmations';
+import type {
+  PendingProjectSuggestion, projectExportInputSchema, projectSuggestInputSchema,
+  projectSuggestionDismissInputSchema, projectSuggestionsListInputSchema, projectTranscribeInputSchema,
+} from './projectOps';
 import type { ProjectFile, ProjectListItem, ProjectOpenResult, SaveResult, projectCreateSchema, projectOpenSchema, saveTranscriptSchema,
   saveEditsSchema, duplicateSchema, relinkSchema, thumbnailSchema,
   createEmptySchema, projectRefSchema, renameSchema, emptyTrashSchema, addVideoSchema, removeVideoSchema, saveVideoEditsSchema, saveProjectStyleSchema, createFromSnapshotSchema,
@@ -194,6 +202,18 @@ export interface RpcMethods {
   'projects.createFromSnapshot': { input: z.input<typeof createFromSnapshotSchema>; output: { projectId: string; videoId: string } };
   /** F-0004: the Host's stable identity for crash-recovery copies. */
   'projects.identity': { input: void; output: HostIdentity };
+  /** F-0051: Host-side project orchestration (shared by CLI and MCP). */
+  'projects.transcribe': { input: z.input<typeof projectTranscribeInputSchema>; output: JobSnapshot };
+  'projects.suggestEdits': { input: z.input<typeof projectSuggestInputSchema>; output: JobSnapshot };
+  'projects.suggestions.list': { input: z.input<typeof projectSuggestionsListInputSchema>; output: PendingProjectSuggestion[] };
+  'projects.suggestions.dismiss': { input: z.input<typeof projectSuggestionDismissInputSchema>; output: { ok: true } };
+  'projects.export': { input: z.input<typeof projectExportInputSchema>; output: JobSnapshot };
+  /** F-0051: Client confirmation requests for destructive CLI / Agent actions. */
+  'confirmations.create': { input: z.input<typeof confirmationCreateInputSchema>; output: ConfirmationRequest };
+  'confirmations.list': { input: z.input<typeof confirmationListInputSchema>; output: ConfirmationRequest[] };
+  'confirmations.get': { input: z.input<typeof confirmationIdSchema>; output: ConfirmationRequest };
+  'confirmations.decide': { input: z.input<typeof confirmationDecideInputSchema>; output: ConfirmationRequest };
+  'confirmations.consume': { input: z.input<typeof confirmationConsumeInputSchema>; output: ConfirmationRequest };
 }
 export type RpcMethod = keyof RpcMethods;
 export type RpcInput<M extends RpcMethod> = RpcMethods[M]['input'];
@@ -207,6 +227,8 @@ export interface RemoteEvents {
   'job/updated': { job: JobSnapshot };
   'agent/message': { jobId: string; message: AgentMessage };
   'agent/tool-result': { jobId: string; name: string; status: 'success' | 'error'; content: string };
+  'confirmation/updated': { confirmation: ConfirmationRequest };
+  'project/suggestions-updated': { projectId: string; videoId: string };
 }
 export type RemoteEventName = keyof RemoteEvents;
 

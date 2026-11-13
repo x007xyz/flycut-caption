@@ -4,6 +4,7 @@ import { BrandLogo } from '@/components/BrandLogo';
 import { ConnectionStatus } from '@/components/Connection';
 import { cn } from '@/lib/utils';
 import { useProjectText } from './useProjectText';
+import { ClientConfirmations } from './ClientConfirmations';
 
 export interface ProjectsShellProps {
   version: string;
@@ -36,6 +37,7 @@ export function ProjectsShell({ version, toolbar, onOpenSettings, onOpenHelp, ac
               onClick={() => onNavigate('trash')}><Trash2 className="h-4 w-4" />{tp('navTrash')}</button>
           )}
         </nav>
+        <div className="px-2 pb-1"><ClientConfirmations compact /></div>
         <div className="space-y-0.5 border-t border-border px-2 py-2">
           <div className="px-1 pb-2"><ConnectionStatus /></div>
           {onOpenHelp && <button type="button" className={item(false)} onClick={onOpenHelp}><HelpCircle className="h-4 w-4" />{tp('navHelp')}</button>}
