@@ -1,3 +1,4 @@
+mod backup;
 mod commands;
 mod host;
 mod jianying_output;
@@ -95,11 +96,17 @@ pub fn run() {
             jianying_output::pick_jianying_output_directory,
             host::save_host_asset,
             media_link::link_project_media,
+            backup::pick_backup_file,
+            backup::pick_save_backup_file,
+            backup::stage_host_backup,
         ])
         .on_window_event(|_, event| {
             // Files dropped onto the window count as chosen by the user, like the picker.
             if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
-                paths.iter().for_each(|path| media_link::allow(path));
+                paths.iter().for_each(|path| {
+                    media_link::allow(path);
+                    backup::allow(path);
+                });
             }
         })
         .build(tauri::generate_context!())
