@@ -28,7 +28,17 @@ interface SubtitleItemProps {
   onSuggestionChange?: (id: string, text: string) => void;
   onToggleSelection: (chunkId: string) => void;
   onSeekTo: (time: number) => void;
+  /** Uncommitted text and expansion survive virtual-row unmounting until blur or an offscreen flush. */
+  draft?: SubtitleItemDraft;
+  onDraftChange?: (id: string, patch: SubtitleItemDraft) => void;
+  onDraftCommitted?: (id: string, field: 'mainText' | 'secondText') => void;
   className?: string;
+}
+
+export interface SubtitleItemDraft {
+  mainText?: string;
+  secondText?: string;
+  isExpanded?: boolean;
 }
 
 // Aimu 风格时间格式化：HH:MM:SS.mmm
@@ -58,6 +68,9 @@ export function SubtitleItem(props: SubtitleItemProps) {
     textSuggestion,
     textPreview = false,
     onSuggestionChange,
+    draft,
+    onDraftChange,
+    onDraftCommitted,
   } = props;
   
   const { t, language } = useTranslation();
@@ -70,12 +83,16 @@ export function SubtitleItem(props: SubtitleItemProps) {
   const setDisplayMode = useAppStore(state => state.setDisplay);
   const activeTrack = useHistoryStore(state => state.languageTracks.find(track => track.id === state.activeLanguageTrackId));
   const keepTranslation = useHistoryStore(state => state.keepLanguageTranslation);
+  const suggestionEditable = textPreview && !!textSuggestion?.selected;
+  const displayText = suggestionEditable ? textSuggestion!.after : chunk.text;
 
   // 本地状态，用于即时编辑
-  const [mainText, setMainText] = useState(chunk.text);
-  const [secondText, setSecondText] = useState(chunk.secondText || '');
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [mainText, setMainText] = useState(() => draft?.mainText ?? displayText);
+  const [secondText, setSecondText] = useState(() => draft?.secondText ?? (chunk.secondText || ''));
+  const [isExpanded, setIsExpanded] = useState(() => draft?.isExpanded ?? false);
   const [hasOverflowText, setHasOverflowText] = useState(false);
+  const previousDisplayTextRef = useRef(displayText);
+  const previousSecondTextRef = useRef(chunk.secondText || '');
   const mainTextareaRef = useRef<HTMLTextAreaElement>(null);
   const secondTextareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -85,16 +102,18 @@ export function SubtitleItem(props: SubtitleItemProps) {
     textarea.style.height = `${isExpanded ? textarea.scrollHeight : Math.min(textarea.scrollHeight, COLLAPSED_TEXTAREA_HEIGHT)}px`;
   }, [isExpanded]);
 
-  const suggestionEditable = textPreview && !!textSuggestion?.selected;
-  const displayText = suggestionEditable ? textSuggestion!.after : chunk.text;
-
-  // 当 store 中的数据改变时，同步本地状态
+  // 当 store 中的数据真正改变时同步；首次挂载保留虚拟化 transient draft。
   useEffect(() => {
+    if (previousDisplayTextRef.current === displayText) return;
+    previousDisplayTextRef.current = displayText;
     setMainText(displayText);
   }, [displayText]);
 
   useEffect(() => {
-    setSecondText(chunk.secondText || '');
+    const next = chunk.secondText || '';
+    if (previousSecondTextRef.current === next) return;
+    previousSecondTextRef.current = next;
+    setSecondText(next);
   }, [chunk.secondText]);
 
   useEffect(() => {
@@ -128,12 +147,14 @@ export function SubtitleItem(props: SubtitleItemProps) {
   const handleMainBlur = useCallback(() => {
     if (textPreview) {
       if (suggestionEditable && mainText !== textSuggestion?.after) onSuggestionChange?.(chunk.id, mainText);
+      onDraftCommitted?.(chunk.id, 'mainText');
       return;
     }
     if (mainText.trim() !== chunk.text) {
       update(chunk.id, { text: mainText.trim() });
     }
-  }, [chunk.id, mainText, chunk.text, update, textPreview, suggestionEditable, textSuggestion?.after, onSuggestionChange]);
+    onDraftCommitted?.(chunk.id, 'mainText');
+  }, [chunk.id, mainText, chunk.text, update, textPreview, suggestionEditable, textSuggestion?.after, onSuggestionChange, onDraftCommitted]);
 
   // 保存副字幕
   const handleSecondBlur = useCallback(() => {
@@ -141,7 +162,8 @@ export function SubtitleItem(props: SubtitleItemProps) {
     if (trimmed !== (chunk.secondText || '')) {
       update(chunk.id, { secondText: trimmed || undefined });
     }
-  }, [chunk.id, secondText, chunk.secondText, update]);
+    onDraftCommitted?.(chunk.id, 'secondText');
+  }, [chunk.id, secondText, chunk.secondText, update, onDraftCommitted]);
 
   const translationEntry = activeTrack?.entries[chunk.id];
   const translationOutdated = !!translationEntry && isTranslationOutdated(translationEntry, chunk);
@@ -317,6 +339,7 @@ export function SubtitleItem(props: SubtitleItemProps) {
               onChange={(e) => {
                 const value = e.target.value;
                 setMainText(value);
+                onDraftChange?.(chunk.id, { mainText: value });
                 if (suggestionEditable) onSuggestionChange?.(chunk.id, value);
               }}
               onBlur={handleMainBlur}
@@ -356,7 +379,11 @@ export function SubtitleItem(props: SubtitleItemProps) {
               ref={secondTextareaRef}
               value={secondText}
               data-testid="subtitle-secondary-text"
-              onChange={(e) => setSecondText(e.target.value)}
+              onChange={(e) => {
+                const value = e.target.value;
+                setSecondText(value);
+                onDraftChange?.(chunk.id, { secondText: value });
+              }}
               onBlur={handleSecondBlur}
               onKeyDown={handleKeyDown}
               onClick={(e) => e.stopPropagation()}
@@ -376,7 +403,11 @@ export function SubtitleItem(props: SubtitleItemProps) {
             className="mt-1 self-start text-xs font-medium text-aimu-purple hover:text-aimu-purple/80"
             onClick={(e) => {
               e.stopPropagation();
-              setIsExpanded((expanded) => !expanded);
+              setIsExpanded((expanded) => {
+                const next = !expanded;
+                onDraftChange?.(chunk.id, { isExpanded: next });
+                return next;
+              });
             }}
           >
             {isExpanded ? '收起' : '展开'}

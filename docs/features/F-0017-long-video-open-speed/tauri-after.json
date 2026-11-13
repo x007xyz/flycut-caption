@@ -1,0 +1,56 @@
+{
+  "measuredAt": "2026-11-10T15:01:54.628Z",
+  "environment": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpuCount": 10,
+    "loadAverage": [
+      14.03173828125,
+      14.39013671875,
+      14.8642578125
+    ],
+    "port": 5173,
+    "theme": "light",
+    "media": "tests/media/external/coscup-BWgFrY91F_I.mp4 + tests/media/external/coscup-3UegVxMFyeo.mp4",
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)",
+    "hardwareConcurrency": 8,
+    "devicePixelRatio": 2
+  },
+  "data": {
+    "chunks": 1173,
+    "words": 15014,
+    "durationSeconds": 3599.107
+  },
+  "runs": [
+    {
+      "elapsedMs": 541,
+      "maxLongTaskMs": 0,
+      "renderedRows": 9,
+      "textareas": 18
+    },
+    {
+      "elapsedMs": 245,
+      "maxLongTaskMs": 0,
+      "renderedRows": 9,
+      "textareas": 18
+    },
+    {
+      "elapsedMs": 254,
+      "maxLongTaskMs": 0,
+      "renderedRows": 9,
+      "textareas": 18
+    },
+    {
+      "elapsedMs": 308,
+      "maxLongTaskMs": 0,
+      "renderedRows": 9,
+      "textareas": 18
+    },
+    {
+      "elapsedMs": 266,
+      "maxLongTaskMs": 0,
+      "renderedRows": 9,
+      "textareas": 18
+    }
+  ]
+}

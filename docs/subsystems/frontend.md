@@ -63,3 +63,11 @@ pnpm build
 字幕样式新增「逐字高亮」预设与 `wordHighlightMode` / `wordHighlightColor`。`src/subtitle/graphicsScene.ts` 只把 `hasWordTimestamps` 且逐句 `wordIds` 完整、文本可映射、时间在句内的词元写入场景；预览使用原始时间，导出使用 EDL 投影时间。任一词元无法证明可靠时该句不传 `words`，界面显示「使用整句高亮」并由共用图形层给整句换色；原文词时间不会套给译文。
 
 `shared/subtitle-graphics` 的 `frameKey` 现在把当前词索引计入缓存键，同一词内稳定，词边界、词间空隙和整句降级时更新。绘制仍只用一份 `drawFrame`：前端 Canvas 与 Host Skia 条带共用词色范围，F-0028 的字体、DPR、seeked 补画和失败处理保持不变。嵌入式 WKWebView 若在 React 订阅前已加载视频元数据，播放器会主动读取一次尺寸；若 `ResizeObserver` 没给初始值，则用容器 DOM 尺寸回退。
+
+## F-0017 实施
+
+`SubtitleList` 只挂载可视窗口和上下各 6 行缓冲。`virtualRows.ts` 负责可变行高的前缀偏移、二分范围、最小跟随偏移和高度变化锚点；`useVariableRows.ts` 用 `ResizeObserver` 测量实际行高，并在挂载行改变布局后继续校正远处的 `scrollToIndex` 目标。未测行按主/双语视图使用 104/128 px 估值。行外层定位包装和 `data-virtual-row-index` 不改变原行外观，历史 store 仍是字幕、删除、选择和撤销的唯一真源。
+
+未提交的输入和展开状态只保存在 `SubtitleList` 的 transient Map 中。行失焦、滚出挂载窗口、切换项目/视频或页面离开时提交到 history store；离屏重挂载读取最新 store 与仍存在的 draft。查找先由 chunk ID 映射到全量索引再滚入可视区；Tab 到挂载窗口边界时补挂相邻行并继续焦点。播放跟随只响应当前 chunk ID 变化，文本框聚焦或最近 3 秒有 wheel / touch / 拖动等手动滚动时抑制，高亮本身始终更新。
+
+可重复基准用 `pnpm bench:f0017`：读取两段 COSCUP 真实转写与素材，在临时 Host 中建立约 60 分钟项目，通过 5173 隔离端口和前台 Chrome 记录打开、切换、滚动、long task 与原语言切换。脚本输出 `test-results/f0017-bench/after.{json,md}`，不会修改源素材。
