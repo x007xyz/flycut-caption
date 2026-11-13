@@ -42,7 +42,7 @@ export interface HistoryActions {
   addLanguageTrack: (input: { name: string; languageCode: string | null }) => string;
   editLanguageTrack: (id: string, input: { name: string; languageCode: string | null }) => void;
   removeLanguageTrack: (id: string) => void;
-  applyLanguageTranslations: (input: { languageCode: string; name: string; updates: { id: string; text: string }[] }) => void;
+  applyLanguageTranslations: (input: { trackId?: string; languageCode: string; name: string; updates: { id: string; text: string }[] }) => void;
   keepLanguageTranslation: (id: string) => void;
   delete: (id: string) => void; deleteWord: (id: string) => void;
   undo: () => void; redo: () => void; clearHistory: () => void;
@@ -256,7 +256,8 @@ export const createHistoryStore = () => createStore<HistoryState & HistoryAction
     applyLanguageTranslations: input => {
       try {
         const s = get(); let languageTracks = [...s.languageTracks];
-        let track = findTrackForLanguage(languageTracks, input.languageCode);
+        let track = (input.trackId ? languageTracks.find(item => item.id === input.trackId) : undefined)
+          ?? findTrackForLanguage(languageTracks, input.languageCode);
         if (!track) {
           track = makeLanguageTrack({ name: input.name, languageCode: input.languageCode });
           languageTracks.push(track);

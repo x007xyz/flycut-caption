@@ -4,6 +4,7 @@ import { useAppStore } from '@/stores/appStore'
 import { useHistoryStore } from '@/stores/historyStore'
 import { useShowSuccess, useShowError, useShowWarning } from '@/stores/messageStore'
 import type { AIProgress, AISubtitleItem } from '@/types/ai'
+import type { AITranslateOptions } from '@/services/aiService'
 import { useClientRuntime } from '@/runtime/context';
 import { getLanguageName } from '@/constants/languages';
 
@@ -14,6 +15,7 @@ export interface UseAIReturn {
   selectedModelId: string | null
   /** AI correction returns model output for a review layer; it never writes formal subtitles. */
   requestCorrection: (items: AISubtitleItem[], configId: string, signal?: AbortSignal) => Promise<AISubtitleItem[]>
+  requestTranslation: (items: AISubtitleItem[], configId: string, targetLang: string, options?: AITranslateOptions) => Promise<AISubtitleItem[]>
   runTranslation: (targetLang: string) => Promise<void>
 }
 
@@ -46,6 +48,12 @@ export function useAI(): UseAIReturn {
 
   const requestCorrection = useCallback(
     (items: AISubtitleItem[], configId: string, signal?: AbortSignal) => aiService.correct(items, configId, signal),
+    [aiService],
+  )
+
+  const requestTranslation = useCallback(
+    (items: AISubtitleItem[], configId: string, targetLang: string, options?: AITranslateOptions) =>
+      aiService.translate(items, configId, targetLang, options),
     [aiService],
   )
 
@@ -120,6 +128,7 @@ export function useAI(): UseAIReturn {
     hasModels: aiModels.length > 0,
     selectedModelId: selectedAIModelId,
     requestCorrection,
+    requestTranslation,
     runTranslation,
   }
 }

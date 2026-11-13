@@ -102,7 +102,7 @@ approved_at: 2026-11-13
 
 - [x] 1. 在 `shared/text/translation.ts` 实现语义句合并、上下文分批、严格条数/ID/空译文校验与行字数/读速检测纯逻辑，并补充单元测试。
 - [x] 2. 扩展 `shared/protocol.ts`（`textInputSchema`）、`shared/text/OpenAICompatibleEngine.ts` 与 `server/plugins/text.ts`，支持语义句组与上下文翻译及严格校验。
-- [ ] 3. 扩展 `src/stores/appStore.ts`、`src/stores/historyStore.ts`、`src/services/aiService.ts`、`src/hooks/useAI.ts` 与 `src/services/translationPersistence.ts`，支持上下文翻译、选定条目定向更新与 Host 保存/不定态回查回滚。
+- [x] 3. 扩展 `src/stores/appStore.ts`、`src/stores/historyStore.ts`、`src/services/aiService.ts`、`src/hooks/useAI.ts` 与 `src/services/translationPersistence.ts`，支持上下文翻译、选定条目定向更新与 Host 保存/不定态回查回滚。
 - [ ] 4. 实现 `src/hooks/useBatchTranslation.ts`、`src/components/SubtitleEditor/TranslationPanel.tsx` 与 `src/locales/translation.ts`，接入 `SubtitleList.tsx`（含入口、空态、前置不足、批次进度、取消防串台、单批重试、人工修改保护、过期重翻、行超限标注与版本过期/冲突/失败处理）。
 - [ ] 5. 编写架构与集成测试 `tests/architecture/batched-translation-f0031.test.ts`（真实 Host 翻译持久化/重开/双客户端/60 分钟规模映射验证）及 `tests/e2e/features/F-0031.spec.ts`（覆盖 AC-1～AC-9 中英文 × 明暗主题），并生成截图与录屏证据。
 - [ ] 6. 完成全量静态检查、单测、架构测试、E2E 回归（含 `F-0017`、`F-0030` 兼容验证）与 `04-test-report.md` 报告整理。

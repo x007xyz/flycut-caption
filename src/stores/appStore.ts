@@ -14,6 +14,7 @@ import type { AISettingsSnapshot } from '../../shared/aiSettings'
 import { stashLegacyAISettings } from '@/services/aiMigration'
 import { hasWebGPU } from '@/utils/audioUtils'
 import { defaultSubtitleStylePair, type SubtitleStylePair } from '@/subtitle'
+import { DEFAULT_TRANSLATION_LIMITS, type TranslationLimits } from '../../shared/text/translation'
 
 /** Key of a model's saved options in `asrOptions`. */
 export const modelKey = (ref: ModelRef) => `${ref.providerId}/${ref.modelId}`
@@ -65,6 +66,7 @@ export interface AppState {
   aiSettingsRevision: number
   aiProgress: AIProgress | null
   aiTask: 'correction' | 'translation' | null
+  translationLimits: TranslationLimits
 
   // 智能剪切空白段设置
   smartCutSilenceThreshold: number // 秒，超过此时长的空白段将被标记裁剪
@@ -116,6 +118,7 @@ export interface AppActions {
   setAIProgress: (progress: AIProgress) => void
   clearAIProgress: () => void
   setAITask: (task: AppState['aiTask']) => void
+  setTranslationLimits: (limits: Partial<TranslationLimits>) => void
 
   // 智能剪切空白段设置
   setSmartCutSilenceThreshold: (threshold: number) => void
@@ -163,6 +166,7 @@ const initialState: AppState = {
   aiSettingsRevision: 0,
   aiProgress: null,
   aiTask: null,
+  translationLimits: DEFAULT_TRANSLATION_LIMITS,
 
   smartCutSilenceThreshold: 1.5,
   joinFadeMs: 5,
@@ -343,6 +347,21 @@ export const createAppStore = () => createStore<AppState & AppActions>()(
           aiTask,
         })),
 
+      setTranslationLimits: (limits) =>
+        set((state) => {
+          const current = state.translationLimits ?? DEFAULT_TRANSLATION_LIMITS
+          const maxCharsPerLine = limits.maxCharsPerLine === undefined
+            ? current.maxCharsPerLine
+            : Math.min(200, Math.max(5, Math.round(limits.maxCharsPerLine)))
+          const maxCps = limits.maxCps === undefined
+            ? current.maxCps
+            : Math.min(100, Math.max(1, Math.round(limits.maxCps)))
+          return {
+            ...state,
+            translationLimits: { maxCharsPerLine, maxCps },
+          }
+        }),
+
       setSmartCutSilenceThreshold: (threshold) =>
         set((state) => ({
           ...state,
@@ -391,6 +410,7 @@ export const createAppStore = () => createStore<AppState & AppActions>()(
         display: state.display,
         smartCutSilenceThreshold: state.smartCutSilenceThreshold,
         joinFadeMs: state.joinFadeMs,
+        translationLimits: state.translationLimits,
       }),
       version: 2,
       migrate: (persisted, version) => {
