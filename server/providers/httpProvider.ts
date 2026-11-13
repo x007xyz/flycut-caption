@@ -1,7 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { setTimeout } from 'node:timers/promises';
 import { z } from 'zod';
-import { modelInfoSchema, type ProviderKind } from '../../shared/providers';
+import { inferHotwordCapabilities, modelInfoSchema, type ModelInfo, type ProviderKind } from '../../shared/providers';
+import { formatHotwordsForOption } from '../../shared/terminology';
 import { MAX_TTS_AUDIO_BYTES } from '../../shared/tts/audio';
 import type { Provider, ProgressReporter } from '../services';
 
@@ -129,9 +130,18 @@ export function createHttpProvider(options: HttpProviderOptions): Provider {
   const headerJson = (value: unknown) => JSON.stringify(value).replace(/[\u007f-\uffff]/g, char => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`);
   const created = (data: unknown) => z.object({ id: z.string().min(1) }).parse(data).id;
 
+  let cachedModels: ModelInfo[] = [];
+
   return {
     id: options.id, name: options.name, kind: options.kind,
-    async models(signal) { await check(); return modelsSchema.parse(await call('/v1/models', {}, signal)).models; },
+    async models(signal) {
+      await check();
+      const parsed = modelsSchema.parse(await call('/v1/models', {}, signal)).models.map((m) =>
+        m.role === 'asr' ? { ...m, hotwords: m.hotwords ?? inferHotwordCapabilities(m) } : m,
+      );
+      cachedModels = parsed;
+      return parsed;
+    },
     async prepare(modelId, signal, report) {
       await check();
       report({ status: 'loading', purpose: 'download', data: `${options.name} 正在准备模型...` });
@@ -141,9 +151,22 @@ export function createHttpProvider(options: HttpProviderOptions): Provider {
     async transcribe(request, audioPath, signal, report) {
       await check();
       report({ status: 'loading', data: `上传音频到 ${options.name}...` });
-      const id = created(await call('/v1/asr/jobs', { method: 'POST', body: await readFile(audioPath), headers: {
-        'Content-Type': 'audio/wav', 'X-Flycut-Model': request.modelId, 'X-Flycut-Language': request.language,
-        'X-Flycut-Options': headerJson(request.options ?? {}) } }, signal));
+      const modelInfo = cachedModels.find((m) => m.id === request.modelId);
+      const caps = modelInfo ? inferHotwordCapabilities(modelInfo) : undefined;
+      const forwardedOptions = { ...(request.options ?? {}) };
+      if (request.hotwords?.length && modelInfo?.options?.hotword && forwardedOptions.hotword === undefined) {
+        forwardedOptions.hotword = formatHotwordsForOption(request.hotwords, caps);
+      }
+      const headers: Record<string, string> = {
+        'Content-Type': 'audio/wav',
+        'X-Flycut-Model': request.modelId,
+        'X-Flycut-Language': request.language,
+        'X-Flycut-Options': headerJson(forwardedOptions),
+      };
+      if (request.hotwords?.length && caps?.supported) {
+        headers['X-Flycut-Hotwords'] = headerJson(request.hotwords);
+      }
+      const id = created(await call('/v1/asr/jobs', { method: 'POST', body: await readFile(audioPath), headers }, signal));
       return await wait(id, signal, report, 'transcribe') as never;
     },
     async synthesize(request, signal, report) {

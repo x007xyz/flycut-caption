@@ -21,7 +21,8 @@ import {
   type ProjectSuggestResult,
   type ProjectTranscribeResult,
 } from '../../shared/projectOps';
-import { checkOptions, type ModelRef } from '../../shared/providers';
+import { checkAsrRequest, inferHotwordCapabilities, type ModelInfo, type ModelRef } from '../../shared/providers';
+import { selectActiveHotwords } from '../../shared/terminology';
 import {
   buildProjectExportSubtitleScene,
   resolveProjectExportStylePair,
@@ -134,7 +135,7 @@ export const projectOpsPlugin = {
       });
     }
 
-    async function checkAsrModelReady(ref: ModelRef, options?: Record<string, string | number | boolean>) {
+    async function checkAsrModelReady(ref: ModelRef, options?: Record<string, string | number | boolean>): Promise<ModelInfo> {
       let provider;
       try {
         provider = ctx.providers.get(ref.providerId);
@@ -155,10 +156,11 @@ export const projectOpsPlugin = {
         throw new HostRpcError('MODEL_NOT_READY', `模型不可用：${info.name}（${info.reason ?? '未知原因'}）`, { status: 'unavailable', model: ref });
       }
       try {
-        checkOptions(info, options);
+        checkAsrRequest(info, { ...ref, language: 'auto', options });
       } catch (error) {
         throw new HostRpcError('INVALID_ARGUMENT', error instanceof Error ? error.message : String(error));
       }
+      return info;
     }
 
     async function resolveVadModel(explicit?: ModelRef): Promise<ModelRef | undefined> {
@@ -199,7 +201,8 @@ export const projectOpsPlugin = {
     ctx.effect(() => ctx.rpc.register('projects.transcribe', projectTranscribeInputSchema, async input => {
       const { project, video } = await resolveActiveVideo(input.projectId, input.videoId);
       const mediaPath = await requireMediaFile(project.id, video);
-      await checkAsrModelReady(input.model, input.options);
+      const modelInfo = await checkAsrModelReady(input.model, input.options);
+      const hotwords = selectActiveHotwords(project.terminology ?? [], inferHotwordCapabilities(modelInfo));
       const ffmpeg = await resolveFfmpeg();
 
       return ctx.jobs.create(async (signal, report): Promise<ProjectTranscribeResult> => {
@@ -211,7 +214,13 @@ export const projectOpsPlugin = {
           signal.throwIfAborted();
           report({ status: 'running', purpose: 'transcribe', progress: 25, data: '语音识别中…' });
           const transcript = await ctx.providers.transcribe(
-            { providerId: input.model.providerId, modelId: input.model.modelId, language: input.language, options: input.options },
+            {
+              providerId: input.model.providerId,
+              modelId: input.model.modelId,
+              language: input.language,
+              options: input.options,
+              ...(hotwords.length ? { hotwords } : {}),
+            },
             wav,
             signal,
             report,

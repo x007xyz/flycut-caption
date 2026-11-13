@@ -13,6 +13,10 @@ import {
   type ProjectDetailResult, type ProjectFile, type ProjectMedia, type ProjectOpenResult, type ProjectPlayback, type ProjectVideo, type ProjectVideoSummary,
   type SaveResult, type SaveResultV2, type HostIdentity, RECOVERY_PROTOCOL_VERSION,
 } from '../../shared/projects';
+import {
+  dedupeProjectTerms, getTerminologyInputSchema, normalizeTermKey, saveTerminologyInputSchema,
+  type ProjectTermEntry, type SaveTerminologyResult, type TerminologySnapshot,
+} from '../../shared/terminology';
 import { fingerprintFile, ProjectStore } from '../projects/store';
 import { NewerFormatError } from '../projects/migrations';
 
@@ -486,6 +490,68 @@ export const projectsPlugin = { name: 'flycut-projects', inject: ['hostConfig', 
   // F-0004: stable Host identity for crash-recovery copies (ADR-0004).
   const identity = await readHostIdentity(ctx.hostConfig.home);
   ctx.effect(() => ctx.rpc.register('projects.identity', undefined, (): HostIdentity => ({ hostId: identity, recovery: RECOVERY_PROTOCOL_VERSION })));
+
+  // F-0019 / F-0032: shared project-level terminology & ASR hotwords.
+  const terminologyOps = new Map<string, SaveTerminologyResult>();
+  ctx.effect(() => ctx.rpc.register('projects.getTerminology', getTerminologyInputSchema, async ({ projectId }): Promise<TerminologySnapshot> => {
+    const project = await readActive(projectId);
+    return {
+      projectId: project.id,
+      revision: project.terminologyRevision ?? 0,
+      terminology: project.terminology ?? [],
+    };
+  }));
+  ctx.effect(() => ctx.rpc.register('projects.saveTerminology', saveTerminologyInputSchema, ({ projectId, terms, baseRevision, operationId }) =>
+    store.exclusive(projectId, async (): Promise<SaveTerminologyResult> => {
+      const opKey = operationId ? `${projectId}:${operationId}` : undefined;
+      if (opKey && terminologyOps.has(opKey)) {
+        return terminologyOps.get(opKey)!;
+      }
+      const project = await readActive(projectId);
+      const currentRevision = project.terminologyRevision ?? 0;
+      const currentTerms = project.terminology ?? [];
+      if (currentRevision !== baseRevision) {
+        return { status: 'conflict', revision: currentRevision, updatedAt: project.updatedAt, terminology: currentTerms };
+      }
+      const existingByKey = new Map<string, ProjectTermEntry>(currentTerms.map((t) => [normalizeTermKey(t.term), t]));
+      const translationsByKey = new Map<string, Record<string, string>>();
+      for (const [k, v] of existingByKey) {
+        if (v.translations) translationsByKey.set(k, v.translations);
+      }
+      const now = new Date().toISOString();
+      const nextTerms = dedupeProjectTerms(
+        terms.map((draft) => {
+          const key = normalizeTermKey(draft.term);
+          const prev = existingByKey.get(key);
+          return {
+            id: draft.id ?? prev?.id ?? randomUUID(),
+            term: draft.term,
+            asHotword: draft.asHotword ?? true,
+            ...(draft.weight !== undefined ? { weight: draft.weight } : {}),
+            ...(draft.translations ?? prev?.translations ? { translations: draft.translations ?? prev?.translations } : {}),
+            updatedAt: now,
+          };
+        }),
+        translationsByKey,
+      );
+      project.terminology = nextTerms;
+      project.terminologyRevision = currentRevision + 1;
+      project.revision += 1;
+      project.updatedAt = now;
+      await store.writeProject(project);
+      const saved: SaveTerminologyResult = {
+        status: 'saved',
+        revision: project.terminologyRevision,
+        projectRevision: project.revision,
+        updatedAt: now,
+        terminology: nextTerms,
+      };
+      if (opKey) {
+        terminologyOps.set(opKey, saved);
+        if (terminologyOps.size > 200) terminologyOps.delete(terminologyOps.keys().next().value!);
+      }
+      return saved;
+    })));
 
   ctx.effect(() => ctx.rpc.capability('projects'));
   ctx.effect(() => ctx.rpc.capability('projects.linkedMedia', linkedMedia));

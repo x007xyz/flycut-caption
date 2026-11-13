@@ -74,6 +74,7 @@ export const sherpaAsrPlugin = { name: 'flycut-asr-sherpa', inject: ['providers'
         return { id: model.id, name: model.name, role: 'asr', description: model.description, languages: languages(model),
           timestampLevel: model.timestamp.token_timestamp_verified ? 'word' : 'segment', size: sizeText(model.artifact.size_mb_estimate),
           recommended: model.recommended, offline: true, ...(model.recommendation ? { recommendation: model.recommendation } : {}), options,
+          hotwords: { supported: false },
           ...!binary ? { status: 'unavailable', reason: `找不到 funasr-asr 识别程序，请运行 pnpm build:funasr-sidecar（${sidecar}）` }
             : { status: await ctx.models.locate(model) ? 'ready' : 'download' } };
       }));

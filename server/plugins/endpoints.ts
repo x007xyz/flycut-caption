@@ -3,7 +3,8 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { endpointInputSchema, type EndpointInfo } from '../../shared/protocol';
-import type { ModelInfo } from '../../shared/providers';
+import { inferHotwordCapabilities, type ModelInfo } from '../../shared/providers';
+import { formatHotwordsForOption } from '../../shared/terminology';
 import { encodePcmWav, mergeASRApiTranscripts, normalizeASRApiResponse, transcriptionEndpoint } from '../../shared/asr/apiProtocol';
 import type { SubtitleTranscript } from '../../src/types/subtitle';
 import type { Provider } from '../services';
@@ -44,6 +45,7 @@ function openAiProvider(endpoint: Endpoint, apiKey: () => string | undefined): P
         : {
           id: model.id, name: model.id, role: 'asr', languages: ['auto'],
           timestampLevel: model.timestamps, status: 'ready',
+          hotwords: { supported: model.hotwords !== false, weights: false, format: 'prompt' },
         });
     },
   };
@@ -51,6 +53,7 @@ function openAiProvider(endpoint: Endpoint, apiKey: () => string | undefined): P
     provider.transcribe = async (request, audioPath, signal, report) => {
       const model = models.find(item => item.id === request.modelId && (item.role ?? 'asr') === 'asr');
       if (!model) throw new Error(`未配置识别模型 ${request.modelId}`);
+      const caps = inferHotwordCapabilities({ hotwords: { supported: model.hotwords !== false, weights: false, format: 'prompt' } });
       const samples = wavSamples(await readFile(audioPath));
       const parts: SubtitleTranscript[] = [];
       const key = apiKey();
@@ -60,6 +63,9 @@ function openAiProvider(endpoint: Endpoint, apiKey: () => string | undefined): P
         const form = new FormData(); form.append('file', encodePcmWav(audio), 'audio.wav');
         form.append('model', model.id); form.append('response_format', model.timestamps === 'none' ? 'json' : 'verbose_json');
         if (request.language !== 'auto') form.append('language', request.language);
+        if (request.hotwords?.length && caps.supported) {
+          form.append('prompt', formatHotwordsForOption(request.hotwords, caps));
+        }
         if (model.timestamps !== 'none') form.append('timestamp_granularities[]', 'segment');
         if (model.timestamps === 'word') form.append('timestamp_granularities[]', 'word');
         report({ status: 'running', progress: offset / samples.length * 100, data: `正在调用 ${endpoint.label}...` });

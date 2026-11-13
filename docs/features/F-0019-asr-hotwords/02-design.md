@@ -98,7 +98,7 @@ approved_at: 2026-11-13
 ## 实现清单
 
 - [x] 1. **共享术语实体与 ASR 热词能力契约**：新增 `shared/terminology.ts`，扩展 `shared/projects.ts`、`shared/providers.ts` 与 `shared/protocol.ts`，补充规范化、去重、校验与不支持模型拦截单元测试（AC-1、AC-2、AC-3）。
-- [ ] 2. **Host 术语存储、Provider 校验与转发通道**：在 `server/projects/store.ts`、`server/plugins/projects.ts` 与 `server/plugins/projectOps.ts` 实现 `projects.getTerminology` / `projects.saveTerminology`（含冲突、幂等、保留 `translations`）与按能力透传；更新 `server/plugins/providers.ts`、`server/plugins/asr.ts`、`server/providers/httpProvider.ts`、`server/plugins/endpoints.ts` 与 `docs/provider-http-protocol.md`；新增架构集成测试与开启/关闭热词的真实接口对比测试（AC-1–AC-4、AC-7、AC-8）。
+- [x] 2. **Host 术语存储、Provider 校验与转发通道**：在 `server/projects/store.ts`、`server/plugins/projects.ts` 与 `server/plugins/projectOps.ts` 实现 `projects.getTerminology` / `projects.saveTerminology`（含冲突、幂等、保留 `translations`）与按能力透传；更新 `server/plugins/providers.ts`、`server/plugins/asr.ts`、`server/providers/httpProvider.ts`、`server/plugins/endpoints.ts` 与 `docs/provider-http-protocol.md`；新增架构集成测试与开启/关闭热词的真实接口对比测试（AC-1–AC-4、AC-7、AC-8）。
 - [ ] 3. **客户端热词状态、防迟到/重开保持与按能力条件发送**：扩展 `src/runtime/connectionModel.ts`、`src/stores/projectStore.ts`、`src/services/projectService.ts`、`src/hooks/useASR.ts`、`src/components/AgentPanel.tsx` 与 `src/locales/{zh_CN,en_US,types}.ts`（AC-1–AC-8）。
 - [ ] 4. **热词管理弹窗与 ASR 设置面板入口**：新增 `src/components/Project/HotwordsDialog.tsx`，接入 `src/components/ProcessingPanel/ASRSettingsPanel.tsx` 与 `src/components/Project/ProjectDetail.tsx`，覆盖全部 AC 界面状态（AC-1–AC-3、AC-5–AC-8）。
 - [ ] 5. **E2E 回归、真实对比评测、Red check 与验收报告**：编写 `tests/e2e/features/F-0019.spec.ts`（中英文 × 明暗主题），运行 `PW_PORT=5301 pnpm e2e:evidence F-0019`、真实音频+真实热词对比测试（本地/HTTP/OpenAI 协议）、全量静态与单测回归，产出 `04-test-report.md`（AC-1–AC-9）。
