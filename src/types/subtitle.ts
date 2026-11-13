@@ -1,4 +1,5 @@
 // 字幕相关类型定义
+import type { SubtitleKeyword } from '../../shared/text/keywords';
 
 export interface SubtitleChunk {
   text: string;
@@ -16,6 +17,8 @@ export interface SubtitleChunk {
   sentenceId?: string;
   /** 句子级 chunk 包含的字词 id 列表（用于级联删除与字词展示） */
   wordIds?: string[];
+  /** F-0025: emphasized keyword character ranges in `text`. */
+  keywords?: SubtitleKeyword[];
 }
 
 export interface SubtitleTranscript {

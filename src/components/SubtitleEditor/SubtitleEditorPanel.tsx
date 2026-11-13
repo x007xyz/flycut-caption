@@ -19,6 +19,10 @@ import type { ProviderModels } from '../../../shared/providers';
 import { Scissors, Languages, AlertCircle } from 'lucide-react';
 import { useWordChunks, useHasWordTimestamps, useHistoryStore } from '@/stores/historyStore';
 import { canDeleteByWordAtRuntime } from '@/utils/wordLevelEdit';
+import { useKeywordRecommendation } from '@/hooks/useKeywordRecommendation';
+import { KeywordEmphasisPanel } from './KeywordEmphasisPanel';
+import { keywordCopy } from '@/locales/keywords';
+import { Tag } from 'lucide-react';
 
 export type SubtitleEditorView = 'processed' | 'original';
 
@@ -47,9 +51,10 @@ export function SubtitleEditorPanel({
   modelsError,
   onRefreshModels,
 }: SubtitleEditorPanelProps) {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const [view, setView] = useState<SubtitleEditorView>('processed');
   const find = useFindReplace();
+  const keywordReview = useKeywordRecommendation();
   const openFind = find.openFind;
   const wordChunks = useWordChunks();
   const updating = useHistoryStore(s => s.updatingCuts);
@@ -67,6 +72,14 @@ export function SubtitleEditorPanel({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [openFind, view]);
+
+  useEffect(() => {
+    const openKeywords = () => keywordReview.openPanel();
+    window.addEventListener('flycut:open-keyword-recommend', openKeywords);
+    return () => window.removeEventListener('flycut:open-keyword-recommend', openKeywords);
+  }, [keywordReview]);
+
+  const kwCopy = keywordCopy(language);
 
   return (
     <div className={cn('flex flex-col h-full', className)}>
@@ -102,8 +115,18 @@ export function SubtitleEditorPanel({
             {!originalModeAvailable && <AlertCircle className="w-3 h-3 text-amber-500" />}
           </button>
         </div>
+        <button
+          type="button"
+          data-testid="keyword-open"
+          onClick={keywordReview.openPanel}
+          className="ml-2 flex items-center gap-1 rounded px-2 py-1 text-xs text-aimu-text-secondary transition-colors hover:text-aimu-text-primary"
+        >
+          <Tag className="w-3 h-3" />
+          {kwCopy.panelEntry}
+        </button>
       </div>
 
+      <KeywordEmphasisPanel review={keywordReview} />
       <LanguageTrackBar />
       <CutHistoryPanel />
       <EditingSuggestionsPanel onSeek={time => videoPlayerRef?.current?.seekTo(time)} />

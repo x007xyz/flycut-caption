@@ -7,6 +7,7 @@ import { editingSchema } from './editing/edl';
 import { languageTrackSchema } from './languageTracks';
 import { modelRefSchema } from './providers';
 import { textRecordSchema } from './text/corrections';
+import { subtitleKeywordSchema } from './text/keywords';
 
 /** Bump together with a migration in `server/projects/migrations.ts` and a note in ADR-0001. */
 export const PROJECT_FORMAT_VERSION = 4;
@@ -20,6 +21,7 @@ const chunkSchema = z.looseObject({
   timestamp: z.tuple([z.number().finite(), z.number().finite()]),
   secondText: z.string().optional(),
   deleted: z.boolean().optional(),
+  keywords: z.array(subtitleKeywordSchema).optional(),
 });
 export type ProjectChunk = z.infer<typeof chunkSchema>;
 

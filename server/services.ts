@@ -1,4 +1,4 @@
-import type { JobSnapshot, PipelineInput, PipelineResult, ExportInput, AgentInput, TextInput, SemanticCutsInput } from '../shared/protocol';
+import type { JobSnapshot, PipelineInput, PipelineResult, ExportInput, AgentInput, TextInput, SemanticCutsInput, KeywordSuggestInput } from '../shared/protocol';
 import type { AsrRequest, ModelInfo, ModelRef, ProviderKind, ProviderModels, ProviderSummary, VoiceActivityResult } from '../shared/providers';
 import type { ASRProgress, SubtitleTranscript } from '../src/types/subtitle';
 import type { AISettingsImportInput, AISettingsMutationResult, AISettingsRemoveResult, AISettingsSaveInput,
@@ -102,6 +102,8 @@ export interface TextService {
   start(input: TextInput): JobSnapshot;
   /** F-0009: resolve the saved AI config on the Host and validate word-ID candidates. */
   suggestCuts(input: SemanticCutsInput): JobSnapshot;
+  /** F-0025: resolve the saved AI config on the Host and recommend grounded subtitle keywords. */
+  suggestKeywords(input: KeywordSuggestInput): JobSnapshot;
 }
 export interface AISettingsService {
   snapshot(): Promise<AISettingsSnapshot>;
