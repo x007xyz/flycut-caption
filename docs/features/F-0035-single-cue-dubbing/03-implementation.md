@@ -22,7 +22,8 @@ approved_at:
 |---|---|---|---|
 | 2026-11-13 | 清单 1：共享契约、状态评估与单元测试 | 1a50554 | pnpm tsc -b --noEmit ✅, pnpm check:host ✅, node --test tests/cue-dubbing.test.mjs ✅ |
 | 2026-11-13 | 清单 2：Host 配音插件、项目产物落盘、并发锁与架构测试 | 284d325 | pnpm check:host ✅, tsx --test tests/architecture/dubbing-f0035.test.ts ✅ (2/2) |
-| 2026-11-13 | 清单 3：前端 historyStore/ProjectService/recovery 与 DubbingService 同步 | pending | pnpm tsc -b --noEmit ✅, pnpm check:host ✅, tsx --test tests/architecture/dubbing-client-f0035.test.ts ✅ (2/2) |
+| 2026-11-13 | 清单 3：前端 historyStore/ProjectService/recovery 与 DubbingService 同步 | a1c52e7 | pnpm tsc -b --noEmit ✅, pnpm check:host ✅, tsx --test tests/architecture/dubbing-client-f0035.test.ts ✅ (2/2) |
+| 2026-11-13 | 清单 4：配音文案、useCueDubbing、SingleCueDubbingPanel 与字幕行入口 UI | pending | pnpm lint ✅, pnpm tsc -b --noEmit ✅, pnpm check:host ✅ |
 
 ## 自行决定的事项
 

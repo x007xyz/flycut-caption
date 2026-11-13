@@ -8,7 +8,7 @@ import { useAppStore } from '@/stores/appStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { isTimeInRange } from '@/utils/timeUtils';
 import { runSmartCutBlank } from '@/utils/smartCutBlank';
-import { FileText, Trash2, RotateCcw, Undo, Redo, Languages, Loader2, Mic, AlertCircle, Wand2, Scissors } from 'lucide-react';
+import { FileText, Trash2, RotateCcw, Undo, Redo, Languages, Loader2, Mic, AlertCircle, Wand2, Scissors, Volume2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { SubtitleItem, type SubtitleItemDraft } from './SubtitleItem';
 import { useVariableRows } from './useVariableRows';
@@ -26,8 +26,11 @@ import { COMMON_LANGUAGES } from '@/constants/languages';
 import { useAI } from '@/hooks/useAI';
 import { useCorrectionReview } from '@/hooks/useCorrectionReview';
 import { useBatchTranslation } from '@/hooks/useBatchTranslation';
+import { useCueDubbing } from '@/hooks/useCueDubbing';
 import { CorrectionReviewPanel } from './CorrectionReviewPanel';
 import { TranslationPanel } from './TranslationPanel';
+import { SingleCueDubbingPanel } from './SingleCueDubbingPanel';
+import { dubbingCopy } from '@/locales/dubbing';
 import type { FindReplaceActions, FindReplaceState } from '@/hooks/useFindReplace';
 import type { FindMatch } from '../../../shared/text/findReplace';
 import { languageTrackCopy } from '@/locales/languageTracks';
@@ -148,6 +151,7 @@ export function SubtitleList({
   const draftScope = `${projectId}:${videoId}`;
   const draftsRef = useRef(new Map<string, StoredSubtitleDraft>());
   const updateChunk = useHistoryStore(state => state.update);
+  const dubText = dubbingCopy(uiLanguage);
   const isPreviewing = review.preview && (review.phase === 'review' || review.phase === 'partial' || review.phase === 'applying');
   const virtual = useVariableRows({
     count: activeChunks.length,
@@ -218,6 +222,7 @@ export function SubtitleList({
     });
     if (outside.length) flushDrafts(outside);
   }, [flushDrafts, indexById, range.end, range.start]);
+  const dubbing = useCueDubbing({ modelGroups, modelsLoading, modelsError, onFlushDrafts: () => flushDrafts() });
 
   useEffect(() => {
     const flushBeforeLeavingList = (event: PointerEvent) => {
@@ -590,11 +595,28 @@ export function SubtitleList({
             )}
             <span>{translation.phase === 'running' ? t('components.workstation.translating') : t('components.workstation.translateStart')}</span>
           </button>
+
+          {/* 单条配音 */}
+          <button
+            data-testid="cue-dubbing-open"
+            onClick={dubbing.openPanel}
+            className={cn(
+              'flex items-center gap-1 px-2 py-0.5 text-xs rounded font-medium transition-colors',
+              dubbing.open
+                ? 'bg-aimu-purple text-white'
+                : 'bg-aimu-input text-aimu-text-secondary hover:text-aimu-text-primary',
+            )}
+            title={dubText.title}
+          >
+            <Volume2 className="w-3 h-3" />
+            <span>{dubText.dubButton}</span>
+          </button>
         </div>
       </div>
 
       <CorrectionReviewPanel review={review} />
       <TranslationPanel translation={translation} />
+      <SingleCueDubbingPanel dubbing={dubbing} onOpenSettings={onOpenSettings} />
 
       {/* Subtitle List (virtualized scroll window) */}
       <div
@@ -612,6 +634,8 @@ export function SubtitleList({
         <div ref={contentRef} className="relative w-full" style={{ height: virtual.layout.totalSize }}>
           {activeChunks.slice(range.start, range.end).map((chunk, offset) => {
             const index = range.start + offset;
+            const rowDub = dubbing.statusForChunk(chunk);
+            const rowDubKey = rowDub.artifact ? `${rowDub.artifact.trackId}:${rowDub.artifact.chunkId}` : null;
             return (
               <VirtualSubtitleRow
                 key={chunk.id}
@@ -635,6 +659,11 @@ export function SubtitleList({
                   onSuggestionChange={review.updateSuggestion}
                   onToggleSelection={handleToggleSelection}
                   onSeekTo={seekTo}
+                  dubbingArtifact={rowDub.artifact}
+                  dubbingStatus={rowDub.status}
+                  isDubbingPlaying={Boolean(rowDubKey && dubbing.playingCueKey === rowDubKey)}
+                  onOpenDubbing={dubbing.openForCue}
+                  onToggleDubbingPlay={artifact => void dubbing.togglePlayArtifact(artifact)}
                 />
               </VirtualSubtitleRow>
             );
