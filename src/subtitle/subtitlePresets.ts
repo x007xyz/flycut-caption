@@ -4,6 +4,7 @@ import { DEFAULT_BOTTOM_OFFSET_RATIO } from './subtitleStyle';
 export type AspectPreset = 'landscape' | 'portrait_9_16' | 'square_1_1';
 export type StylePresetId =
   | 'white-black'
+  | 'word-highlight'
   | 'none'
   | 'white-outline'
   | 'yellow-black'
@@ -75,6 +76,8 @@ const BASE_TEXT_PRESET: Partial<SubtitleStyle> = {
   textDecoration: 'none',
   borderOpacity: 1,
   colorOpacity: 1,
+  wordHighlightMode: 'none',
+  wordHighlightColor: '#FFE100',
 };
 
 /**
@@ -91,6 +94,19 @@ export const STYLE_PRESETS: Array<{
     id: 'white-black',
     label: '白字黑边',
     patch: { ...BASE_TEXT_PRESET, color: '#FFFFFF', borderColor: '#000000', borderWidth: 2 },
+    preview: { textColor: '#FFFFFF', borderColor: '#000000' },
+  },
+  {
+    id: 'word-highlight',
+    label: '逐字高亮',
+    patch: {
+      ...BASE_TEXT_PRESET,
+      color: '#FFFFFF',
+      borderColor: '#000000',
+      borderWidth: 2,
+      wordHighlightMode: 'word',
+      wordHighlightColor: '#FFE100',
+    },
     preview: { textColor: '#FFFFFF', borderColor: '#000000' },
   },
   {
@@ -299,6 +315,8 @@ const PRESET_MATCH_KEYS: Array<keyof SubtitleStyle> = [
   'fontWeight',
   'fontStyle',
   'textDecoration',
+  'wordHighlightMode',
+  'wordHighlightColor',
 ];
 
 function styleMatchesPreset(style: SubtitleStyle, presetId: StylePresetId): boolean {
@@ -307,6 +325,7 @@ function styleMatchesPreset(style: SubtitleStyle, presetId: StylePresetId): bool
   return PRESET_MATCH_KEYS.every((key) => {
     const expected = preset.patch[key];
     if (expected === undefined) return true;
+    if (key === 'wordHighlightColor' && style.wordHighlightMode !== 'word') return true;
     return style[key] === expected;
   });
 }

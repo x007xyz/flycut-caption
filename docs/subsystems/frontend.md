@@ -57,3 +57,9 @@ pnpm build
 字幕画面统一走 `shared/subtitle-graphics/`：`drawFrame`、`frameKey`、`layoutScene`、`subtitleBand` 只依赖 Canvas 2D，预览和 Host 共用。`src/subtitle/graphicsScene.ts` 把现有 `SubtitleStylePair` 和 chunks 适配成场景，预览用原始时间轴，导出用 EDL 投影后的时间轴。
 
 `SubtitleOverlay` 用 `requestVideoFrameCallback` 的 `mediaTime` 绘制，暂停拖动在 `seeked` 补画，同一字幕条按 `frameKey` 跳过重画；画布按显示尺寸 × DPR（上限 2）。字体改为 `FontFace` 加载 `public/fonts/subtitle/` 下的完整文件，状态分 loading / ready / error，失败显示「字幕渲染不可用」和重试，不静默用系统字体或 ASS。空字幕不绘制、不显示加载提示。本地 WebAV / ffmpeg.wasm 回退已移除；没有 Host 时导出入口显示 Host 不可用，不再在浏览器内合成视频。
+
+## F-0024 实施
+
+字幕样式新增「逐字高亮」预设与 `wordHighlightMode` / `wordHighlightColor`。`src/subtitle/graphicsScene.ts` 只把 `hasWordTimestamps` 且逐句 `wordIds` 完整、文本可映射、时间在句内的词元写入场景；预览使用原始时间，导出使用 EDL 投影时间。任一词元无法证明可靠时该句不传 `words`，界面显示「使用整句高亮」并由共用图形层给整句换色；原文词时间不会套给译文。
+
+`shared/subtitle-graphics` 的 `frameKey` 现在把当前词索引计入缓存键，同一词内稳定，词边界、词间空隙和整句降级时更新。绘制仍只用一份 `drawFrame`：前端 Canvas 与 Host Skia 条带共用词色范围，F-0028 的字体、DPR、seeked 补画和失败处理保持不变。嵌入式 WKWebView 若在 React 订阅前已加载视频元数据，播放器会主动读取一次尺寸；若 `ResizeObserver` 没给初始值，则用容器 DOM 尺寸回退。

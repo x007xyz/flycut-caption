@@ -45,7 +45,8 @@ export class HostExportEngine implements IVideoProcessingEngine {
     if (options.subtitleProcessing === 'hard' && chunks.length) {
       if (!options.subtitleStylePair) throw new Error('字幕样式缺失，无法渲染硬字幕');
       const duration = segments.filter(segment => segment.keep).reduce((total, segment) => total + segment.end - segment.start, 0);
-      subtitleScene = buildExportSubtitleScene({ chunks, keptSegments: segments, stylePair: options.subtitleStylePair,
+      subtitleScene = buildExportSubtitleScene({ chunks, wordChunks: options.subtitleWordChunks,
+        hasWordTimestamps: options.hasWordTimestamps, keptSegments: segments, stylePair: options.subtitleStylePair,
         displayMode: options.subtitleExportMode ?? 'Bilingual', videoWidth: options.videoWidth ?? 1920,
         videoHeight: options.videoHeight ?? 1080, fps: options.fps ?? 30, duration });
     }

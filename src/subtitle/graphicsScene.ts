@@ -3,12 +3,14 @@ import type { VideoSegment } from '@/types/video';
 import { projectFromKept } from '../../shared/editing/edl';
 import {
   emptySubtitleGraphicStyle,
+  mapCueWordRanges,
   resolveSubtitleFontFamily,
   stripSubtitleDisplayPunctuation,
   type SubtitleDisplayMode,
   type SubtitleGraphicCue,
   type SubtitleGraphicScene,
   type SubtitleGraphicStyle,
+  type SubtitleGraphicWord,
 } from '../../shared/subtitle-graphics';
 import { getMaxWidthRatio } from './subtitlePresets';
 import type { SubtitleStyle, SubtitleStylePair } from './subtitleStyle';
@@ -40,12 +42,16 @@ export function toGraphicStyle(style: SubtitleStyle): SubtitleGraphicStyle {
     backgroundOpacity: style.backgroundOpacity,
     backgroundRadius: style.backgroundRadius,
     backgroundPadding: style.backgroundPadding,
+    wordHighlightMode: style.wordHighlightMode ?? 'none',
+    wordHighlightColor: style.wordHighlightColor ?? '#FFE100',
     visible: style.visible,
   };
 }
 
 interface SceneInput {
   chunks: SubtitleChunk[];
+  wordChunks?: SubtitleChunk[];
+  hasWordTimestamps?: boolean;
   stylePair: SubtitleStylePair;
   displayMode?: SubtitleDisplayMode;
   videoWidth: number;
@@ -80,21 +86,48 @@ function sceneShell(input: SceneInput, cues: SubtitleGraphicCue[]): SubtitleGrap
   };
 }
 
-function toCue(chunk: SubtitleChunk, offset = 0): SubtitleGraphicCue | undefined {
+function wordsForChunk(
+  chunk: SubtitleChunk,
+  wordChunks: SubtitleChunk[] | undefined,
+  hasWordTimestamps: boolean,
+): SubtitleGraphicWord[] | undefined {
+  if (!hasWordTimestamps || !wordChunks?.length || !chunk.wordIds?.length) return undefined;
+  const byId = new Map(wordChunks.map(word => [word.id, word]));
+  const words: SubtitleGraphicWord[] = [];
+  for (const id of chunk.wordIds) {
+    const word = byId.get(id);
+    if (!word || word.deleted || word.sentenceId !== chunk.id
+      || !Number.isFinite(word.timestamp[0]) || !Number.isFinite(word.timestamp[1])
+      || word.timestamp[1] <= word.timestamp[0]
+      || word.timestamp[0] < chunk.timestamp[0] - 0.02 || word.timestamp[1] > chunk.timestamp[1] + 0.02) {
+      return undefined;
+    }
+    words.push({ text: word.text, start: word.timestamp[0], end: word.timestamp[1] });
+  }
+  return words.length ? words : undefined;
+}
+
+function toCue(
+  chunk: SubtitleChunk,
+  words?: SubtitleGraphicWord[],
+  offset = 0,
+): SubtitleGraphicCue | undefined {
   const start = Math.max(0, chunk.timestamp[0] + offset);
   const end = Math.max(0, chunk.timestamp[1] + offset);
   if (!(end > start)) return undefined;
   const text = displayText(chunk.text);
   const secondText = displayText(chunk.secondText);
   if (!text && !secondText) return undefined;
-  return { id: chunk.id, start, end, text, secondText: secondText || undefined };
+  const cue: SubtitleGraphicCue = { id: chunk.id, start, end, text, secondText: secondText || undefined, words };
+  if (words && !mapCueWordRanges(cue)) delete cue.words;
+  return cue;
 }
 
 /** 预览场景：时间轴仍是原始媒体时间，删除的片段由播放器可见性控制。 */
 export function buildPreviewSubtitleScene(input: SceneInput): SubtitleGraphicScene {
   const cues = input.chunks
     .filter((chunk) => !chunk.deleted && !chunk.isBlankSpacer)
-    .map((chunk) => toCue(chunk))
+    .map((chunk) => toCue(chunk, wordsForChunk(chunk, input.wordChunks, input.hasWordTimestamps === true)))
     .filter((cue): cue is SubtitleGraphicCue => Boolean(cue))
     .sort((a, b) => a.start - b.start);
   return sceneShell(input, cues);
@@ -111,9 +144,53 @@ export function buildExportSubtitleScene(input: SceneInput & { keptSegments: Vid
     }))
     .filter((chunk) => chunk.text.trim() || chunk.secondText?.trim());
   const projected = projectFromKept(active, input.keptSegments);
+  const projectedWords = projectFromKept(active.flatMap(chunk => {
+    const words = wordsForChunk(chunk, input.wordChunks, input.hasWordTimestamps === true);
+    return words?.map((word, index) => ({
+      id: `${chunk.id}:word:${index}`,
+      text: word.text,
+      timestamp: [word.start, word.end] as [number, number],
+      sentenceId: chunk.id,
+    })) ?? [];
+  }), input.keptSegments);
+  const wordsBySentence = new Map<string, SubtitleGraphicWord[]>();
+  for (const word of projectedWords) {
+    const suffix = word.id.slice(word.id.lastIndexOf('@') + 1);
+    const key = `${word.sentenceId ?? ''}\0${suffix}`;
+    const list = wordsBySentence.get(key) ?? [];
+    list.push({ text: word.text, start: word.timestamp[0], end: word.timestamp[1] });
+    wordsBySentence.set(key, list);
+  }
   const cues = projected
-    .map((chunk) => toCue({ ...chunk, id: chunk.id }))
+    .map((chunk) => {
+      const marker = chunk.id.lastIndexOf('@');
+      const sourceId = marker < 0 ? chunk.id : chunk.id.slice(0, marker);
+      const suffix = marker < 0 ? '' : chunk.id.slice(marker + 1);
+      return toCue({ ...chunk, id: chunk.id }, wordsBySentence.get(`${sourceId}\0${suffix}`));
+    })
     .filter((cue): cue is SubtitleGraphicCue => Boolean(cue))
     .sort((a, b) => a.start - b.start);
   return sceneShell(input, cues);
+}
+
+/** All visible main-language cues need a verified word map; one bad sentence keeps the fallback notice visible. */
+export function hasReliableWordHighlight(
+  chunks: SubtitleChunk[],
+  wordChunks: SubtitleChunk[] | undefined,
+  hasWordTimestamps: boolean,
+): boolean {
+  if (!hasWordTimestamps || !wordChunks?.length) return false;
+  const visible = chunks.filter(chunk => !chunk.deleted && !chunk.isBlankSpacer && displayText(chunk.text));
+  return visible.length > 0 && visible.every((chunk) => {
+    const words = wordsForChunk(chunk, wordChunks, true);
+    if (!words) return false;
+    const cue: SubtitleGraphicCue = {
+      id: chunk.id,
+      start: chunk.timestamp[0],
+      end: chunk.timestamp[1],
+      text: displayText(chunk.text),
+      words,
+    };
+    return mapCueWordRanges(cue) !== undefined;
+  });
 }

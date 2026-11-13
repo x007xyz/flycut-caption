@@ -25,6 +25,9 @@ export const subtitleGraphicStyleSchema = z.object({
   backgroundOpacity: z.number().min(0).max(1),
   backgroundRadius: z.number().min(0).max(200),
   backgroundPadding: z.number().min(0).max(200),
+  /** Optional for F-0028 scenes created before word highlighting. */
+  wordHighlightMode: z.enum(['none', 'word']).optional(),
+  wordHighlightColor: z.string().min(1).max(64).optional(),
   visible: z.boolean(),
 });
 export type SubtitleGraphicStyle = z.infer<typeof subtitleGraphicStyleSchema>;
@@ -34,7 +37,7 @@ export const subtitleGraphicWordSchema = z.object({
   start: z.number().min(0),
   end: z.number().min(0),
   keyword: z.boolean().optional(),
-});
+}).refine(word => word.end > word.start, 'Subtitle word must have a positive duration');
 export type SubtitleGraphicWord = z.infer<typeof subtitleGraphicWordSchema>;
 
 export const subtitleGraphicCueSchema = z.object({
@@ -44,7 +47,19 @@ export const subtitleGraphicCueSchema = z.object({
   text: z.string().max(20000),
   secondText: z.string().max(20000).optional(),
   words: z.array(subtitleGraphicWordSchema).max(5000).optional(),
-}).refine(cue => cue.end > cue.start, 'Subtitle cue must have a positive duration');
+}).refine(cue => cue.end > cue.start, 'Subtitle cue must have a positive duration')
+  .superRefine((cue, ctx) => {
+    let previousEnd = -Infinity;
+    for (const [index, word] of (cue.words ?? []).entries()) {
+      if (word.start < cue.start - 0.02 || word.end > cue.end + 0.02) {
+        ctx.addIssue({ code: 'custom', message: 'Subtitle word time is outside its cue', path: [index] });
+      }
+      if (word.start < previousEnd - 0.02) {
+        ctx.addIssue({ code: 'custom', message: 'Subtitle words must be in time order without overlap', path: [index] });
+      }
+      previousEnd = word.end;
+    }
+  });
 
 export const subtitleGraphicSceneSchema = z.object({
   version: z.literal(1),
@@ -89,6 +104,8 @@ export function emptySubtitleGraphicStyle(fontId = DEFAULT_SUBTITLE_FONT_ID): Su
     backgroundOpacity: 0,
     backgroundRadius: 4,
     backgroundPadding: 8,
+    wordHighlightMode: 'none',
+    wordHighlightColor: '#FFE100',
     visible: true,
   };
 }

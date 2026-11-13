@@ -73,7 +73,7 @@ export const EnhancedVideoPlayer = forwardRef<EnhancedVideoPlayerRef, EnhancedVi
   }, [formalEdl, pending, pendingSuggestions, audition, historyPreview]);
 
   // 获取视频容器尺寸
-  const containerSize = useSize(videoContainerRef);
+  const observedContainerSize = useSize(videoContainerRef);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [localCurrentTime, setLocalCurrentTime] = useState(0);
@@ -91,6 +91,14 @@ export const EnhancedVideoPlayer = forwardRef<EnhancedVideoPlayerRef, EnhancedVi
 
   // 视频尺寸状态
   const [videoDimensions, setVideoDimensions] = useState({ width: 0, height: 0 });
+  // Some embedded WKWebView/headless sessions do not deliver ResizeObserver initial entries.
+  const containerSize = useMemo(() => {
+    if (observedContainerSize?.width && observedContainerSize.height) return observedContainerSize;
+    const element = videoContainerRef.current;
+    if (!element || !videoDimensions.width) return observedContainerSize;
+    const rect = element.getBoundingClientRect();
+    return { width: rect.width, height: rect.height };
+  }, [observedContainerSize, videoDimensions.width]);
 
   // 计算视频在容器中的实际显示尺寸（考虑 object-contain）
   const actualVideoDisplaySize = useMemo(() => {
@@ -357,6 +365,8 @@ export const EnhancedVideoPlayer = forwardRef<EnhancedVideoPlayerRef, EnhancedVi
     video.addEventListener('timeupdate', handleTimeUpdate);
     video.addEventListener('play', handlePlay);
     video.addEventListener('pause', handlePause);
+    // WKWebView can finish metadata loading before React attaches its listener; read the ready element once.
+    if (video.readyState >= 1 && videoDimensions.width === 0) handleLoadedMetadata();
 
     return () => {
       video.removeEventListener('loadedmetadata', handleLoadedMetadata);
@@ -364,7 +374,7 @@ export const EnhancedVideoPlayer = forwardRef<EnhancedVideoPlayerRef, EnhancedVi
       video.removeEventListener('play', handlePlay);
       video.removeEventListener('pause', handlePause);
     };
-  }, [handleTimeUpdate, onPlay, onPause, onVideoDimensionsChange]);
+  }, [handleTimeUpdate, onPlay, onPause, onVideoDimensionsChange, videoDimensions.width]);
 
   // 键盘快捷键
   useEffect(() => {

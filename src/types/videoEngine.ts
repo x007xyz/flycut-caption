@@ -31,6 +31,9 @@ export interface VideoProcessingOptions {
   outputPath?: string;
   /** 字幕烧录/嵌入用的时间轴（无裁剪时可与 segments 分离） */
   subtitleChunks?: SubtitleChunk[];
+  /** Verified word timestamps for the subtitle scene; stale or invalid entries fall back per cue. */
+  subtitleWordChunks?: SubtitleChunk[];
+  hasWordTimestamps?: boolean;
 }
 
 // 引擎能力检测结果

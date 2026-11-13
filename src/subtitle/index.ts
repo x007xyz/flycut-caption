@@ -40,7 +40,7 @@ export {
 export { renderSubtitleFrame } from './subtitleRenderer';
 export type { SubtitleRenderContent, SubtitleRenderFrame, SubtitleDisplayMode } from './subtitleRenderer';
 
-export { toGraphicStyle, buildPreviewSubtitleScene, buildExportSubtitleScene } from './graphicsScene';
+export { toGraphicStyle, buildPreviewSubtitleScene, buildExportSubtitleScene, hasReliableWordHighlight } from './graphicsScene';
 
 export {
   ASPECT_PRESETS,

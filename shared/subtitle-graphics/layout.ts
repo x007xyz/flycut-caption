@@ -1,5 +1,5 @@
 import { prepareWithSegments, layoutWithLines, measureNaturalWidth } from '@chenglou/pretext';
-import type { SubtitleGraphicCue, SubtitleGraphicScene, SubtitleGraphicStyle } from './scene';
+import type { SubtitleGraphicCue, SubtitleGraphicScene, SubtitleGraphicStyle, SubtitleGraphicWord } from './scene';
 import { applyCjkBreakHints, fixCjkLineStarts, stripSubtitleDisplayPunctuation } from './text';
 
 export const BLOCK_GAP_RATIO = 0.15;
@@ -14,6 +14,9 @@ export interface LayoutLine {
   text: string;
   width: number;
   items: LayoutItem[];
+  /** Character range in the punctuation-stripped cue text. */
+  charStart?: number;
+  charEnd?: number;
 }
 
 export interface LayoutBlock {
@@ -37,6 +40,14 @@ export interface CueLayout {
   /** 整条字幕最上方，视频坐标 */
   top: number;
   height: number;
+  /** Present only when word text and real timestamps can be mapped without guessing. */
+  wordRanges?: LayoutWordRange[];
+}
+
+export interface LayoutWordRange extends SubtitleGraphicWord {
+  index: number;
+  charStart: number;
+  charEnd: number;
 }
 
 export function resolveVideoFontSize(style: SubtitleGraphicStyle, videoHeight: number): number {
@@ -137,6 +148,68 @@ function layoutBlock(
   return { style, fontSize, lineHeight, lines, height: lines.length * lineHeight };
 }
 
+const compactText = (value: string) => value.replace(/\s+/gu, '');
+const wordRangeCache = new WeakMap<SubtitleGraphicCue, LayoutWordRange[] | null>();
+
+/** Map real word chunks to visible character ranges. Any ambiguity rejects all word highlighting for the cue. */
+export function mapCueWordRanges(cue: SubtitleGraphicCue): LayoutWordRange[] | undefined {
+  if (!cue.words?.length) return undefined;
+  if (wordRangeCache.has(cue)) return wordRangeCache.get(cue) ?? undefined;
+  const displayText = stripSubtitleDisplayPunctuation(cue.text);
+  const tokens: string[] = [];
+  const ranges: LayoutWordRange[] = [];
+  let cursor = 0;
+  let previousEnd = -Infinity;
+  for (const [index, word] of cue.words.entries()) {
+    if (!Number.isFinite(word.start) || !Number.isFinite(word.end)
+      || word.end <= word.start || word.start < cue.start - 0.02 || word.end > cue.end + 0.02
+      || word.start < previousEnd - 0.02) {
+      wordRangeCache.set(cue, null);
+      return undefined;
+    }
+    previousEnd = word.end;
+    const token = stripSubtitleDisplayPunctuation(word.text).trim();
+    tokens.push(token);
+    if (!token) continue;
+    const charStart = displayText.indexOf(token, cursor);
+    if (charStart < 0) {
+      wordRangeCache.set(cue, null);
+      return undefined;
+    }
+    const charEnd = charStart + token.length;
+    ranges.push({ ...word, index, charStart, charEnd });
+    cursor = charEnd;
+  }
+  if (!ranges.length || compactText(displayText) !== compactText(tokens.join(''))) {
+    wordRangeCache.set(cue, null);
+    return undefined;
+  }
+  wordRangeCache.set(cue, ranges);
+  return ranges;
+}
+
+function assignLineRanges(lines: LayoutLine[], cueText: string): boolean {
+  const source = stripSubtitleDisplayPunctuation(cueText);
+  let cursor = 0;
+  for (const line of lines) {
+    const charStart = source.indexOf(line.text, cursor);
+    if (charStart < 0) return false;
+    line.charStart = charStart;
+    line.charEnd = charStart + line.text.length;
+    cursor = line.charEnd;
+  }
+  return true;
+}
+
+export function findActiveWordRange(ranges: LayoutWordRange[] | undefined, t: number): LayoutWordRange | undefined {
+  if (!ranges?.length) return undefined;
+  for (const range of ranges) {
+    if (t < range.start) return undefined;
+    if (t < range.end) return range;
+  }
+  return undefined;
+}
+
 export function layoutCue(
   ctx: CanvasRenderingContext2D,
   scene: SubtitleGraphicScene,
@@ -145,6 +218,8 @@ export function layoutCue(
   const showPrimary = scene.displayMode !== 'Second';
   const showSecondary = scene.displayMode !== 'Main' && Boolean(cue.secondText?.trim());
   const primary = showPrimary ? layoutBlock(ctx, cue.text, scene.primary, scene) : undefined;
+  let wordRanges = mapCueWordRanges(cue);
+  if (wordRanges && primary && !assignLineRanges(primary.lines, cue.text)) wordRanges = undefined;
   const secondary = showSecondary && scene.secondary
     ? layoutBlock(ctx, cue.secondText, scene.secondary, scene)
     : undefined;
@@ -167,6 +242,7 @@ export function layoutCue(
     bottom,
     top,
     height: Math.max(0, bottom - top),
+    wordRanges,
   };
 }
 

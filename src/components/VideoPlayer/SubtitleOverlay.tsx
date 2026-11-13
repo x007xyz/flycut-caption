@@ -1,7 +1,7 @@
 // 字幕覆盖层组件 - 共用 Canvas 2D 图形层
 import { useState, useRef, useCallback, useEffect, useMemo, type RefObject } from 'react';
 import { cn } from '@/lib/utils';
-import { useChunks } from '@/stores/historyStore';
+import { useChunks, useHasWordTimestamps, useWordChunks } from '@/stores/historyStore';
 import type { SubtitleStyle, SubtitleDisplayMode } from '@/subtitle';
 import {
   buildPreviewSubtitleScene,
@@ -49,6 +49,8 @@ export function SubtitleOverlay({
   className,
 }: SubtitleOverlayProps) {
   const chunks = useChunks();
+  const wordChunks = useWordChunks();
+  const hasWordTimestamps = useHasWordTimestamps();
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const lastKeyRef = useRef('');
@@ -84,12 +86,14 @@ export function SubtitleOverlay({
 
   const scene = useMemo(() => buildPreviewSubtitleScene({
     chunks: chunks ?? [],
+    wordChunks,
+    hasWordTimestamps,
     stylePair: { primary: primaryStyle, secondary: secondaryStyle ?? primaryStyle },
     displayMode,
     videoWidth,
     videoHeight,
     duration: duration ?? 0,
-  }), [chunks, primaryStyle, secondaryStyle, displayMode, videoWidth, videoHeight, duration]);
+  }), [chunks, wordChunks, hasWordTimestamps, primaryStyle, secondaryStyle, displayMode, videoWidth, videoHeight, duration]);
 
   const currentSubtitle = useMemo(() => findCue(scene.cues, currentTime), [scene, currentTime]);
 

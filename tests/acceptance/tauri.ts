@@ -8,6 +8,7 @@ import { remote } from 'webdriverio';
 import { media } from './fixture';
 import { bundleInfo, launchApp, waitFor } from './mac-app';
 import { subtitlePersistence } from './subtitle-persistence';
+import { wordHighlightAcceptance } from './word-highlight';
 
 const bundle = process.argv[2];
 assert.ok(bundle, 'Usage: pnpm acceptance:tauri /absolute/path/to/FlyCut Acceptance.app');
@@ -41,8 +42,10 @@ try {
       logLevel: 'error', capabilities: { browserName: 'wry' } });
     try {
       const api = await app.ready();
-      await subtitlePersistence(browser, api, source);
-      console.log('PASS F-0058/AC-2: independent macOS Tauri bundle and WebDriver session');
+      const runExistingAcceptance = process.env.FLYCUT_ACCEPTANCE_ONLY !== 'f0024';
+      if (runExistingAcceptance) await subtitlePersistence(browser, api, source);
+      await wordHighlightAcceptance(browser, api, dir, 'tauri');
+      if (runExistingAcceptance) console.log('PASS F-0058/AC-2: independent macOS Tauri bundle and WebDriver session');
     } catch (error) {
       await browser.saveScreenshot(join(output, 'failure.png')).catch(() => undefined);
       throw error;
