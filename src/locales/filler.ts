@@ -50,6 +50,11 @@ const en = {
   confidenceHigh: 'High confidence',
   confidenceMedium: 'Medium confidence',
   confidenceLow: 'Low confidence',
+  hostPendingTitle: 'Pending Host suggestions · {count}',
+  hostPendingHint: 'Formal subtitles, EDL, and exports remain unchanged until you confirm.',
+  hostPendingStale: 'This video was edited after these suggestions were created. Review carefully before applying.',
+  hostPendingLoad: 'Load for review',
+  hostPendingDismiss: 'Dismiss',
 };
 const zh: typeof en = {
   entry: '去口癖', finding: '正在查找口癖…', cancel: '取消', retry: '重试',
@@ -103,5 +108,10 @@ const zh: typeof en = {
   confidenceHigh: '高可信',
   confidenceMedium: '中可信',
   confidenceLow: '低可信',
+  hostPendingTitle: '来自 Host 的待审剪辑建议 · {count} 处',
+  hostPendingHint: '未确认前不会修改正式字幕、EDL 或导出。',
+  hostPendingStale: '视频在生成建议后已有新修改，请审阅后再决定是否应用。',
+  hostPendingLoad: '载入审阅',
+  hostPendingDismiss: '忽略',
 };
 export const fillerCopy = (language: string) => language.startsWith('zh') ? zh : en;

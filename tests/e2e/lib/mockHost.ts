@@ -14,6 +14,7 @@ export interface MockHost {
   /** 每个方法被调用时收到的参数，按调用顺序 */
   calls: { method: string; payload: Record<string, unknown> }[];
   set(method: string, handler: Handler): void;
+  emit(name: string, payload: unknown): void;
   /** 模拟 Host 重启 / 网络断开：关闭当前事件流，客户端应进入重连。 */
   disconnect(): Promise<void>;
 }
@@ -35,6 +36,8 @@ const defaults: MockHandlers = {
   'endpoints.list': () => [],
   'projects.list': () => [],
   'projects.identity': () => ({ hostId: E2E_HOST_ID, recovery: 1 }),
+  'confirmations.list': () => [],
+  'projects.suggestions.list': () => [],
   'aiSettings.list': () => ({ hostId: E2E_HOST_ID, revision: 0, selectedId: null, configs: [] }),
   'tts.getSettings': () => ({ hostId: E2E_HOST_ID, revision: 0, selectedModel: null, voiceId: null, language: 'auto', speed: 1, options: {}, lastAudition: null }),
 };
@@ -49,7 +52,13 @@ export async function mockHost(page: Page, handlers: MockHandlers = {}, options:
   const table: MockHandlers = { ...defaults, ...handlers };
   const sockets = new Set<WebSocketRoute>();
   const uploads = new Map<string, Record<string, unknown>>();
+  let seq = 0;
   const host: MockHost = { calls: [], set: (method, handler) => { table[method] = handler; },
+    emit: (name, payload) => {
+      seq += 1;
+      const frame = JSON.stringify({ type: 'event', generation: 'e2e', seq, name, payload });
+      for (const socket of sockets) { try { socket.send(frame); } catch { /* ignore */ } }
+    },
     disconnect: async () => { await Promise.all([...sockets].map(socket => socket.close({ code: 1011, reason: 'test disconnect' }).catch(() => undefined))); } };
   const csrf = options.csrf ?? E2E_CSRF;
   const sessionConnection = { url: MOCK_HOST, auth: 'session', csrf };
