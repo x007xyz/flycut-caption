@@ -1,9 +1,9 @@
 ---
 id: F-0043
 stage: 04-test-report
-status: review
-approved_by:
-approved_at:
+status: approved
+approved_by: zhangxiang.chen
+approved_at: 2026-11-13
 ---
 
 # F-0043 剪辑建议的Agent工具：测试与验收
