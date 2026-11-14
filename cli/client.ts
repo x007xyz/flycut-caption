@@ -218,7 +218,8 @@ export class HostCliClient {
     }
     if (!envelope.result.ok) {
       const err = envelope.result.error;
-      const code = (err.code || 'RPC_ERROR') as HostErrorCode;
+      const rawCode = err.code || 'RPC_ERROR';
+      const code = (rawCode === 'ENOENT' ? 'NOT_FOUND' : rawCode) as HostErrorCode;
       const message = this.redact(err.message);
       throw new CliHostError(code, message, {
         next: nextHintForError(code, message),
