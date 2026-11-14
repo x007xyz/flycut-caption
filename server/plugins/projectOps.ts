@@ -8,7 +8,7 @@ import { createEdl, exportSegments, migrateLegacy, validateEdl, type Cue, type E
 import { analyzeFillers, inspectFillerGate, type FillerSentence, type FillerWord } from '../../shared/editing/fillerRules';
 import { buildSemanticWindowPlan, createSemanticBase, mergeSemanticSuggestions } from '../../shared/editing/semanticFillers';
 import { DEFAULT_SILENCE_PARAMS, generateSilenceCandidates, validateSilenceParams } from '../../shared/editing/silence';
-import { suggestionSummary, validateSuggestionBatch, type CutSuggestion, type SuggestionBatch, type SuggestionSource } from '../../shared/editing/suggestions';
+import { populateSuggestionTexts, suggestionSummary, validateSuggestionBatch, type CutSuggestion, type SuggestionBatch, type SuggestionSource } from '../../shared/editing/suggestions';
 import { HostRpcError } from '../../shared/errors';
 import {
   projectExportInputSchema,
@@ -17,6 +17,7 @@ import {
   projectSuggestionsListInputSchema,
   projectTranscribeInputSchema,
   type PendingProjectSuggestion,
+  type ProjectSuggestInput,
   type ProjectExportResult,
   type ProjectSuggestResult,
   type ProjectTranscribeResult,
@@ -129,8 +130,9 @@ export const projectOpsPlugin = {
       await store.exclusive(record.projectId, async () => {
         const list = await readPendingSuggestions(record.projectId, record.videoId);
         if (record.operationId && list.some(item => item.operationId === record.operationId)) return;
-        list.unshift(record);
-        await writeJsonAtomic(suggestionsFile(record.projectId, record.videoId), list.slice(0, 20));
+        const deduped = list.filter((item) => !(item.baseRevision === record.baseRevision && item.batch.kind === record.batch.kind && item.batch.origin === record.batch.origin));
+        deduped.unshift(record);
+        await writeJsonAtomic(suggestionsFile(record.projectId, record.videoId), deduped.slice(0, 20));
       });
     }
 
@@ -253,9 +255,15 @@ export const projectOpsPlugin = {
       }, { operationId: input.operationId });
     }));
 
-    // 2. Project-level pending edit suggestions (never touches formal edits.json / EDL)
-    ctx.effect(() => ctx.rpc.register('projects.suggestEdits', projectSuggestInputSchema, async input => {
+    async function prepareSuggestEdits(rawInput: ProjectSuggestInput) {
+      const input = projectSuggestInputSchema.parse(rawInput);
       const { project, video } = await resolveActiveVideo(input.projectId, input.videoId);
+      if (input.expectedRevision !== undefined && video.revision !== input.expectedRevision) {
+        throw new HostRpcError('VERSION_CONFLICT', '内容已更新，请重新检查', {
+          expectedRevision: input.expectedRevision,
+          actualRevision: video.revision,
+        });
+      }
       const transcript = await store.readTranscript(project.id, video.id);
       if (!transcript) throw new HostRpcError('INVALID_ARGUMENT', `视频「${video.name}」尚未转写，请先运行转写`);
 
@@ -274,9 +282,41 @@ export const projectOpsPlugin = {
         if (issues.length) throw new HostRpcError('INVALID_ARGUMENT', `静音参数无效：${issues.join('; ')}`);
       }
       const ffmpeg = await resolveFfmpeg();
+      return { input, project, video, transcript, wantFillers, wantSilence, wantSemantic, resolvedConfigId, vadModel, silenceParams, ffmpeg };
+    }
 
-      return ctx.jobs.create(async (signal, report): Promise<ProjectSuggestResult> => {
-        const latest = await resolveActiveVideo(project.id, video.id);
+    async function executeSuggestEdits(
+      rawInput: ProjectSuggestInput,
+      signal: AbortSignal,
+      report: (progress: import('../../src/types/subtitle').ASRProgress) => void,
+    ): Promise<ProjectSuggestResult> {
+      const { input, project, video, transcript, wantFillers, wantSilence, wantSemantic, resolvedConfigId, vadModel, silenceParams, ffmpeg } = await prepareSuggestEdits(rawInput);
+      const existingPending = await readPendingSuggestions(project.id, video.id);
+      if (input.operationId) {
+        const existing = existingPending.find((item) => item.operationId === input.operationId);
+        if (existing) {
+          const summary = suggestionSummary(existing.batch);
+          return {
+            suggestionId: existing.id,
+            projectId: existing.projectId,
+            videoId: existing.videoId,
+            baseRevision: existing.baseRevision,
+            status: 'pending',
+            total: summary.total,
+            selected: summary.selected,
+            durationSeconds: summary.durationSeconds,
+            batch: existing.batch,
+          };
+        }
+      }
+
+      const latest = await resolveActiveVideo(project.id, video.id);
+      if (input.expectedRevision !== undefined && latest.video.revision !== input.expectedRevision) {
+        throw new HostRpcError('VERSION_CONFLICT', '内容已更新，请重新检查', {
+          expectedRevision: input.expectedRevision,
+          actualRevision: latest.video.revision,
+        });
+      }
         const edits = await store.readEdits(project.id, video.id);
         const formalChunks = (edits?.chunks ?? transcript.chunks) as unknown as FillerSentence[];
         const deletedWords = new Set(edits?.deletedWordIds ?? []);
@@ -291,6 +331,8 @@ export const projectOpsPlugin = {
         const ruleItems: CutSuggestion[] = [];
         const silenceItems: CutSuggestion[] = [];
         let semanticCount = 0;
+        const warnings: string[] = [];
+        let sentenceLevelOnly = false;
 
         if (wantFillers) {
           report({ status: 'running', progress: 20, data: '分析口癖候选…' });
@@ -325,6 +367,10 @@ export const projectOpsPlugin = {
 
         if (wantSilence) {
           report({ status: 'running', progress: 45, data: '分析长静音候选…' });
+          if (transcript.hasWordTimestamps !== true) {
+            sentenceLevelOnly = true;
+            warnings.push('缺少可靠字词时间戳，仅提供句级/语音段边界静音建议，未生成字词精剪时间');
+          }
           if (vadModel) {
             const mediaPath = await requireMediaFile(project.id, latest.video);
             const dir = await mkdtemp(join(tmpdir(), 'flycut-cli-vad-'));
@@ -340,6 +386,9 @@ export const projectOpsPlugin = {
                 hasReliableWordTimestamps: transcript.hasWordTimestamps === true,
                 params: silenceParams,
               });
+              for (const w of vadResult.warnings) {
+                if (!warnings.includes(w)) warnings.push(w);
+              }
               for (const c of vadResult.candidates) {
                 silenceItems.push({
                   id: c.id,
@@ -421,6 +470,7 @@ export const projectOpsPlugin = {
           seenIds.add(item.id);
           return true;
         });
+        items = populateSuggestionTexts(items, formalChunks, formalWords);
         const kind: SuggestionBatch['kind'] = input.kind === 'silence' && !ruleItems.length && !semanticCount ? 'silence' : 'filler';
         const sources = new Set<SuggestionSource>(items.flatMap(item => item.sources ?? [item.source ?? 'rule']));
         const origin: SuggestionBatch['origin'] = sources.has('semantic') && (sources.has('rule') || sources.has('silence'))
@@ -433,13 +483,21 @@ export const projectOpsPlugin = {
           origin,
           items,
         });
+        signal.throwIfAborted();
+        const afterCheck = await resolveActiveVideo(project.id, video.id);
+        if (input.expectedRevision !== undefined && afterCheck.video.revision !== input.expectedRevision) {
+          throw new HostRpcError('VERSION_CONFLICT', '内容已更新，请重新检查', {
+            expectedRevision: input.expectedRevision,
+            actualRevision: afterCheck.video.revision,
+          });
+        }
         const suggestionId = randomUUID();
         const record: PendingProjectSuggestion = {
           id: suggestionId,
           ...(input.operationId ? { operationId: input.operationId } : {}),
           projectId: project.id,
           videoId: video.id,
-          baseRevision: latest.video.revision,
+          baseRevision: afterCheck.video.revision,
           createdAt: new Date().toISOString(),
           status: 'pending',
           batch,
@@ -451,14 +509,23 @@ export const projectOpsPlugin = {
           suggestionId,
           projectId: project.id,
           videoId: video.id,
-          baseRevision: latest.video.revision,
+          baseRevision: afterCheck.video.revision,
           status: 'pending',
           total: summary.total,
           selected: summary.selected,
           durationSeconds: summary.durationSeconds,
+          ...(warnings.length ? { warnings } : {}),
+          ...(sentenceLevelOnly ? { sentenceLevelOnly: true } : {}),
           batch,
         };
-      }, { operationId: input.operationId });
+    }
+
+    ctx.provide('projectOps', { suggestEdits: executeSuggestEdits });
+
+    // 2. Project-level pending edit suggestions (never touches formal edits.json / EDL)
+    ctx.effect(() => ctx.rpc.register('projects.suggestEdits', projectSuggestInputSchema, async input => {
+      await prepareSuggestEdits(input);
+      return ctx.jobs.create((signal, report) => executeSuggestEdits(input, signal, report), { operationId: input.operationId });
     }));
 
     ctx.effect(() => ctx.rpc.register('projects.suggestions.list', projectSuggestionsListInputSchema, async input => {
