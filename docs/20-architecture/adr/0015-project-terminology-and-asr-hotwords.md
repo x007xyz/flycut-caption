@@ -1,8 +1,8 @@
 ---
 id: ADR-0015
-status: proposed     # proposed → accepted → superseded / deprecated
+status: accepted
 date: 2026-11-13
-deciders:
+deciders: zhangxiang.chen
 feature: F-0019
 superseded_by:
 ---
