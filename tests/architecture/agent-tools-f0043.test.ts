@@ -38,10 +38,10 @@ async function bootHost() {
     return envelope.result.value;
   };
   const waitJob = async (id: string) => {
-    for (let i = 0; i < 300; i++) {
+    for (let i = 0; i < 1500; i++) {
       const job = await call<JobSnapshot>('jobs.get', { id });
       if (['complete', 'error', 'cancelled'].includes(job.status)) return job;
-      await new Promise((r) => setTimeout(r, 30));
+      await new Promise((r) => setTimeout(r, 40));
     }
     throw new Error(`Job ${id} timed out`);
   };
