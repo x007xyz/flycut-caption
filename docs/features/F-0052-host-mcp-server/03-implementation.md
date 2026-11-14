@@ -22,7 +22,8 @@ approved_at:
 |---|---|---|---|
 | 2026-11-13 | 1. 零依赖 MCP stdio JSON-RPC 2.0 传输与生命周期层（`mcp/protocol.ts`） | 106e531 | `pnpm lint` ✅，`pnpm check:host` ✅ |
 | 2026-11-13 | 2. 复用 `cli/client.ts` 的 MCP 工具注册与业务逻辑（`mcp/tools.ts`、`mcp/server.ts`、`scripts/build-mcp.mjs`） | c4d078c | `pnpm build:mcp` ✅，`pnpm lint` ✅，`pnpm check:host` ✅，`pnpm tsc -b --noEmit` ✅，`node dist-mcp/flycut-mcp.mjs --help` ✅ |
-| 2026-11-13 | 3. 强化前端客户端确认中心与 Host 待审建议入口 | 本提交 | `pnpm lint` ✅，`pnpm tsc -b --noEmit` ✅，`pnpm check:host` ✅，`F-0051.spec.ts` ✅ |
+| 2026-11-13 | 3. 强化前端客户端确认中心与 Host 待审建议入口 | e985c83 | `pnpm lint` ✅，`pnpm tsc -b --noEmit` ✅，`pnpm check:host` ✅，`F-0051.spec.ts` ✅ |
+| 2026-11-13 | 4. 编写安装配置说明与市场上架准备材料（`docs/mcp-server.md`、`server.json`、`mcp/marketplace/README.md`、`skills/flycut-caption/SKILL.md`） | 本提交 | `JSON.parse(server.json)` ✅ |
 
 ## 自行决定的事项
 
