@@ -1,9 +1,9 @@
 ---
 id: F-0026
 stage: 04-test-report
-status: review
-approved_by:
-approved_at:
+status: approved
+approved_by: zhangxiang.chen
+approved_at: 2026-11-13
 ---
 
 # F-0026 平台风格字幕预设与安全区：测试与验收
