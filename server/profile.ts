@@ -53,7 +53,7 @@ export const BUILTINS: Record<string, Builtin> = {
   projects: { plugin: projectsPlugin, provides: ['projectStore'] },
   dubbing: { plugin: dubbingPlugin, provides: [] },
   confirmations: { plugin: confirmationsPlugin, provides: [] },
-  'project-ops': { plugin: projectOpsPlugin, provides: [] },
+  'project-ops': { plugin: projectOpsPlugin, provides: ['projectOps'] },
   jianying: { plugin: jianyingPlugin, provides: [] },
   langgraph: { plugin: langgraphPlugin, provides: ['workflows', 'agents', 'agentTools'] },
   'agent-tools': { plugin: builtinAgentToolsPlugin, provides: [] },

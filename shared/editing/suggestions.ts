@@ -7,6 +7,8 @@ export interface CutSuggestion {
   id: string;
   start: number;
   end: number;
+  /** F-0043: original transcript text covered by [start, end], unified across UI and Agent tools. */
+  text?: string;
   reason: string;
   category?: string;
   label?: string;
@@ -74,6 +76,35 @@ export function suggestionSummary(batch: SuggestionBatch | null | undefined): Su
     selected: batch.items.filter(item => item.selected).length,
     durationSeconds: view?.ranges.reduce((sum, range) => sum + range.end - range.start, 0) ?? 0,
   };
+}
+
+export function extractSuggestionText(
+  range: { start: number; end: number },
+  chunks: Array<{ text: string; timestamp: [number, number]; deleted?: boolean; isBlankSpacer?: boolean }>,
+  wordChunks: Array<{ text: string; timestamp: [number, number]; deleted?: boolean }> = [],
+): string {
+  const overlappingWords = wordChunks.filter(
+    (w) => !w.deleted && w.timestamp[1] > range.start + 0.005 && w.timestamp[0] < range.end - 0.005,
+  );
+  if (overlappingWords.length > 0) {
+    return overlappingWords.map((w) => w.text.trim()).filter(Boolean).join(' ').trim();
+  }
+  const overlappingChunks = chunks.filter(
+    (c) => !c.deleted && !c.isBlankSpacer && c.timestamp[1] > range.start + 0.005 && c.timestamp[0] < range.end - 0.005,
+  );
+  return overlappingChunks.map((c) => c.text.trim()).filter(Boolean).join(' ').trim();
+}
+
+export function populateSuggestionTexts(
+  items: CutSuggestion[],
+  chunks: Array<{ text: string; timestamp: [number, number]; deleted?: boolean; isBlankSpacer?: boolean }>,
+  wordChunks: Array<{ text: string; timestamp: [number, number]; deleted?: boolean }> = [],
+): CutSuggestion[] {
+  return items.map((item) => {
+    if (item.text !== undefined) return item;
+    const text = extractSuggestionText(item, chunks, wordChunks);
+    return text ? { ...item, text } : item;
+  });
 }
 
 export function validateSuggestionBatch(batch: SuggestionBatch): SuggestionBatch {

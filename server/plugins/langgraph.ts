@@ -5,6 +5,8 @@ import { ChatOpenAI } from '@langchain/openai';
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { agentInputSchema, pipelineInputSchema, type AgentInput, type AgentMessage, type PipelineInput, type PipelineResult } from '../../shared/protocol';
+import { silenceAnalyzeParamsSchema } from '../../shared/projectOps';
+import { modelRefSchema } from '../../shared/providers';
 import type { SubtitleTranscript } from '../../src/types/subtitle';
 import type { AgentTool, AgentToolRegistry, ProgressReporter, WorkflowService } from '../services';
 
@@ -127,7 +129,7 @@ export const langgraphPlugin = { name: 'flycut-langgraph', inject: ['providers',
 } };
 
 /** Built-in Agent tools. Other plugins add tools the same way through `ctx.agentTools.register`. */
-export const builtinAgentToolsPlugin = { name: 'flycut-agent-tools', inject: ['agentTools', 'providers', 'workflows', 'editorPlugins'], apply(ctx: Context) {
+export const builtinAgentToolsPlugin = { name: 'flycut-agent-tools', inject: ['agentTools', 'providers', 'workflows', 'editorPlugins', 'projectOps'], apply(ctx: Context) {
   ctx.effect(() => ctx.agentTools.register({ name: 'list_asr_providers', description: 'List available ASR Providers.', schema: z.object({}),
     async invoke() { return JSON.stringify(ctx.providers.list()); } }));
   ctx.effect(() => ctx.agentTools.register({ name: 'list_edit_analyzers', description: 'List registered edit analyzers usable as workflow steps.', schema: z.object({}),
@@ -145,4 +147,36 @@ export const builtinAgentToolsPlugin = { name: 'flycut-agent-tools', inject: ['a
       const result = await ctx.workflows.run({ asr: input.asr, steps }, signal, report);
       return JSON.stringify(result);
     } }));
+  ctx.effect(() => ctx.agentTools.register({
+    name: 'suggest_silence_cuts',
+    description: 'Analyze a project video with VAD (or pause threshold) to generate pending silence-cut suggestions for user review. Never modifies formal EDL or exports.',
+    schema: z.strictObject({
+      projectId: z.uuid(),
+      videoId: z.uuid().optional(),
+      expectedRevision: z.number().int().min(0).optional(),
+      silenceMethod: z.enum(['auto', 'vad', 'gap']).default('vad'),
+      vadModel: modelRefSchema.optional(),
+      silenceParams: silenceAnalyzeParamsSchema.optional(),
+      gapThresholdSeconds: z.number().finite().min(0.2).max(10).optional(),
+      operationId: z.uuid().optional(),
+    }),
+    async invoke(args, { signal, report }) {
+      const result = await ctx.projectOps.suggestEdits({ ...args, kind: 'silence' }, signal, report);
+      return JSON.stringify(result);
+    },
+  }));
+  ctx.effect(() => ctx.agentTools.register({
+    name: 'suggest_filler_cuts',
+    description: 'Analyze a project video with rule-based filler detection to generate pending filler-cut suggestions for user review. Never modifies formal EDL or exports.',
+    schema: z.strictObject({
+      projectId: z.uuid(),
+      videoId: z.uuid().optional(),
+      expectedRevision: z.number().int().min(0).optional(),
+      operationId: z.uuid().optional(),
+    }),
+    async invoke(args, { signal, report }) {
+      const result = await ctx.projectOps.suggestEdits({ ...args, kind: 'fillers' }, signal, report);
+      return JSON.stringify(result);
+    },
+  }));
 } };

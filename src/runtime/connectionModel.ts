@@ -155,6 +155,7 @@ export const READ_ONLY_RPC_METHODS = new Set<string>([
   'projects.thumbnail',
   'projects.backupPreview',
   'projects.getTerminology',
+  'projects.suggestions.list',
   'providers.list',
   'providers.models',
   'tts.getSettings',

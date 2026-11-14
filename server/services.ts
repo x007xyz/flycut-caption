@@ -1,4 +1,5 @@
 import type { JobSnapshot, PipelineInput, PipelineResult, ExportInput, AgentInput, TextInput, SemanticCutsInput, KeywordSuggestInput } from '../shared/protocol';
+import type { ProjectSuggestInput, ProjectSuggestResult } from '../shared/projectOps';
 import type { ExportResult } from '../shared/protocol';
 import type { AsrRequest, ModelInfo, ModelRef, ProviderKind, ProviderModels, ProviderSummary, TtsAudioFormat, TtsRequest, VoiceActivityResult } from '../shared/providers';
 import type { ValidatedTtsAudio } from '../shared/tts/audio';
@@ -128,6 +129,9 @@ export interface EditorPluginRegistry {
   has(id: string): boolean;
   list(): EditorPlugin['manifest'][];
 }
+export interface ProjectOpsService {
+  suggestEdits(input: ProjectSuggestInput, signal: AbortSignal, report: ProgressReporter): Promise<ProjectSuggestResult>;
+}
 export interface TextService {
   start(input: TextInput): JobSnapshot;
   /** F-0009: resolve the saved AI config on the Host and validate word-ID candidates. */
@@ -160,6 +164,7 @@ declare module '@deepseek-ai/cordis' {
     text: TextService;
     aiSettings: AISettingsService;
     projectStore: ProjectStore;
+    projectOps: ProjectOpsService;
   }
   interface Events {
     /**

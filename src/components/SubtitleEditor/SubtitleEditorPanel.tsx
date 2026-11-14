@@ -9,6 +9,7 @@ import { OriginalEditor } from './OriginalEditor';
 import { FindReplaceBar } from './FindReplaceBar';
 import { EditingSuggestionsPanel } from './EditingSuggestionsPanel';
 import { SilenceCutPanel } from './SilenceCutPanel';
+import { AgentSuggestionsBar } from './AgentSuggestionsBar';
 import { LanguageTrackBar } from './LanguageTrackBar';
 import { useFindReplace } from '@/hooks/useFindReplace';
 import { useTranslation } from '@/contexts/LocaleProvider';
@@ -129,6 +130,7 @@ export function SubtitleEditorPanel({
       <KeywordEmphasisPanel review={keywordReview} />
       <LanguageTrackBar />
       <CutHistoryPanel />
+      <AgentSuggestionsBar />
       <EditingSuggestionsPanel onSeek={time => videoPlayerRef?.current?.seekTo(time)} />
       <SilenceCutPanel onSeek={time => videoPlayerRef?.current?.seekTo(time)} />
       <FindReplaceBar find={find} />
