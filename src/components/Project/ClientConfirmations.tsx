@@ -27,6 +27,7 @@ export function ClientConfirmations({ compact = false, variant = 'sidebar' }: Cl
   const [failedAction, setFailedAction] = useState<{ id: string; decision: 'approve' | 'reject' } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const listEpochRef = useRef(0);
 
   const kindLabel = useCallback((kind: ConfirmationKind | string) => {
     switch (kind) {
@@ -40,13 +41,16 @@ export function ClientConfirmations({ compact = false, variant = 'sidebar' }: Cl
 
   const refresh = useCallback(async () => {
     if (!ctx.connection.isReady()) return;
+    const epoch = ++listEpochRef.current;
     setLoading(true);
     setError(null);
     setFailedAction(null);
     try {
       const list = await ctx.connection.call('confirmations.list', { status: 'pending' });
+      if (epoch !== listEpochRef.current) return;
       setItems(Array.isArray(list) ? list.filter(item => item.status === 'pending') : []);
     } catch (caught) {
+      if (epoch !== listEpochRef.current) return;
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
       setLoading(false);
@@ -62,6 +66,7 @@ export function ClientConfirmations({ compact = false, variant = 'sidebar' }: Cl
       wasReady = ready;
     });
     const offEvent = ctx.connection.on('confirmation/updated', ({ confirmation }) => {
+      listEpochRef.current += 1;
       setItems(prev => {
         const rest = prev.filter(item => item.id !== confirmation.id);
         return confirmation.status === 'pending' ? [confirmation, ...rest] : rest;

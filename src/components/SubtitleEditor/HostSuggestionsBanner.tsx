@@ -14,6 +14,7 @@ export function HostSuggestionsBanner() {
   const current = useProjectStore(state => state.current);
   const edl = useHistoryStore(state => state.edl);
   const pendingBatch = useHistoryStore(state => state.pendingSuggestions);
+  const updatingCuts = useHistoryStore(state => state.updatingCuts);
   const proposeSuggestions = useHistoryStore(state => state.proposeSuggestions);
   const cancelPending = useHistoryStore(state => state.cancelPending);
   const { language } = useTranslation();
@@ -65,11 +66,13 @@ export function HostSuggestionsBanner() {
 
   useEffect(() => {
     const isHostBatch = !!pendingBatch?.hostSuggestionId;
-    if (hadHostBatchRef.current && !isHostBatch) {
+    if (hadHostBatchRef.current && !isHostBatch && !updatingCuts) {
       void refresh();
     }
-    hadHostBatchRef.current = isHostBatch;
-  }, [pendingBatch, refresh]);
+    if (isHostBatch || !updatingCuts) {
+      hadHostBatchRef.current = isHostBatch;
+    }
+  }, [pendingBatch, updatingCuts, refresh]);
 
   const latest = suggestions[0];
   if (!current || !latest) return null;

@@ -38,7 +38,6 @@ export async function applyPendingWithPersistence(
     history.setState({ ...before, cutError: null, updatingCuts: false });
     return { ok: false, error: 'apply-failed', rolledBack: true };
   }
-  history.setState({ updatingCuts: false });
   if (saved && hostSuggestionId && owner) {
     await ctx.connection.call('projects.suggestions.dismiss', {
       projectId: owner.projectId,
@@ -46,5 +45,6 @@ export async function applyPendingWithPersistence(
       suggestionId: hostSuggestionId,
     }).catch(() => undefined);
   }
+  history.setState({ updatingCuts: false });
   return { ok: saved, error: saved ? undefined : 'apply-failed', rolledBack: false };
 }
