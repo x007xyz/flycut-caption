@@ -68,3 +68,22 @@ export {
   type ExportStyleConfig,
   type ExportStylePair,
 } from './projectExport';
+
+export {
+  PLATFORM_PRESET_REFERENCE_DATE,
+  PLATFORM_PRESETS,
+  PLATFORM_PRESET_IDS,
+  isPlatformPresetId,
+  getPlatformPreset,
+  clampSafeZoneInsets,
+  resolveSafeZoneInsets,
+  isBottomInSafeZoneOcclusion,
+  getFontLanguageCoverage,
+  hasUncoveredCjkSubtitles,
+  type PlatformPresetId,
+  type PlatformAspectPreset,
+  type SafeZoneInsets,
+  type PlatformVerificationInfo,
+  type PlatformPresetStylePatch,
+  type PlatformPresetDefinition,
+} from './platformPresets';

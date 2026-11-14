@@ -6,6 +6,7 @@ import {
   resolveFontFamily,
 } from '@/config/subtitleFonts';
 import type { AspectPreset } from './subtitlePresets';
+import type { PlatformPresetId, SafeZoneInsets } from '../../shared/subtitle-graphics';
 
 /** 默认字号占视频高度比例（4.5%，1080p 约 49px） */
 export const DEFAULT_FONT_SIZE_RATIO = 0.045;
@@ -56,6 +57,12 @@ export interface SubtitleStyle {
   keywordScale: number;
   keywordBackgroundColor: string;
   keywordBackgroundOpacity: number;
+
+  /** F-0026: active platform style preset & preview-only safe-zone guide state (omitted from export scene). */
+  platformPresetId?: PlatformPresetId;
+  safeZoneVisible?: boolean;
+  safeZonePlatformId?: PlatformPresetId;
+  safeZoneInsets?: SafeZoneInsets;
 }
 
 /**
