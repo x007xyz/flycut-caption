@@ -29,6 +29,10 @@ import type { ProjectFile, ProjectListItem, ProjectOpenResult, SaveResult, proje
   saveEditsSchema, duplicateSchema, relinkSchema, thumbnailSchema,
   createEmptySchema, projectRefSchema, renameSchema, emptyTrashSchema, addVideoSchema, removeVideoSchema, saveVideoEditsSchema, saveProjectStyleSchema, createFromSnapshotSchema,
   ProjectDetailResult, TrashItem, SaveResultV2, HostIdentity } from './projects';
+import type {
+  backupDiscardStagingInputSchema, backupExportInputSchema, backupImportInputSchema,
+  backupInspectInputSchema, backupPreviewInputSchema, BackupPreviewResult,
+} from './backup';
 
 export const PROTOCOL_VERSION = 2;
 export const rpcRequestSchema = z.object({ type: z.literal('client-request'), rpcId: z.string().min(1),
@@ -202,6 +206,12 @@ export interface RpcMethods {
   'projects.createFromSnapshot': { input: z.input<typeof createFromSnapshotSchema>; output: { projectId: string; videoId: string } };
   /** F-0004: the Host's stable identity for crash-recovery copies. */
   'projects.identity': { input: void; output: HostIdentity };
+  /** F-0023: project backup export & import. */
+  'projects.backupPreview': { input: z.input<typeof backupPreviewInputSchema>; output: BackupPreviewResult };
+  'projects.backupExport': { input: z.input<typeof backupExportInputSchema>; output: JobSnapshot };
+  'projects.backupInspect': { input: z.input<typeof backupInspectInputSchema>; output: JobSnapshot };
+  'projects.backupImport': { input: z.input<typeof backupImportInputSchema>; output: JobSnapshot };
+  'projects.backupDiscardStaging': { input: z.input<typeof backupDiscardStagingInputSchema>; output: { ok: true } };
   /** F-0051: Host-side project orchestration (shared by CLI and MCP). */
   'projects.transcribe': { input: z.input<typeof projectTranscribeInputSchema>; output: JobSnapshot };
   'projects.suggestEdits': { input: z.input<typeof projectSuggestInputSchema>; output: JobSnapshot };

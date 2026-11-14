@@ -13,8 +13,17 @@ import {
   type ProjectDetailResult, type ProjectFile, type ProjectMedia, type ProjectOpenResult, type ProjectPlayback, type ProjectVideo, type ProjectVideoSummary,
   type SaveResult, type SaveResultV2, type HostIdentity, RECOVERY_PROTOCOL_VERSION,
 } from '../../shared/projects';
+import {
+  backupDiscardStagingInputSchema, backupExportInputSchema, backupImportInputSchema,
+  backupInspectInputSchema, backupPreviewInputSchema, backupShellStageSchema,
+} from '../../shared/backup';
+import {
+  cleanupExpiredBackupStaging, computeBackupPreview, discardBackupStaging, exportProjectBackup,
+  importProjectBackup, inspectBackupStaging, saveBackupStagingFromFile, saveBackupStagingFromStream,
+} from '../projects/backup';
 import { fingerprintFile, ProjectStore } from '../projects/store';
 import { NewerFormatError } from '../projects/migrations';
+import { readFileSync } from 'node:fs';
 
 export interface ProjectsConfig {
   /**
@@ -112,13 +121,22 @@ export function parseFfmpegDuration(stderr: string): number | undefined {
  * Project storage (F-0002, ADR-0001): the only reader and writer of `<home>/projects`.
  * Frontend, CLI and MCP clients all go through these RPC methods.
  */
-export const projectsPlugin = { name: 'flycut-projects', inject: ['hostConfig', 'rpc', 'assets'], async apply(ctx: Context, config: ProjectsConfig = {}) {
+export const projectsPlugin = { name: 'flycut-projects', inject: ['hostConfig', 'rpc', 'assets', 'jobs'], async apply(ctx: Context, config: ProjectsConfig = {}) {
   const linkedMedia = config.linkedMedia !== false;
   const retentionMs = (config.trashRetentionHours ?? 30 * 24) * 3600_000;
   const store = new ProjectStore(ctx.hostConfig.home);
   await store.init();
   await store.finishPurges();
+  await cleanupExpiredBackupStaging(ctx.hostConfig.home);
   ctx.provide('projectStore', store);
+  const appVersion = (() => {
+    try {
+      const pkg = JSON.parse(readFileSync(join(ctx.hostConfig.resourceRoot, 'package.json'), 'utf8')) as { version?: unknown };
+      return typeof pkg.version === 'string' && pkg.version ? pkg.version : '2.0.2';
+    } catch {
+      return '2.0.2';
+    }
+  })();
   /** Files the shell registered during this Host's lifetime, by `mediaRef`. Paths never reach RPC. */
   const registered = new Map<string, Registered>();
 
@@ -486,6 +504,80 @@ export const projectsPlugin = { name: 'flycut-projects', inject: ['hostConfig', 
   // F-0004: stable Host identity for crash-recovery copies (ADR-0004).
   const identity = await readHostIdentity(ctx.hostConfig.home);
   ctx.effect(() => ctx.rpc.register('projects.identity', undefined, (): HostIdentity => ({ hostId: identity, recovery: RECOVERY_PROTOCOL_VERSION })));
+
+  // F-0023: project backup export & import.
+  ctx.effect(() => {
+    const timer = setInterval(() => { void cleanupExpiredBackupStaging(ctx.hostConfig.home); }, 3600_000);
+    timer.unref?.();
+    return () => clearInterval(timer);
+  });
+  ctx.effect(() => ctx.rpc.register('projects.backupPreview', backupPreviewInputSchema, ({ projectId }) =>
+    computeBackupPreview(store, mediaStatus, projectId)));
+  ctx.effect(() => ctx.rpc.register('projects.backupExport', backupExportInputSchema, input =>
+    ctx.jobs.create(
+      (signal, report) => exportProjectBackup({
+        home: ctx.hostConfig.home,
+        store,
+        assets: ctx.assets,
+        mediaStatus,
+        appVersion,
+        projectId: input.projectId,
+        expectedRevision: input.expectedRevision,
+        includeMissingMedia: input.includeMissingMedia ?? false,
+        signal,
+        report,
+      }),
+      { operationId: input.operationId },
+    )));
+  ctx.effect(() => ctx.rpc.register('projects.backupInspect', backupInspectInputSchema, input =>
+    ctx.jobs.create(
+      (signal, report) => inspectBackupStaging({
+        home: ctx.hostConfig.home,
+        stagingId: input.stagingId,
+        signal,
+        report,
+      }),
+      { operationId: input.operationId },
+    )));
+  ctx.effect(() => ctx.rpc.register('projects.backupImport', backupImportInputSchema, input =>
+    ctx.jobs.create(
+      (signal, report) => importProjectBackup({
+        home: ctx.hostConfig.home,
+        store,
+        stagingId: input.stagingId,
+        expectedDigest: input.expectedDigest,
+        name: input.name,
+        operationId: input.operationId,
+        signal,
+        report,
+      }),
+      { operationId: input.operationId },
+    )));
+  ctx.effect(() => ctx.rpc.register('projects.backupDiscardStaging', backupDiscardStagingInputSchema, async ({ stagingId }) => {
+    await discardBackupStaging(ctx.hostConfig.home, stagingId);
+    return { ok: true as const };
+  }));
+  ctx.effect(() => ctx.rpc.route({
+    method: 'POST',
+    pattern: /^\/projects\/backups\/upload$/,
+    auth: 'client',
+    async handle(req, res) {
+      const meta = await saveBackupStagingFromStream(ctx.hostConfig.home, req);
+      res.writeHead(201, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify(meta));
+    },
+  }));
+  ctx.effect(() => ctx.rpc.route({
+    method: 'POST',
+    pattern: /^\/shell\/projects\/backups$/,
+    auth: 'shell',
+    async handle(req, res) {
+      const { path } = backupShellStageSchema.parse(await readBody(req, 64 * 1024));
+      const meta = await saveBackupStagingFromFile(ctx.hostConfig.home, path);
+      res.writeHead(201, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify(meta));
+    },
+  }));
 
   ctx.effect(() => ctx.rpc.capability('projects'));
   ctx.effect(() => ctx.rpc.capability('projects.linkedMedia', linkedMedia));

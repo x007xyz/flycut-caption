@@ -14,10 +14,11 @@ export interface ProjectCardProps {
   now?: number;
   onOpen: () => void;
   onRename?: () => void;
+  onBackup?: () => void;
   onDelete?: () => void;
 }
 
-export function ProjectCard({ project, opening, disabled, now, onOpen, onRename, onDelete }: ProjectCardProps) {
+export function ProjectCard({ project, opening, disabled, now, onOpen, onRename, onBackup, onDelete }: ProjectCardProps) {
   const { tp, language } = useProjectText();
   return (
     <div className={cn('group relative rounded-lg p-2 transition-colors hover:bg-aimu-hover', opening && 'bg-aimu-active', disabled && 'pointer-events-none opacity-50')}>
@@ -46,7 +47,7 @@ export function ProjectCard({ project, opening, disabled, now, onOpen, onRename,
         </p>
       </button>
       <div className="absolute right-2 bottom-[30px] opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100">
-        <ProjectActionsMenu onOpen={onOpen} onRename={onRename} onDelete={onDelete} />
+        <ProjectActionsMenu onOpen={onOpen} onRename={onRename} onBackup={onBackup} onDelete={onDelete} />
       </div>
     </div>
   );

@@ -14,6 +14,7 @@ export interface RemoteConnection {
   /** Subscribes to a Host event the Host chose to expose. Wrap in `ctx.effect` inside client plugins. */
   on<E extends RemoteEventName>(name: E, listener: (payload: RemoteEvents[E]) => void): () => void;
   upload(audio: Blob): Promise<string>;
+  uploadBackup?(file: Blob, signal?: AbortSignal): Promise<{ stagingId: string; size: number; sha256: string; createdAt: string }>;
   uploadCapabilities(): Promise<UploadCapabilities>;
   createUploadSession(input: UploadCreateInput, signal?: AbortSignal): Promise<UploadSession>;
   getUploadSession(id: string, signal?: AbortSignal): Promise<UploadSession>;
@@ -178,6 +179,20 @@ export class HostConnection implements RemoteConnection {
       headers: this.authHeaders() });
     if (!response.ok) throw await this.httpFailure(response);
     return (await response.json() as { assetId: string }).assetId;
+  }
+
+  async uploadBackup(file: Blob, signal?: AbortSignal): Promise<{ stagingId: string; size: number; sha256: string; createdAt: string }> {
+    if (this.stopped) throw new SessionClosedError();
+    if (this.status !== 'connected') throw new ConnectionUnavailableError();
+    const response = await fetch(`${this.options.url}/projects/backups/upload`, {
+      method: 'POST',
+      body: file,
+      signal,
+      credentials: this.credentials(),
+      headers: { ...this.authHeaders(), 'Content-Type': 'application/octet-stream' },
+    });
+    if (!response.ok) throw await this.httpFailure(response);
+    return response.json() as Promise<{ stagingId: string; size: number; sha256: string; createdAt: string }>;
   }
 
   private async uploadRequest(path: string, init: RequestInit): Promise<Response> {

@@ -25,6 +25,7 @@ import { TrashPage } from './TrashPage';
 import { SharedStyleHint, StyleSourceBar } from './StyleSource';
 import { ConfirmDialog, DeleteProjectDialog, MediaMissingBanner, ProjectDeletedDialog, ProjectOpenErrorDialog, RenameProjectDialog, SaveConflictDialog,
   UnsavedChangesDialog } from './ProjectDialogs';
+import { BackupExportDialog, BackupImportDialog } from './BackupDialogs';
 import { RecoveryCheckingDialog, RecoveryChooseDialog, RecoveryConflictDialog, RecoveryDiscardDialog, RecoveryFailedDialog,
   RecoveryUnavailableBanner } from './RecoveryDialogs';
 import { MediaUploadPanel } from './MediaUploadPanel';
@@ -178,7 +179,10 @@ function ProjectsHomePage({ version }: { version: string }) {
         onUseSample={() => { void media.handleLoadSampleVideo(); }}
         onCreateEmpty={() => { void projects.createEmpty(tp('untitled')).catch(error => toast.error(errorText(error))); }}
         onRetry={() => { void projects.retryList(); }} dragActive={desktopDrag}
-        onRename={id => rename.open(id, nameOf(id))} onDelete={id => setDeleting({ id, name: nameOf(id), busy: false })} />
+        onRename={id => rename.open(id, nameOf(id))}
+        onBackup={id => { void projects.openBackupExport(id, nameOf(id)); }}
+        onDelete={id => setDeleting({ id, name: nameOf(id), busy: false })}
+        onImportBackup={() => projects.openBackupImport()} />
       {rename.element}
       <DeleteProjectDialog open={!!deleting} projectName={deleting?.name ?? ''} busy={deleting?.busy} onConfirm={confirmDelete}
         onCancel={() => { if (!deleting?.busy) setDeleting(null); }} />
@@ -233,6 +237,7 @@ function ProjectDetailPage({ version }: { version: string }) {
         onAddVideo={() => { void chooseFiles(); }}
         onFilesDropped={files => { void Promise.all(files.map(videoFileFromFile)).then(addFiles); }}
         onRename={() => rename.open(projectId, detail.name)}
+        onBackup={() => { void projects.openBackupExport(projectId, detail.name); }}
         onRemoveVideo={id => setRemoving({ id, name: detail.videos.find(video => video.id === id)?.name ?? '', busy: false })}
         onDismissFailed={key => projects.dismissFailedAdd(key)} />
       {rename.element}
@@ -486,6 +491,7 @@ function RecoveryHealthBanner() {
 function ProjectsRoot(props: FlyCutCaptionProps) {
   const { projects } = useClientRuntime();
   const route = useProjectStore(state => state.route);
+  const current = useProjectStore(state => state.current);
   const newerVersion = useProjectStore(state => state.newerVersion);
   const setProject = useProjectStore(state => state.set);
   const create = useCreateProject();
@@ -504,6 +510,7 @@ function ProjectsRoot(props: FlyCutCaptionProps) {
       {route.name === 'editor'
         ? <>
           <FlyCutCaptionContent {...props} headerSlot={<EditorBreadcrumb />} playerPlaceholder={<MediaMissingPlaceholder />} onMedia={create}
+            onOpenProjectBackup={current ? () => { void projects.openBackupExport(current.projectId, current.name); } : undefined}
             styleHeaderSlot={<StyleSourceSlot />} styleFooterSlot={<SharedStyleHintSlot />} />
           <EditorGuards />
           <RecoveryHealthBanner />
@@ -511,6 +518,8 @@ function ProjectsRoot(props: FlyCutCaptionProps) {
         : route.name === 'project' ? <ProjectDetailPage version={__FLYCUT_VERSION__} />
         : route.name === 'trash' ? <TrashPageContainer version={__FLYCUT_VERSION__} />
         : <ProjectsHomePage version={__FLYCUT_VERSION__} />}
+      <BackupExportDialog />
+      <BackupImportDialog />
       <RecoveryGate />
       <ProjectOpenErrorDialog open={!!newerVersion} projectName={newerVersion?.name ?? ''} onClose={() => setProject({ newerVersion: null })} />
     </div>

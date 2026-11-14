@@ -1,6 +1,7 @@
 // 项目状态（F-0002、F-0003）：路由、项目列表、项目详情、回收站、当前项目和保存状态。每个前端 Context 一份，读写都经 `ctx.projects`。
 import { createStore } from 'zustand/vanilla';
 import type { ProjectListItem, ProjectVideoSummary, TrashItem } from '../../shared/projects';
+import type { BackupExportResult, BackupImportResult, BackupInspectionResult, BackupPreviewResult } from '../../shared/backup';
 import type { LoadStatus, ProjectsSort, SaveStatus } from '@/components/Project/types';
 import type { SubtitleStylePair } from '@/subtitle';
 import { bindRuntimeStore } from './runtimeStore';
@@ -98,6 +99,38 @@ export interface RecoveryState {
   discardFailed?: boolean;
 }
 
+/** F-0023: 备份导出对话框非持久化界面状态 */
+export interface BackupExportState {
+  phase: 'idle' | 'loading' | 'ready' | 'missing-resource' | 'stale' | 'processing' | 'completed' | 'error';
+  projectId?: string;
+  projectName?: string;
+  preview?: BackupPreviewResult;
+  includeMissingMedia: boolean;
+  progress: number;
+  statusText?: string;
+  savingToDisk?: boolean;
+  result?: BackupExportResult;
+  savedPath?: string;
+  error?: string;
+  uncertain?: boolean;
+  requestSeq: number;
+}
+
+/** F-0023: 备份导入对话框非持久化界面状态 */
+export interface BackupImportState {
+  phase: 'idle' | 'empty' | 'uploading' | 'inspecting' | 'rejected' | 'ready' | 'stale' | 'importing' | 'completed' | 'error';
+  fileName?: string;
+  stagingId?: string;
+  inspection?: BackupInspectionResult;
+  projectName: string;
+  progress: number;
+  statusText?: string;
+  result?: BackupImportResult;
+  error?: string;
+  uncertain?: boolean;
+  requestSeq: number;
+}
+
 export interface ProjectState {
   route: ProjectRoute;
   listStatus: LoadStatus;
@@ -130,6 +163,9 @@ export interface ProjectState {
   uploads: MediaUploadView[];
   /** 本地恢复副本最近一次是否记录成功（F-0004 AC-10） */
   recoveryHealth: 'ok' | 'unavailable';
+  /** F-0023: 备份导出与导入状态 */
+  backupExport: BackupExportState;
+  backupImport: BackupImportState;
 }
 
 export interface ProjectActions {
@@ -157,6 +193,8 @@ const initialState: ProjectState = {
   recovery: { phase: 'idle', candidates: [], selectedKey: null },
   recoveryHealth: 'ok',
   uploads: [],
+  backupExport: { phase: 'idle', includeMissingMedia: false, progress: 0, requestSeq: 0 },
+  backupImport: { phase: 'idle', projectName: '', progress: 0, requestSeq: 0 },
 };
 
 export const createProjectStore = () => createStore<ProjectState & ProjectActions>()((set) => ({
