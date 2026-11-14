@@ -7,6 +7,7 @@ import type { Editing } from '../../shared/editing/edl';
 // 只通过 Host RPC 读写项目数据；界面状态放在 `stores.project`。
 import type { Context } from '@deepseek-ai/cordis';
 import type { ModelRef } from '../../shared/providers';
+import type { ConfirmationKind, ConfirmationTarget } from '../../shared/confirmations';
 import type { ProjectEdits, ProjectOpenResult, ProjectPlayback, ProjectStyle, SaveResultV2 } from '../../shared/projects';
 import type { LanguageTrack } from '../../shared/languageTracks';
 import type { CueDubbingArtifact } from '../../shared/tts/dubbing';
@@ -804,6 +805,41 @@ export class ProjectService {
     }
     if (this.state.detail?.projectId === projectId) await this.reloadDetail(projectId);
     if (current?.projectId === projectId) this.state.set({ current: { ...current, videos: current.videos.filter(video => video.id !== videoId) } });
+  }
+
+  /** 确认中心在客户端批准破坏性操作后，同步刷新相关项目列表、详情与回收站视图（F-0052）。 */
+  async syncAfterConfirmation(kind: ConfirmationKind, target?: ConfirmationTarget) {
+    void this.refresh();
+    if (kind === 'purge-project' || this.state.route.name === 'trash') {
+      void this.refreshTrash(false);
+    }
+    const projectId = target?.projectId;
+    if (!projectId) return;
+    if (kind === 'trash-project') {
+      if (this.state.detail?.projectId === projectId) {
+        await this.reloadDetail(projectId).catch(() => undefined);
+      }
+      if (this.state.current?.projectId === projectId) {
+        this.state.set({ projectDeleted: { state: 'trashed', busy: false } });
+      }
+      return;
+    }
+    if (kind === 'remove-video') {
+      if (this.state.detail?.projectId === projectId) {
+        await this.reloadDetail(projectId).catch(() => undefined);
+      }
+      const current = this.state.current;
+      if (current?.projectId === projectId) {
+        if (target?.videoId && current.videoId === target.videoId) {
+          this.baseline = null;
+          this.pendingTranscript = null;
+          this.leaveEditor();
+          await this.openDetail(projectId).catch(() => undefined);
+        } else if (target?.videoId) {
+          this.state.set({ current: { ...current, videos: current.videos.filter(video => video.id !== target.videoId) } });
+        }
+      }
+    }
   }
 
   /** 详情页「打开编辑」（AC-9、AC-29）。 */

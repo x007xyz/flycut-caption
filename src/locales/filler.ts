@@ -64,6 +64,11 @@ const en = {
   agentCrossKind: 'Finish or cancel the active pending review first',
   agentRunFillers: 'Suggest fillers (Host)',
   agentRunSilence: 'Suggest silence (Host)',
+  hostPendingTitle: 'Pending Host suggestions · {count}',
+  hostPendingHint: 'Formal subtitles, EDL, and exports remain unchanged until you confirm.',
+  hostPendingStale: 'This video was edited after these suggestions were created. Review carefully before applying.',
+  hostPendingLoad: 'Load for review',
+  hostPendingDismiss: 'Dismiss',
 };
 const zh: typeof en = {
   entry: '去口癖', finding: '正在查找口癖…', cancel: '取消', retry: '重试',
@@ -131,5 +136,10 @@ const zh: typeof en = {
   agentCrossKind: '请先应用或取消当前待确认建议',
   agentRunFillers: '生成去口癖建议',
   agentRunSilence: '生成去静音建议',
+  hostPendingTitle: '来自 Host 的待审剪辑建议 · {count} 处',
+  hostPendingHint: '未确认前不会修改正式字幕、EDL 或导出。',
+  hostPendingStale: '视频在生成建议后已有新修改，请审阅后再决定是否应用。',
+  hostPendingLoad: '载入审阅',
+  hostPendingDismiss: '忽略',
 };
 export const fillerCopy = (language: string) => language.startsWith('zh') ? zh : en;

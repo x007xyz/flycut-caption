@@ -227,9 +227,16 @@ export interface FlyCutCaptionLocale {
       navProjects: string;
       confirmationsNav: string;
       confirmationsHint: string;
+      confirmationsClientOnly: string;
       confirmationsEmpty: string;
       confirmationsApprove: string;
       confirmationsReject: string;
+      confirmationsRetry: string;
+      confirmationsIdLabel: string;
+      confirmationsKindTrash: string;
+      confirmationsKindPurge: string;
+      confirmationsKindRemoveVideo: string;
+      confirmationsKindOverwrite: string;
       navSettings: string;
       navHelp: string;
       homeTitle: string;

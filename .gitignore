@@ -45,6 +45,7 @@ public/whisper-timestamps-demo.mp4
 core/*/lib/
 dist-host/
 dist-cli/
+dist-mcp/
 .flycut-host/
 server/lib/
 src-tauri/host/

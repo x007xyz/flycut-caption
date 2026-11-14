@@ -30,6 +30,8 @@ export interface SuggestionBatch {
   base: string;
   /** Optional exact history-store snapshot key when base is an external hash (F-0009). */
   stateKey?: string;
+  /** Transient Host pending-suggestion batch ID (F-0052); never persisted to edits.json. */
+  hostSuggestionId?: string;
   preview: boolean;
   items: CutSuggestion[];
   /** F-0009: a batch may combine unchanged rule candidates with semantic candidates. */

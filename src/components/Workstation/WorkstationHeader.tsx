@@ -8,6 +8,7 @@ import { useHostReady } from '@/runtime/connectionHooks';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { MessageCenterButton } from '@/components/MessageCenter';
 import { ConnectionStatus } from '@/components/Connection';
+import { ClientConfirmations } from '@/components/Project/ClientConfirmations';
 import { LanguageSelector } from '@/components/LanguageSelector';
 import { BrandLogo } from '@/components/BrandLogo';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
@@ -250,6 +251,7 @@ export function WorkstationHeader({ media, mergedConfig, onLanguageChange, onOpe
         )}
 
         <ConnectionStatus />
+        <ClientConfirmations variant="header" />
         <MessageCenterButton />
         <button
           onClick={() => onOpenSettings()}

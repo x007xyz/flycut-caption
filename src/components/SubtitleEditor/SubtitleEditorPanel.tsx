@@ -8,6 +8,7 @@ import { SubtitleList } from './SubtitleList';
 import { OriginalEditor } from './OriginalEditor';
 import { FindReplaceBar } from './FindReplaceBar';
 import { EditingSuggestionsPanel } from './EditingSuggestionsPanel';
+import { HostSuggestionsBanner } from './HostSuggestionsBanner';
 import { SilenceCutPanel } from './SilenceCutPanel';
 import { AgentSuggestionsBar } from './AgentSuggestionsBar';
 import { LanguageTrackBar } from './LanguageTrackBar';
@@ -131,6 +132,7 @@ export function SubtitleEditorPanel({
       <LanguageTrackBar />
       <CutHistoryPanel />
       <AgentSuggestionsBar />
+      <HostSuggestionsBanner />
       <EditingSuggestionsPanel onSeek={time => videoPlayerRef?.current?.seekTo(time)} />
       <SilenceCutPanel onSeek={time => videoPlayerRef?.current?.seekTo(time)} />
       <FindReplaceBar find={find} />

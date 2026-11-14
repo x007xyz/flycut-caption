@@ -16,6 +16,7 @@ export async function applyPendingWithPersistence(
 ): Promise<CutApplyResult> {
   const history = ctx.stores.history;
   const before = history.getState();
+  const hostSuggestionId = before.pendingSuggestions?.hostSuggestionId;
   confirmPending();
   const applied = history.getState();
   if (applied.cutError) {
@@ -36,6 +37,13 @@ export async function applyPendingWithPersistence(
   if (!saved && sameOwner && unchanged) {
     history.setState({ ...before, cutError: null, updatingCuts: false });
     return { ok: false, error: 'apply-failed', rolledBack: true };
+  }
+  if (saved && hostSuggestionId && owner) {
+    await ctx.connection.call('projects.suggestions.dismiss', {
+      projectId: owner.projectId,
+      videoId: owner.videoId,
+      suggestionId: hostSuggestionId,
+    }).catch(() => undefined);
   }
   history.setState({ updatingCuts: false });
   return { ok: saved, error: saved ? undefined : 'apply-failed', rolledBack: false };
