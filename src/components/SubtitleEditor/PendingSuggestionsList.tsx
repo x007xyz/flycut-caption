@@ -40,7 +40,7 @@ export function PendingSuggestionsList({ batch, updating, error, stale = false, 
     : item.category === 'repetition' ? c.categoryRepeat : c.categoryStandalone;
   const sources = (item: SuggestionBatch['items'][number]) => {
     const values = item.sources?.length ? item.sources : [item.source ?? 'rule'];
-    return values.map(value => value === 'semantic' ? c.sourceSemantic : c.sourceRule);
+    return values.map(value => value === 'semantic' ? c.sourceSemantic : value === 'silence' ? c.sourceSilence : c.sourceRule);
   };
   const confidence = (item: SuggestionBatch['items'][number]) => item.semanticConfidence === 'high' ? c.confidenceHigh
     : item.semanticConfidence === 'medium' ? c.confidenceMedium
@@ -93,6 +93,7 @@ export function PendingSuggestionsList({ batch, updating, error, stale = false, 
                   {(item.confidence ?? 1) < 0.7 && <span className="rounded bg-amber-400/20 px-1.5 py-0.5 text-[10px] text-amber-700 dark:text-amber-300">{c.review}</span>}
                 </div>
                 <p className="text-aimu-text-muted">{reason(item)}</p>
+                {item.text && <p className="truncate text-aimu-text-primary">“{item.text}”</p>}
                 <p className="font-mono text-[10px] text-aimu-text-muted">{formatTimeWithMs(item.start)} – {formatTimeWithMs(item.end)}</p>
               </div>
               <div className="flex shrink-0 flex-col gap-1">

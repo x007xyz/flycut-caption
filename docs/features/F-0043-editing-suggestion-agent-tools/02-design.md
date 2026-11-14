@@ -88,7 +88,7 @@ approved_at: 2026-11-13
 
 - [x] 1. **统一建议原文格式与校验契约**：扩展 `shared/editing/suggestions.ts`（`text?` 与 `populateSuggestionTexts`）、`shared/projectOps.ts`（`expectedRevision?`、`warnings?`、`sentenceLevelOnly?`）及 `src/runtime/connectionModel.ts`（`projects.suggestions.list` 只读白名单），并更新前端面板 `EditingSuggestionsPanel.tsx` / `SilenceCutPanel.tsx` 填充原文（AC-1、AC-3）。
 - [x] 2. **Host 共享分析管线与 Agent 工具注册**：完善 `server/plugins/projectOps.ts` 与 `server/plugins/langgraph.ts` / `server/profile.ts`，注册 `suggest_silence_cuts` 与 `suggest_filler_cuts` 工具（拒绝静默应用参数、`expectedRevision` 冲突检测、去重、无字词时间降级/报错、取消保护），并编写 `tests/architecture/agent-tools-f0043.test.ts` 在真实媒体上验证从工具/Workflow 调用到确认应用、导出与历史撤销回退及 Red check（AC-1–AC-4、AC-7、AC-8）。
-- [ ] 3. **前端 Agent/Host 建议审阅条与生命周期 UI**：新增 `src/components/SubtitleEditor/AgentSuggestionsBar.tsx`，接入 `SubtitleEditorPanel.tsx`、订阅 `'project/suggestions-updated'`、预览加载入 `PendingSuggestionsList` 并校验基线版本后确认落盘，补充 `src/locales/filler.ts` 中英文文案（AC-2、AC-5–AC-8）。
+- [x] 3. **前端 Agent/Host 建议审阅条与生命周期 UI**：新增 `src/components/SubtitleEditor/AgentSuggestionsBar.tsx`，接入 `SubtitleEditorPanel.tsx`、订阅 `'project/suggestions-updated'`、预览加载入 `PendingSuggestionsList` 并校验基线版本后确认落盘，补充 `src/locales/filler.ts` 中英文文案（AC-2、AC-5–AC-8）。
 - [ ] 4. **E2E 回归、视觉证据与验收报告**：编写 `tests/e2e/features/F-0043.spec.ts`（`light/dark × zh/en`），运行 `PW_PORT=5305 pnpm e2e:evidence F-0043` 与全量静态/单测/架构回归，产出 `04-test-report.md`（AC-1–AC-9）。
 
 ## 验证计划
