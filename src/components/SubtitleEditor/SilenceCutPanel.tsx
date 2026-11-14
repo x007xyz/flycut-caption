@@ -7,6 +7,7 @@ import { useTranslation } from '@/contexts/LocaleProvider';
 import { useAppStore } from '@/stores/appStore';
 import { silenceCopy } from '@/locales/silence';
 import { DEFAULT_SILENCE_PARAMS, validateSilenceParams, type SilenceParams } from '../../../shared/editing/silence';
+import { populateSuggestionTexts } from '../../../shared/editing/suggestions';
 import type { ModelRef } from '../../../shared/providers';
 import { PendingSuggestionsList } from './PendingSuggestionsList';
 import { Button } from '@/components/ui/button';
@@ -69,13 +70,16 @@ export function SilenceCutPanel({ onSeek }: { onSeek?: (time: number) => void })
       if (!result.candidates.length) { setPhase('empty'); return; }
       const latest = historyApi.getState();
       const base = JSON.stringify([latest.edl, latest.chunks, latest.wordChunks]);
-      const status = proposeSuggestions({
-        kind: 'silence', base, preview: false,
-        items: result.candidates.map(candidate => ({
+      const items = populateSuggestionTexts(
+        result.candidates.map(candidate => ({
           id: candidate.id, start: candidate.start, end: candidate.end, reason: candidate.reason,
           category: candidate.category, confidence: candidate.confidence, selected: candidate.defaultSelected,
+          source: 'silence' as const, sources: ['silence' as const],
         })),
-      });
+        latest.chunks,
+        latest.wordChunks,
+      );
+      const status = proposeSuggestions({ kind: 'silence', base, preview: false, items });
       setPhase(status === 'cross-kind' ? 'error' : 'idle');
     } catch (error) {
       jobRef.current = null;

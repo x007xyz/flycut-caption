@@ -34,6 +34,7 @@ export const silenceAnalyzeParamsSchema = z.strictObject({
 export const projectSuggestInputSchema = z.strictObject({
   projectId: z.uuid(),
   videoId: z.uuid().optional(),
+  expectedRevision: z.number().int().min(0).optional(),
   kind: z.enum(['fillers', 'silence', 'semantic', 'all']).default('fillers'),
   silenceMethod: z.enum(['auto', 'vad', 'gap']).default('auto'),
   configId: z.uuid().optional(),
@@ -75,6 +76,8 @@ export interface ProjectSuggestResult {
   total: number;
   selected: number;
   durationSeconds: number;
+  warnings?: string[];
+  sentenceLevelOnly?: boolean;
   batch: SuggestionBatch;
 }
 

@@ -4,6 +4,7 @@ import { useChunks, useHasWordTimestamps, useHistoryStore, useWordChunks } from 
 import { useTranslation } from '@/contexts/LocaleProvider';
 import { fillerCopy } from '@/locales/filler';
 import { analyzeFillers, inspectFillerGate, type FillerRuleInput } from '../../../shared/editing/fillerRules';
+import { populateSuggestionTexts } from '../../../shared/editing/suggestions';
 import { PendingSuggestionsList } from './PendingSuggestionsList';
 import { Button } from '@/components/ui/button';
 import { applyPendingWithPersistence } from '@/services/cutPersistence';
@@ -51,15 +52,17 @@ export function EditingSuggestionsPanel({ onSeek }: { onSeek?: (time: number) =>
     const result = analyzeFillers(input);
     if (!result.candidates.length) { setPhase('empty'); return; }
     const base = JSON.stringify([edl, chunks, wordChunks]);
-    const status = proposeSuggestions({
-      kind: 'filler', base, preview: false, origin: 'rule',
-      items: result.candidates.map(candidate => ({
+    const items = populateSuggestionTexts(
+      result.candidates.map(candidate => ({
         id: candidate.id, start: candidate.start, end: candidate.end,
         reason: candidate.reason, category: candidate.category, label: candidate.label,
         confidence: candidate.confidence, selected: candidate.defaultSelected,
-        source: 'rule', sources: ['rule'],
+        source: 'rule' as const, sources: ['rule' as const],
       })),
-    });
+      chunks,
+      wordChunks,
+    );
+    const status = proposeSuggestions({ kind: 'filler', base, preview: false, origin: 'rule', items });
     setPhase(status === 'cross-kind' ? 'cross-kind' : 'results');
   }, [chunks, edl, hasWordTimestamps, proposeSuggestions, sourceDuration, wordChunks]);
 
