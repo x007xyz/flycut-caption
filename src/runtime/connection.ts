@@ -22,6 +22,7 @@ export interface RemoteConnection {
   completeUploadSession(id: string, sha256: string, signal?: AbortSignal): Promise<UploadSession>;
   cancelUploadSession(id: string, signal?: AbortSignal): Promise<UploadSession>;
   download(assetId: string): Promise<Blob>;
+  downloadPath?(path: string, signal?: AbortSignal): Promise<Blob>;
   /** Absolute URL of a Host HTTP route for elements that cannot send headers (`<video src>`). */
   resourceUrl(path: string): string;
   waitJob<T>(id: string, progress?: (job: JobSnapshot) => void, signal?: AbortSignal): Promise<T>;
@@ -239,6 +240,15 @@ export class HostConnection implements RemoteConnection {
     if (this.stopped) throw new SessionClosedError();
     if (this.status !== 'connected') throw new ConnectionUnavailableError();
     const response = await fetch(`${this.options.url}/assets/${assetId}`, { credentials: this.credentials(), headers: this.authHeaders() });
+    if (!response.ok) throw await this.httpFailure(response);
+    return response.blob();
+  }
+
+  async downloadPath(path: string, signal?: AbortSignal) {
+    if (this.stopped) throw new SessionClosedError();
+    if (this.status !== 'connected') throw new ConnectionUnavailableError();
+    const url = new URL(path, this.options.url);
+    const response = await fetch(url.toString(), { credentials: this.credentials(), headers: this.authHeaders(), signal });
     if (!response.ok) throw await this.httpFailure(response);
     return response.blob();
   }

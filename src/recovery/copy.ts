@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { editingSchema, type Editing } from '../../shared/editing/edl';
 import { languageTrackSchema, type LanguageTrack } from '../../shared/languageTracks';
 import { textRecordSchema, type TextRecord } from '../../shared/text/corrections';
+import { cueDubbingArtifactSchema, type CueDubbingArtifact } from '../../shared/tts/dubbing';
 
 export const RECOVERY_SCHEMA_VERSION = 1;
 
@@ -17,6 +18,7 @@ export const recoveryContentSchema = z.object({
   textHistory: z.array(textRecordSchema).optional(),
   languageTracks: z.array(languageTrackSchema).optional(),
   activeLanguageTrackId: z.string().nullable().optional(),
+  dubbings: z.array(cueDubbingArtifactSchema).optional(),
   styleSource: z.enum(['project', 'custom']),
   /** 当前生效的主、副字幕样式（含画幅）。跟随项目时它就是要写进项目样式的内容 */
   stylePair: z.object({ primary: z.record(z.string(), z.unknown()), secondary: z.record(z.string(), z.unknown()) }),
@@ -71,6 +73,7 @@ export interface HostContent {
   textHistory?: TextRecord[];
   languageTracks?: LanguageTrack[];
   activeLanguageTrackId?: string | null;
+  dubbings?: CueDubbingArtifact[];
   styleSource: 'project' | 'custom';
   /** 这个视频打开时生效的样式（含画幅） */
   effectiveStyle: StylePair;
@@ -87,7 +90,8 @@ export function diffWithHost(content: RecoveryContent, host: HostContent) {
   const text = content.textHistory !== undefined && canonical(content.textHistory) !== canonical(host.textHistory ?? []);
   const tracks = canonical(content.languageTracks ?? []) !== canonical(host.languageTracks ?? [])
     || (content.activeLanguageTrackId ?? null) !== (host.activeLanguageTrackId ?? null);
-  const video = (content.editing !== undefined && canonical(content.editing) !== canonical(host.editing)) || canonical(content.chunks) !== canonical(host.chunks) || !sameWords || text || tracks || content.styleSource !== host.styleSource
+  const dubbings = canonical(content.dubbings ?? []) !== canonical(host.dubbings ?? []);
+  const video = (content.editing !== undefined && canonical(content.editing) !== canonical(host.editing)) || canonical(content.chunks) !== canonical(host.chunks) || !sameWords || text || tracks || dubbings || content.styleSource !== host.styleSource
     || aspectOf(content.stylePair) !== aspectOf(host.effectiveStyle)
     || (content.styleSource === 'custom' && styleKey(content.stylePair) !== styleKey(host.effectiveStyle));
   const style = content.styleSource === 'project' && styleKey(content.stylePair) !== styleKey(host.projectStyle);

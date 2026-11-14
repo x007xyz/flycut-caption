@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState, useEffect, useRef, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import type { SubtitleChunk } from '@/types/subtitle';
-import { Trash2, RotateCcw, Plus, SplitSquareHorizontal } from 'lucide-react';
+import { Trash2, RotateCcw, Plus, SplitSquareHorizontal, Volume2, Play, Square } from 'lucide-react';
 import { useUpdate, useDelete, useHistoryStore } from '@/stores/historyStore';
 import { useAppStore } from '@/stores/appStore';
 import { useTranslation } from '@/contexts/LocaleProvider';
@@ -16,7 +16,9 @@ import { isTranslationOutdated } from '../../../shared/languageTracks';
 import { evaluateTranslationConstraints } from '../../../shared/text/translation';
 import { languageTrackCopy } from '@/locales/languageTracks';
 import { keywordCopy } from '@/locales/keywords';
+import { dubbingCopy } from '@/locales/dubbing';
 import { removeChunkKeyword, toggleChunkKeyword, tokenizeSubtitleForKeywords } from '../../../shared/text/keywords';
+import type { CueDubbingArtifact, CueDubbingStatus } from '../../../shared/tts/dubbing';
 import { Tag } from 'lucide-react';
 
 interface SubtitleItemProps {
@@ -37,6 +39,11 @@ interface SubtitleItemProps {
   draft?: SubtitleItemDraft;
   onDraftChange?: (id: string, patch: SubtitleItemDraft) => void;
   onDraftCommitted?: (id: string, field: 'mainText' | 'secondText') => void;
+  dubbingArtifact?: CueDubbingArtifact;
+  dubbingStatus?: CueDubbingStatus | null;
+  isDubbingPlaying?: boolean;
+  onOpenDubbing?: (chunkId: string) => void;
+  onToggleDubbingPlay?: (artifact: CueDubbingArtifact) => void;
   className?: string;
 }
 
@@ -76,6 +83,11 @@ export function SubtitleItem(props: SubtitleItemProps) {
     draft,
     onDraftChange,
     onDraftCommitted,
+    dubbingArtifact,
+    dubbingStatus,
+    isDubbingPlaying = false,
+    onOpenDubbing,
+    onToggleDubbingPlay,
   } = props;
   
   const { t, language } = useTranslation();
@@ -83,6 +95,7 @@ export function SubtitleItem(props: SubtitleItemProps) {
   const findText = findCopy(language);
   const correctionText = correctionCopy(language);
   const translationText = translationCopy(language);
+  const dubText = dubbingCopy(language);
   const update = useUpdate();
   const deleteChunk = useDelete();
   const displayMode = useAppStore(state => state.display);
@@ -350,6 +363,16 @@ export function SubtitleItem(props: SubtitleItemProps) {
             >
               <Tag className="w-3.5 h-3.5" />
             </button>
+            {onOpenDubbing && (
+              <button
+                data-testid="cue-dub-button"
+                onClick={(e) => { e.stopPropagation(); onOpenDubbing(chunk.id); }}
+                className={cn('p-1 rounded transition-colors', dubbingArtifact ? 'text-aimu-purple' : 'text-aimu-text-muted hover:text-aimu-text-primary')}
+                title={dubText.dubCueButton}
+              >
+                <Volume2 className="w-3.5 h-3.5" />
+              </button>
+            )}
           </>
         )}
       </div>
@@ -515,6 +538,38 @@ export function SubtitleItem(props: SubtitleItemProps) {
               rows={1}
               style={{ minHeight: '24px' }}
             />
+          </div>
+        )}
+        {isActive && dubbingArtifact && (
+          <div
+            data-testid="cue-dub-row-status"
+            className="mt-1 flex flex-wrap items-center gap-1.5 self-start rounded border border-aimu-border bg-aimu-input/40 px-2 py-0.5 text-[10px] text-aimu-text-secondary"
+            onClick={e => e.stopPropagation()}
+          >
+            {onToggleDubbingPlay && (
+              <button
+                type="button"
+                data-testid="cue-dub-quick-play"
+                onClick={() => onToggleDubbingPlay(dubbingArtifact)}
+                className="inline-flex items-center gap-1 font-medium text-aimu-purple hover:underline"
+              >
+                {isDubbingPlaying ? <Square className="h-2.5 w-2.5" /> : <Play className="h-2.5 w-2.5" />}
+                {isDubbingPlaying ? dubText.stop : dubText.play}
+              </button>
+            )}
+            <span className="font-mono">
+              {dubbingArtifact.durationSeconds.toFixed(2)}s / {(chunk.timestamp[1] - chunk.timestamp[0]).toFixed(2)}s
+            </span>
+            {dubbingStatus?.tooLong && (
+              <span data-testid="cue-dub-row-too-long" className="rounded bg-amber-500/15 px-1 text-amber-800 dark:text-amber-300">
+                {dubText.tooLong}
+              </span>
+            )}
+            {dubbingStatus?.outdated && (
+              <span data-testid="cue-dub-row-outdated" className="rounded bg-amber-500/15 px-1 text-amber-800 dark:text-amber-300">
+                {dubText.outdated}
+              </span>
+            )}
           </div>
         )}
         {hasOverflowText && (

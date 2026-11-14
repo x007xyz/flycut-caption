@@ -63,7 +63,7 @@ async function readBody(req: IncomingMessage, limit: number) {
 }
 
 /** Streams a file with HTTP Range support so `<video>` can seek. */
-async function sendFile(req: IncomingMessage, res: ServerResponse, file: string, mimeType: string) {
+export async function sendFile(req: IncomingMessage, res: ServerResponse, file: string, mimeType: string) {
   const size = (await stat(file)).size;
   const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? '');
   let start = 0; let end = size - 1;
