@@ -1,6 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis';
 import { providerPrepareSchema } from '../../shared/protocol';
-import { checkOptions, checkTtsRequest, voiceActivityResultSchema, type ModelInfo, type ProviderModels } from '../../shared/providers';
+import { checkAsrRequest, checkTtsRequest, voiceActivityResultSchema, type ModelInfo, type ProviderModels } from '../../shared/providers';
 import { validateTranscript } from '../../shared/asr/transcript';
 import { validateTtsAudio } from '../../shared/tts/audio';
 import type { Provider, ProviderRegistry } from '../services';
@@ -36,8 +36,8 @@ export const providerRegistryPlugin = { name: 'flycut-provider-registry', inject
       if (info.role !== 'asr') throw new Error(`${info.name} 不是识别模型`);
       if (info.status === 'download') throw new Error(`模型未下载或校验未完成：${info.name}`);
       if (info.status === 'unavailable') throw new Error(`${info.name} 不可用：${info.reason ?? '未知原因'}`);
-      checkOptions(info, request.options);
-      return validateTranscript(await provider.transcribe(request, audioPath, signal, report));
+      const checked = checkAsrRequest(info, request);
+      return validateTranscript(await provider.transcribe(checked, audioPath, signal, report));
     },
     async prepare(ref, signal, report) {
       const provider = get(ref.providerId);

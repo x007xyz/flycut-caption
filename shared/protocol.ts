@@ -25,6 +25,9 @@ import type {
   PendingProjectSuggestion, projectExportInputSchema, projectSuggestInputSchema,
   projectSuggestionDismissInputSchema, projectSuggestionsListInputSchema, projectTranscribeInputSchema,
 } from './projectOps';
+import type {
+  getTerminologyInputSchema, saveTerminologyInputSchema, SaveTerminologyResult, TerminologySnapshot,
+} from './terminology';
 import type { ProjectFile, ProjectListItem, ProjectOpenResult, SaveResult, projectCreateSchema, projectOpenSchema, saveTranscriptSchema,
   saveEditsSchema, duplicateSchema, relinkSchema, thumbnailSchema,
   createEmptySchema, projectRefSchema, renameSchema, emptyTrashSchema, addVideoSchema, removeVideoSchema, saveVideoEditsSchema, saveProjectStyleSchema, createFromSnapshotSchema,
@@ -116,6 +119,7 @@ export const endpointInputSchema = z.object({
     id: z.string().min(1).max(100),
     role: z.enum(['asr', 'tts']).optional(),
     timestamps: z.enum(['none', 'segment', 'word']).default('segment'),
+    hotwords: z.boolean().optional(),
     voices: z.array(z.string().min(1).max(100)).max(100).optional(),
     languages: z.array(z.string().max(20)).max(50).optional(),
   })).max(50).optional(),
@@ -212,6 +216,9 @@ export interface RpcMethods {
   'projects.backupInspect': { input: z.input<typeof backupInspectInputSchema>; output: JobSnapshot };
   'projects.backupImport': { input: z.input<typeof backupImportInputSchema>; output: JobSnapshot };
   'projects.backupDiscardStaging': { input: z.input<typeof backupDiscardStagingInputSchema>; output: { ok: true } };
+  /** F-0019 / F-0032: project-level terminology and ASR hotwords. */
+  'projects.getTerminology': { input: z.input<typeof getTerminologyInputSchema>; output: TerminologySnapshot };
+  'projects.saveTerminology': { input: z.input<typeof saveTerminologyInputSchema>; output: SaveTerminologyResult };
   /** F-0051: Host-side project orchestration (shared by CLI and MCP). */
   'projects.transcribe': { input: z.input<typeof projectTranscribeInputSchema>; output: JobSnapshot };
   'projects.suggestEdits': { input: z.input<typeof projectSuggestInputSchema>; output: JobSnapshot };

@@ -63,6 +63,7 @@ GET /v1/models
 | `status` | 是 | `ready` 可直接使用；`download` 需要先下载；`unavailable` 不能使用（同时给出 `reason`） |
 | `reason` | 否 | `unavailable` 的原因，例如缺少依赖 |
 | `options` | 否 | 识别时可调的选项，字段定义见下表 |
+| `hotwords` | 否 | 识别热词能力声明：`{ supported, weights?, maxTerms?, format? }`；若只在 `options` 中声明 `hotword` 字段也会自动识别为支持热词（无权重） |
 | `tts` | 否 | `role` 为 `tts` 时的能力声明（音色列表、克隆开关、时长控制与输出格式） |
 
 `role: "tts"` 模型示例与 `tts` 字段说明：

@@ -50,6 +50,13 @@ export interface ModelRecommendation {
   comparedWith?: string[];
 }
 
+export interface HotwordCapabilities {
+  supported: boolean;
+  weights?: boolean;
+  maxTerms?: number;
+  format?: 'space-separated' | 'weighted-lines' | 'prompt';
+}
+
 export interface ModelInfo {
   id: string;
   name: string;
@@ -68,6 +75,8 @@ export interface ModelInfo {
   /** Structured benchmark metadata (e.g. F-0001) supporting a recommendation. */
   recommendation?: ModelRecommendation;
   options?: Record<string, OptionField>;
+  /** Present for `role: 'asr'` models declaring whether hotwords/weights are supported. */
+  hotwords?: HotwordCapabilities;
   /** Present for `role: 'tts'` models when the Provider declares TTS-specific capabilities. */
   tts?: TtsCapabilities;
 }
@@ -82,7 +91,16 @@ export interface ProviderModels { provider: ProviderSummary; models: ModelInfo[]
 
 export const optionValuesSchema = z.record(z.string(), z.union([z.string(), z.number(), z.boolean()]));
 export const modelRefSchema = z.object({ providerId: z.string().min(1), modelId: z.string().min(1) });
-export const asrRequestSchema = modelRefSchema.extend({ language: z.string().default('auto'), options: optionValuesSchema.optional() });
+export const asrHotwordSchema = z.strictObject({
+  term: z.string().trim().min(1).max(200),
+  weight: z.number().finite().positive().max(100).optional(),
+});
+export type AsrHotword = z.infer<typeof asrHotwordSchema>;
+export const asrRequestSchema = modelRefSchema.extend({
+  language: z.string().default('auto'),
+  options: optionValuesSchema.optional(),
+  hotwords: z.array(asrHotwordSchema).max(500).optional(),
+});
 export type AsrRequest = z.infer<typeof asrRequestSchema>;
 
 export const TTS_CLONE_AUTH_STATEMENT_ZH = '这是我本人的声音，或我已获得说话人授权';
@@ -161,6 +179,13 @@ export const modelRecommendationSchema = z.object({
   sentenceCount: z.number().int().positive().optional(),
   comparedWith: z.array(z.string().max(100)).max(20).optional(),
 });
+export const hotwordCapabilitiesSchema = z.object({
+  supported: z.boolean(),
+  weights: z.boolean().optional(),
+  maxTerms: z.number().int().positive().max(5000).optional(),
+  format: z.enum(['space-separated', 'weighted-lines', 'prompt']).optional(),
+});
+
 /** Validates model rows coming from an HTTP Provider; built-in Providers are typed instead. */
 export const modelInfoSchema = z.object({
   id: z.string().regex(MODEL_ID_PATTERN), name: z.string().min(1).max(200),
@@ -169,6 +194,7 @@ export const modelInfoSchema = z.object({
   size: z.string().max(50).optional(), status: z.enum(['ready', 'download', 'unavailable']), reason: z.string().max(1000).optional(),
   recommended: z.boolean().optional(), offline: z.boolean().optional(), recommendation: modelRecommendationSchema.optional(),
   options: z.record(z.string(), optionFieldSchema).optional(),
+  hotwords: hotwordCapabilitiesSchema.optional(),
   tts: ttsCapabilitiesSchema.optional(),
 });
 
@@ -184,6 +210,35 @@ export function checkOptions(model: ModelInfo, options: Record<string, OptionVal
       throw new Error(`选项 ${key} 超出范围`);
     }
   }
+}
+
+/** Resolves effective ASR hotword capabilities from ModelInfo (supporting legacy options.hotword declarations). */
+export function inferHotwordCapabilities(model: Pick<ModelInfo, 'hotwords' | 'options'>): HotwordCapabilities {
+  if (model.hotwords) return model.hotwords;
+  if (model.options?.hotword) {
+    return { supported: true, weights: false, format: 'space-separated' };
+  }
+  return { supported: false };
+}
+
+/** Validates an ASR request against the model's declared options and hotword capabilities. */
+export function checkAsrRequest(model: ModelInfo, request: AsrRequest): AsrRequest {
+  checkOptions(model, request.options);
+  if (!request.hotwords?.length) {
+    return { ...request, hotwords: undefined };
+  }
+  const caps = inferHotwordCapabilities(model);
+  if (!caps.supported) {
+    throw new Error(`模型 ${model.name} 不支持热词 / This model does not support hotwords`);
+  }
+  if (caps.maxTerms !== undefined && request.hotwords.length > caps.maxTerms) {
+    throw new Error(`模型 ${model.name} 最多支持 ${caps.maxTerms} 个热词`);
+  }
+  const normalized = request.hotwords.map((item) => ({
+    term: item.term.trim(),
+    ...(caps.weights && item.weight !== undefined ? { weight: item.weight } : {}),
+  }));
+  return { ...request, hotwords: normalized };
 }
 
 /** Validates a TTS request against the target model's declared capabilities and cloning gate. */

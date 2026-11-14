@@ -1,4 +1,5 @@
 import { editingOf } from '@/stores/historyStore';
+import type { ProjectTermEntry } from '../../shared/terminology';
 import type { Editing } from '../../shared/editing/edl';
 // 项目服务（F-0002、F-0003）：前端 Cordis 插件，提供 `ctx.projects`。负责项目的新建、打开、路由、自动保存，以及把转写结果写回 Host；
 // F-0003 加上项目管理（重命名、回收站）、项目详情页、一个项目多个视频和项目级字幕样式。
@@ -210,6 +211,9 @@ export class ProjectService {
   private recoverySaveAsId: string | null = null;
   /** 最近的副本写入耗时（毫秒），验收测量 1 秒 / 2 秒指标用 */
   readonly recoveryTimings: Array<{ at: number; ms: number; bytes: number }> = [];
+
+  // ---------- 项目热词与共享术语（F-0019） ----------
+  private hotwordsSaveOpId: string | null = null;
 
   // ---------- 项目备份导出与导入（F-0023） ----------
   private backupTasks: TaskOperationRunner;
@@ -850,6 +854,7 @@ export class ProjectService {
       this.transcriptRecord = transcript as TranscriptRecord | undefined;
       this.loadEditor({ projectId, videoId: video.id, name: project.name, revision: project.revision, hasTranscript: video.hasTranscript,
         media: { status: media.status, name: media.name }, videoName: video.name, videoRevision: video.revision, styleRevision: project.styleRevision,
+        terminology: project.terminology ?? [], terminologyRevision: project.terminologyRevision ?? 0,
         styleSource: video.styleSource, projectStyle: projectStyle ?? withAspect(defaultSubtitleStylePair, aspectOf(style.pair)), videos },
       videoFile, transcript ? mergeEdits(transcript as unknown as SubtitleTranscript, edits) : undefined, style.pair, style.restored,
       edits?.textHistory, edits?.languageTracks, edits?.activeLanguageTrackId ?? null);
@@ -2219,6 +2224,178 @@ export class ProjectService {
     } else {
       await this.open(projectId);
     }
+  }
+
+  // ---------- 项目热词与共享术语（F-0019） ----------
+
+  private setHotwordsDialog(patch: Partial<ReturnType<typeof this.stores.project.getState>['hotwordsDialog']>) {
+    this.state.set({ hotwordsDialog: { ...this.state.hotwordsDialog, ...patch } });
+  }
+
+  async openHotwordsDialog(projectId?: string, projectName?: string) {
+    const targetId = projectId ?? this.state.current?.projectId ?? this.state.detail?.projectId;
+    if (!targetId) return;
+    const targetName = projectName ?? this.state.current?.name ?? this.state.detail?.name;
+    const seq = this.state.hotwordsDialog.requestSeq + 1;
+    this.hotwordsSaveOpId = null;
+    this.setHotwordsDialog({
+      phase: 'loading',
+      projectId: targetId,
+      projectName: targetName,
+      revision: 0,
+      terms: [],
+      dirty: false,
+      error: undefined,
+      uncertain: false,
+      requestSeq: seq,
+    });
+    try {
+      const snap = await this.connection.call('projects.getTerminology', { projectId: targetId });
+      const latest = this.state.hotwordsDialog;
+      if (latest.requestSeq !== seq || (latest.phase as string) === 'idle' || latest.projectId !== targetId) return;
+      this.setHotwordsDialog({
+        phase: 'ready',
+        revision: snap.revision,
+        terms: snap.terminology,
+        dirty: false,
+        error: undefined,
+        uncertain: false,
+      });
+      if (this.state.current?.projectId === targetId) {
+        this.state.set({
+          current: { ...this.state.current, terminology: snap.terminology, terminologyRevision: snap.revision },
+        });
+      }
+    } catch (error) {
+      const latest = this.state.hotwordsDialog;
+      if (latest.requestSeq !== seq || (latest.phase as string) === 'idle') return;
+      this.setHotwordsDialog({
+        phase: 'error',
+        error: error instanceof Error ? error.message : String(error),
+        uncertain: false,
+      });
+    }
+  }
+
+  async reloadHotwordsDialog() {
+    const d = this.state.hotwordsDialog;
+    if (d.projectId) await this.openHotwordsDialog(d.projectId, d.projectName);
+  }
+
+  addHotwordEntry(entry: { term: string; weight?: number; asHotword: boolean }) {
+    const d = this.state.hotwordsDialog;
+    const next: ProjectTermEntry = {
+      id: crypto.randomUUID(),
+      term: entry.term,
+      asHotword: entry.asHotword,
+      ...(entry.weight !== undefined ? { weight: entry.weight } : {}),
+      updatedAt: new Date().toISOString(),
+    };
+    this.setHotwordsDialog({ terms: [...d.terms, next], dirty: true, phase: 'ready', error: undefined });
+  }
+
+  updateHotwordEntry(id: string, patch: { term: string; weight?: number; asHotword: boolean }) {
+    const d = this.state.hotwordsDialog;
+    const terms = d.terms.map((item) =>
+      item.id === id
+        ? {
+            ...item,
+            term: patch.term,
+            asHotword: patch.asHotword,
+            weight: patch.weight,
+            updatedAt: new Date().toISOString(),
+          }
+        : item,
+    );
+    this.setHotwordsDialog({ terms, dirty: true, phase: 'ready', error: undefined });
+  }
+
+  toggleHotwordEntry(id: string) {
+    const d = this.state.hotwordsDialog;
+    const terms = d.terms.map((item) =>
+      item.id === id ? { ...item, asHotword: !item.asHotword, updatedAt: new Date().toISOString() } : item,
+    );
+    this.setHotwordsDialog({ terms, dirty: true, phase: 'ready', error: undefined });
+  }
+
+  removeHotwordEntry(id: string) {
+    const d = this.state.hotwordsDialog;
+    this.setHotwordsDialog({ terms: d.terms.filter((t) => t.id !== id), dirty: true, phase: 'ready', error: undefined });
+  }
+
+  async saveHotwordsDialog() {
+    const d = this.state.hotwordsDialog;
+    if (!d.projectId || d.phase === 'saving' || d.phase === 'loading') return;
+    const seq = d.requestSeq;
+    const projectId = d.projectId;
+    const operationId = this.hotwordsSaveOpId ?? crypto.randomUUID();
+    this.hotwordsSaveOpId = operationId;
+    this.setHotwordsDialog({ phase: 'saving', error: undefined, uncertain: false });
+
+    try {
+      if (d.uncertain) {
+        const currentSnap = await this.connection.call('projects.getTerminology', { projectId });
+        if (this.state.hotwordsDialog.requestSeq !== seq || (this.state.hotwordsDialog.phase as string) === 'idle') return;
+        if (currentSnap.revision > d.revision) {
+          this.setHotwordsDialog({ phase: 'stale', revision: currentSnap.revision, terms: currentSnap.terminology, uncertain: false });
+          return;
+        }
+      }
+      const res = await this.connection.call('projects.saveTerminology', {
+        projectId,
+        baseRevision: d.revision,
+        operationId,
+        terms: d.terms.map((item) => ({
+          id: item.id,
+          term: item.term,
+          asHotword: item.asHotword,
+          ...(item.weight !== undefined ? { weight: item.weight } : {}),
+          ...(item.translations ? { translations: item.translations } : {}),
+        })),
+      });
+      if (this.state.hotwordsDialog.requestSeq !== seq || (this.state.hotwordsDialog.phase as string) === 'idle') return;
+      this.hotwordsSaveOpId = null;
+      if (res.status === 'conflict') {
+        this.setHotwordsDialog({ phase: 'stale', revision: res.revision, error: undefined, uncertain: false });
+        return;
+      }
+      if (this.state.current?.projectId === projectId) {
+        this.state.set({
+          current: { ...this.state.current, terminology: res.terminology, terminologyRevision: res.revision, revision: res.projectRevision },
+        });
+      }
+      this.setHotwordsDialog({
+        phase: 'completed',
+        revision: res.revision,
+        terms: res.terminology,
+        dirty: false,
+        error: undefined,
+        uncertain: false,
+      });
+    } catch (error) {
+      if (this.state.hotwordsDialog.requestSeq !== seq || (this.state.hotwordsDialog.phase as string) === 'idle') return;
+      const uncertain = error instanceof ConnectionUnavailableError || error instanceof TypeError;
+      this.setHotwordsDialog({
+        phase: 'error',
+        error: error instanceof Error ? error.message : String(error),
+        uncertain,
+      });
+    }
+  }
+
+  closeHotwordsDialog() {
+    this.hotwordsSaveOpId = null;
+    this.setHotwordsDialog({
+      phase: 'idle',
+      projectId: undefined,
+      projectName: undefined,
+      revision: 0,
+      terms: [],
+      dirty: false,
+      error: undefined,
+      uncertain: false,
+      requestSeq: this.state.hotwordsDialog.requestSeq + 1,
+    });
   }
 
   private loadEditor(current: CurrentProject, videoFile: VideoFile | null, transcript?: SubtitleTranscript, stylePair?: SubtitleStylePair, restored = !!stylePair,

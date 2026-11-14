@@ -26,6 +26,7 @@ import { SharedStyleHint, StyleSourceBar } from './StyleSource';
 import { ConfirmDialog, DeleteProjectDialog, MediaMissingBanner, ProjectDeletedDialog, ProjectOpenErrorDialog, RenameProjectDialog, SaveConflictDialog,
   UnsavedChangesDialog } from './ProjectDialogs';
 import { BackupExportDialog, BackupImportDialog } from './BackupDialogs';
+import { HotwordsDialog } from './HotwordsDialog';
 import { RecoveryCheckingDialog, RecoveryChooseDialog, RecoveryConflictDialog, RecoveryDiscardDialog, RecoveryFailedDialog,
   RecoveryUnavailableBanner } from './RecoveryDialogs';
 import { MediaUploadPanel } from './MediaUploadPanel';
@@ -238,6 +239,7 @@ function ProjectDetailPage({ version }: { version: string }) {
         onFilesDropped={files => { void Promise.all(files.map(videoFileFromFile)).then(addFiles); }}
         onRename={() => rename.open(projectId, detail.name)}
         onBackup={() => { void projects.openBackupExport(projectId, detail.name); }}
+        onManageHotwords={() => { void projects.openHotwordsDialog(projectId, detail.name); }}
         onRemoveVideo={id => setRemoving({ id, name: detail.videos.find(video => video.id === id)?.name ?? '', busy: false })}
         onDismissFailed={key => projects.dismissFailedAdd(key)} />
       {rename.element}
@@ -521,6 +523,7 @@ function ProjectsRoot(props: FlyCutCaptionProps) {
       <BackupExportDialog />
       <BackupImportDialog />
       <RecoveryGate />
+      <HotwordsDialog />
       <ProjectOpenErrorDialog open={!!newerVersion} projectName={newerVersion?.name ?? ''} onClose={() => setProject({ newerVersion: null })} />
     </div>
   );

@@ -1,6 +1,6 @@
 // 项目详情：一个项目里的多个视频（F-0003 AC-26 到 AC-29）。只有一个视频的项目从首页直接进入编辑器，不经过这一页。
 import { useRef, useState } from 'react';
-import { AlertTriangle, Archive, ChevronLeft, Film, Loader2, MoreHorizontal, Pencil, Plus, RefreshCw, Trash2, Upload } from 'lucide-react';
+import { AlertTriangle, Archive, ChevronLeft, Film, Loader2, MoreHorizontal, Pencil, Plus, RefreshCw, Sparkles, Trash2, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
@@ -28,12 +28,13 @@ export interface ProjectDetailProps {
   onFilesDropped?: (files: File[]) => void;
   onRename?: () => void;
   onBackup?: () => void;
+  onManageHotwords?: () => void;
   onRemoveVideo?: (id: string) => void;
   onDismissFailed?: (key: string) => void;
 }
 
 export function ProjectDetail({ status = 'ready', name, videos, adding = [], openingVideoId, now, dragActive, onBack, onRetry, onOpenVideo, onAddVideo,
-  onFilesDropped, onRename, onBackup, onRemoveVideo, onDismissFailed }: ProjectDetailProps) {
+  onFilesDropped, onRename, onBackup, onManageHotwords, onRemoveVideo, onDismissFailed }: ProjectDetailProps) {
   const { t, tp, language } = useProjectText();
   const [dragging, setDragging] = useState(false);
   const depth = useRef(0);
@@ -61,6 +62,11 @@ export function ProjectDetail({ status = 'ready', name, videos, adding = [], ope
               {onBackup && (
                 <Button variant="outline" size="sm" onClick={onBackup}>
                   <Archive className="h-3.5 w-3.5" />{tp('backupMenu')}
+                </Button>
+              )}
+              {onManageHotwords && (
+                <Button variant="outline" size="sm" onClick={onManageHotwords}>
+                  <Sparkles className="h-3.5 w-3.5" />{tp('hotwordsManage')}
                 </Button>
               )}
               <Button size="sm" onClick={onAddVideo} disabled={busyAdding}><Plus className="h-3.5 w-3.5" />{tp('addVideo')}</Button>

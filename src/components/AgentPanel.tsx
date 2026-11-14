@@ -6,6 +6,8 @@ import { encodePcmWav } from '../../shared/asr/apiProtocol';
 import type { AgentMessage, AsrInput } from '../../shared/protocol';
 import { Button } from '@/components/ui/button';
 import { loadMediaBuffer } from '@/utils/mediaSource';
+import { inferHotwordCapabilities } from '../../shared/providers';
+import { selectActiveHotwords } from '../../shared/terminology';
 
 export function AgentPanel() {
   const { connection, stores } = useClientRuntime();
@@ -29,7 +31,13 @@ export function AgentPanel() {
         const buffer = await loadMediaBuffer(app.videoFile);
         const samples = await processAudioForASR(buffer); current.signal.throwIfAborted();
         const assetId = await connection.upload(encodePcmWav(samples)); uploaded = assetId;
-        if (app.asrModel) asr = { ...app.asrModel, assetId, language: app.language, options: app.asrOptions[modelKey(app.asrModel)] };
+        if (app.asrModel) {
+          const groups = await connection.call('providers.models').catch(() => []);
+          const found = groups.find((g) => g.provider.id === app.asrModel!.providerId)?.models.find((m) => m.id === app.asrModel!.modelId);
+          const projectTerms = stores.project.getState().current?.terminology ?? [];
+          const hotwords = found ? selectActiveHotwords(projectTerms, inferHotwordCapabilities(found)) : [];
+          asr = { ...app.asrModel, assetId, language: app.language, options: app.asrOptions[modelKey(app.asrModel)], ...(hotwords.length ? { hotwords } : {}) };
+        }
       }
       current.signal.throwIfAborted();
       // Subscribe before starting: events may arrive before the RPC response carries the job id.

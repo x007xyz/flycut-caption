@@ -2,6 +2,7 @@
 import { createStore } from 'zustand/vanilla';
 import type { ProjectListItem, ProjectVideoSummary, TrashItem } from '../../shared/projects';
 import type { BackupExportResult, BackupImportResult, BackupInspectionResult, BackupPreviewResult } from '../../shared/backup';
+import type { ProjectTermEntry } from '../../shared/terminology';
 import type { LoadStatus, ProjectsSort, SaveStatus } from '@/components/Project/types';
 import type { SubtitleStylePair } from '@/subtitle';
 import { bindRuntimeStore } from './runtimeStore';
@@ -62,6 +63,22 @@ export interface CurrentProject {
   videos: ProjectVideoSummary[];
   /** 跟随项目时改过样式：显示一次「样式修改会应用到……」（AC-31） */
   styleTouched?: boolean;
+  /** F-0019 / F-0032: 项目共享术语与识别热词 */
+  terminology?: ProjectTermEntry[];
+  terminologyRevision?: number;
+}
+
+/** F-0019: 热词管理弹窗非持久化界面状态 */
+export interface HotwordsDialogState {
+  phase: 'idle' | 'loading' | 'ready' | 'saving' | 'completed' | 'stale' | 'error';
+  projectId?: string;
+  projectName?: string;
+  revision: number;
+  terms: ProjectTermEntry[];
+  dirty: boolean;
+  error?: string;
+  uncertain?: boolean;
+  requestSeq: number;
 }
 
 export interface SaveState {
@@ -166,6 +183,8 @@ export interface ProjectState {
   /** F-0023: 备份导出与导入状态 */
   backupExport: BackupExportState;
   backupImport: BackupImportState;
+  /** F-0019: 项目热词管理界面状态 */
+  hotwordsDialog: HotwordsDialogState;
 }
 
 export interface ProjectActions {
@@ -195,6 +214,7 @@ const initialState: ProjectState = {
   uploads: [],
   backupExport: { phase: 'idle', includeMissingMedia: false, progress: 0, requestSeq: 0 },
   backupImport: { phase: 'idle', projectName: '', progress: 0, requestSeq: 0 },
+  hotwordsDialog: { phase: 'idle', revision: 0, terms: [], dirty: false, requestSeq: 0 },
 };
 
 export const createProjectStore = () => createStore<ProjectState & ProjectActions>()((set) => ({
