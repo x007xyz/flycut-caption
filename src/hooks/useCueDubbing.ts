@@ -62,6 +62,7 @@ export interface CueDubbingController {
   selectedModel: ModelRef | null;
   activeEntry?: { provider: ProviderSummary; model: ModelInfo };
   voiceId: string | null;
+  voiceProfileId: string | null;
   ttsLanguage: string;
   speed: number;
   options: Record<string, OptionValue>;
@@ -78,6 +79,7 @@ export interface CueDubbingController {
   closePanel: () => void;
   selectModel: (key: string) => void;
   setVoiceId: (voiceId: string | null) => void;
+  setVoiceProfileId: (voiceProfileId: string | null) => void;
   setTtsLanguage: (language: string) => void;
   setSpeed: (speed: number) => void;
   setOptions: (options: Record<string, OptionValue>) => void;
@@ -149,6 +151,7 @@ export function useCueDubbing(hookOptions: UseCueDubbingOptions = {}): CueDubbin
 
   const [selectedModel, setSelectedModel] = useState<ModelRef | null>(null);
   const [voiceId, setVoiceId] = useState<string | null>(null);
+  const [voiceProfileId, setVoiceProfileId] = useState<string | null>(null);
   const [ttsLanguage, setTtsLanguage] = useState('auto');
   const [speed, setSpeed] = useState(1);
   const [options, setOptions] = useState<Record<string, OptionValue>>({});
@@ -456,6 +459,7 @@ export function useCueDubbing(hookOptions: UseCueDubbingOptions = {}): CueDubbin
         baseVideoRevision,
         expectedText: latestText,
         operationId,
+        ...(voiceProfileId ? { voiceProfileId } : {}),
         request: {
           providerId: selectedModel.providerId,
           modelId: selectedModel.modelId,
@@ -513,7 +517,7 @@ export function useCueDubbing(hookOptions: UseCueDubbingOptions = {}): CueDubbin
         activeJobIdRef.current = null;
       }
     }
-  }, [activeEntry, activeTrack, confirmedTranslation, copy.audioLoadFailed, dubbingService, historyStoreApi, onFlushDrafts, options, projectId, projectStoreApi, projects, selectedChunk, selectedModel, speed, ttsLanguage, videoId, voiceId]);
+  }, [activeEntry, activeTrack, confirmedTranslation, copy.audioLoadFailed, dubbingService, historyStoreApi, onFlushDrafts, options, projectId, projectStoreApi, projects, selectedChunk, selectedModel, voiceProfileId, speed, ttsLanguage, videoId, voiceId]);
 
   const generate = useCallback(async () => {
     await executeSynthesize();
@@ -704,6 +708,7 @@ export function useCueDubbing(hookOptions: UseCueDubbingOptions = {}): CueDubbin
     selectedModel,
     activeEntry,
     voiceId,
+    voiceProfileId,
     ttsLanguage,
     speed,
     options,
@@ -720,6 +725,7 @@ export function useCueDubbing(hookOptions: UseCueDubbingOptions = {}): CueDubbin
     closePanel,
     selectModel,
     setVoiceId,
+    setVoiceProfileId,
     setTtsLanguage,
     setSpeed,
     setOptions,

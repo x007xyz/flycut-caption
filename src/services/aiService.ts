@@ -9,6 +9,7 @@ export interface AITranslateOptions {
   semanticGroups?: Array<{ sentence: string; itemIds: string[] }>
   contextBefore?: TranslationContextItem[]
   contextAfter?: TranslationContextItem[]
+  terms?: Array<{ term: string; translation: string }>
   signal?: AbortSignal
 }
 export class AIService {
@@ -33,6 +34,7 @@ export class AIService {
       ...(options?.semanticGroups?.length ? { semanticGroups: options.semanticGroups } : {}),
       ...(options?.contextBefore?.length ? { contextBefore: options.contextBefore } : {}),
       ...(options?.contextAfter?.length ? { contextAfter: options.contextAfter } : {}),
+      ...(options?.terms?.length ? { terms: options.terms } : {}),
     })
     return connection.waitJob<AISubtitleItem[]>(job.id, snapshot => {
       const progress = snapshot.progress
@@ -53,6 +55,14 @@ export class AIService {
       ? { signal: optionsOrSignal as AbortSignal }
       : ((optionsOrSignal as AITranslateOptions | undefined) ?? {})
     return this.run('translation', items, configId, targetLang, options)
+  }
+  /** F-0036: propose shortened text; the caller decides whether to apply it. */
+  async shorten(items: Array<{ id: string; text: string; maxChars: number }>, configId: string, signal?: AbortSignal): Promise<Array<{ id: string; text: string }>> {
+    const job = await this.connection.call('text.shorten', { items, configId })
+    return this.connection.waitJob<Array<{ id: string; text: string }>>(job.id, snapshot => {
+      const progress = snapshot.progress
+      if (progress && ['running', 'complete', 'error'].includes(progress.status)) this.callback?.(progress as AIProgress)
+    }, signal)
   }
   /** F-0025: returns pending keyword candidates; callers keep them in a review layer until confirmed. */
   async suggestKeywords(configId: string, request: KeywordSuggestRequest, signal?: AbortSignal): Promise<KeywordSuggestResult> {

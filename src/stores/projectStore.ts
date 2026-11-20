@@ -3,6 +3,10 @@ import { createStore } from 'zustand/vanilla';
 import type { ProjectListItem, ProjectVideoSummary, TrashItem } from '../../shared/projects';
 import type { BackupExportResult, BackupImportResult, BackupInspectionResult, BackupPreviewResult } from '../../shared/backup';
 import type { ProjectTermEntry } from '../../shared/terminology';
+import type { VoiceProfile } from '../../shared/tts/voices';
+import type { SeparationRecord } from '../../shared/separation';
+import type { ReframeRecord } from '../../shared/reframe/reframe';
+import type { ClipRecord } from '../../shared/clips';
 import type { LoadStatus, ProjectsSort, SaveStatus } from '@/components/Project/types';
 import type { SubtitleStylePair } from '@/subtitle';
 import { bindRuntimeStore } from './runtimeStore';
@@ -66,6 +70,19 @@ export interface CurrentProject {
   /** F-0019 / F-0032: 项目共享术语与识别热词 */
   terminology?: ProjectTermEntry[];
   terminologyRevision?: number;
+  /** F-0038: project-level authorized voice profiles. */
+  voiceProfiles?: VoiceProfile[];
+  /** F-0021: speaker diarization segments and display names. */
+  speakerSegments?: Array<{ speaker: string; start: number; end: number }>;
+  speakerNames?: Record<string, string>;
+  /** F-0042: speaker id -> `profile:<id>` or `voice:<id>`. */
+  speakerVoices?: Record<string, string>;
+  /** F-0041: cached separation record. */
+  separation?: SeparationRecord;
+  /** F-0048: subject-following crop path. */
+  reframe?: ReframeRecord;
+  /** F-0045: confirmed short clips. */
+  clips?: ClipRecord[];
 }
 
 /** F-0019: 热词管理弹窗非持久化界面状态 */

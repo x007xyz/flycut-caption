@@ -14,7 +14,7 @@ export interface VideoExportSaveTarget {
   filename: string;
 }
 
-function buildDefaultFilename(format: 'mp4' | 'webm', sourceName?: string): string {
+function buildDefaultFilename(format: 'mp4' | 'webm' | 'mkv', sourceName?: string): string {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -1);
   if (sourceName) {
     const base = sourceName.replace(/\.[^.]+$/, '');
@@ -23,16 +23,16 @@ function buildDefaultFilename(format: 'mp4' | 'webm', sourceName?: string): stri
   return `cut_video_${timestamp}.${format}`;
 }
 
-const videoSaveTypes = (format: 'mp4' | 'webm') => [{
+const videoSaveTypes = (format: 'mp4' | 'webm' | 'mkv') => [{
   description: 'Video files',
   accept: {
-    [format === 'mp4' ? 'video/mp4' : 'video/webm']: [`.${format}`],
+    [format === 'mp4' ? 'video/mp4' : format === 'webm' ? 'video/webm' : 'video/x-matroska']: [`.${format}`],
   },
 }];
 
 /** 导出前让用户选择保存位置（Web 文件选择器 / Tauri 原生对话框） */
 export async function pickVideoExportSaveTarget(
-  format: 'mp4' | 'webm',
+  format: 'mp4' | 'webm' | 'mkv',
   sourceName?: string,
 ): Promise<VideoExportSaveTarget | null> {
   const filename = buildDefaultFilename(format, sourceName);

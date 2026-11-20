@@ -44,10 +44,10 @@ async function setup(options: { home?: string; patch?: Record<string, unknown>; 
 }
 
 async function fixtureApi(keyHolder: { value: string }) {
-  const seen: Array<{ auth?: string; body: string }> = [];
+  const seen: Array<{ auth?: string; body: string; headers?: Record<string, string | string[] | undefined> }> = [];
   const server = createServer(async (req, res) => {
     let body = ''; for await (const chunk of req) body += chunk;
-    seen.push({ auth: req.headers.authorization, body });
+    seen.push({ auth: req.headers.authorization, body, headers: req.headers });
     res.setHeader('Content-Type', 'application/json');
     if (req.url === '/v1/models') return res.end(JSON.stringify({ data: [{ id: 'fixture-model' }] }));
     if (req.url === '/v1/chat/completions') {
@@ -93,8 +93,10 @@ test('F-0056/AC-1 AC-3 AC-7 AC-8 config IDs, immutable secret refs, restart and 
     assert.deepEqual(await secondClient.call('projects.identity'), identity);
     assert.deepEqual(await host.call('aiSettings.list'), { hostId: identity.hostId, revision: 0, selectedId: null, configs: [] });
     const saved = await host.call('aiSettings.save', { hostId: identity.hostId, expectedRevision: 0,
-      config: { name: 'Fixture', baseUrl: api.baseUrl, model: 'fixture-model', temperature: 0.2, apiKey: 'first-secret' } });
+      config: { name: 'Fixture', baseUrl: api.baseUrl, model: 'fixture-model', temperature: 0.2,
+        headers: { 'x-test-header': 'yes' }, apiKey: 'first-secret' } });
     assert.equal(saved.status, 'saved'); assert.equal(saved.snapshot.configs[0].hasApiKey, true);
+    assert.deepEqual(saved.snapshot.configs[0].headers, { 'x-test-header': 'yes' });
     assert.equal(JSON.stringify(saved).includes('first-secret'), false);
     const metadata = await readFile(join(host.home, 'ai-settings.json'), 'utf8');
     const encrypted = await readFile(join(host.home, 'ai-secrets.enc'), 'utf8');
@@ -108,6 +110,7 @@ test('F-0056/AC-1 AC-3 AC-7 AC-8 config IDs, immutable secret refs, restart and 
     assert.deepEqual(correction.result, [{ id: 's1', text: 'corrected' }]);
     assert.equal(api.seen.at(-1)?.auth, 'Bearer first-secret');
     assert.equal(api.seen.at(-1)?.body.includes('first-secret'), false);
+    assert.equal(api.seen.at(-1)?.headers?.['x-test-header'], 'yes');
     assert.equal(JSON.stringify(await host.call('jobs.get', { id: correction.id })).includes('first-secret'), false);
     assert.equal((await host.call('aiSettings.test', { hostId: identity.hostId, configId: saved.configId })).status, 'ok');
     const secondSnapshot = await secondClient.call('aiSettings.list');

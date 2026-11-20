@@ -27,6 +27,7 @@ interface FormState {
   clearApiKey: boolean
   model: string
   temperature: string
+  headers: string
 }
 const EMPTY_FORM: FormState = {
   name: '',
@@ -35,6 +36,7 @@ const EMPTY_FORM: FormState = {
   clearApiKey: false,
   model: 'gpt-4o-mini',
   temperature: '0.2',
+  headers: '',
 }
 
 type Message = { kind: 'error' | 'success' | 'warning'; text: string }
@@ -96,12 +98,25 @@ export function AISettingsPanel() {
   const openEdit = (model: AIModelView) => {
     setEditingId(model.id)
     setForm({ name: model.name, baseUrl: model.baseUrl, apiKey: '', clearApiKey: false, model: model.model,
-      temperature: model.temperature !== undefined ? String(model.temperature) : '' })
+      temperature: model.temperature !== undefined ? String(model.temperature) : '',
+      headers: model.headers ? JSON.stringify(model.headers) : '' })
     setMessage(null); setDialogOpen(true)
   }
 
   const handleSave = async () => {
     if (!hostId || !form.name.trim() || !form.baseUrl.trim() || !form.model.trim()) return
+    let headers: Record<string, string> | undefined
+    if (form.headers.trim()) {
+      try {
+        const parsed = JSON.parse(form.headers) as unknown
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)
+          || Object.values(parsed).some(value => typeof value !== 'string')) throw new Error('invalid')
+        headers = parsed as Record<string, string>
+      } catch {
+        setMessage({ kind: 'error', text: '请求头必须是 JSON 对象，值必须是字符串 / Headers must be a JSON object of strings' })
+        return
+      }
+    }
     const expectedHostId = hostId; const epoch = requestEpoch.current
     setBusy('save'); setMessage(null)
     try {
@@ -109,6 +124,7 @@ export function AISettingsPanel() {
         hostId: expectedHostId, expectedRevision: revision, configId: editingId ?? undefined,
         config: { name: form.name.trim(), baseUrl: form.baseUrl.trim(), model: form.model.trim(),
           temperature: form.temperature.trim() ? Number(form.temperature) : undefined,
+          ...(headers ? { headers } : {}),
           apiKey: form.apiKey || undefined, clearApiKey: form.clearApiKey || undefined },
       })
       if (epoch !== requestEpoch.current) return
@@ -290,6 +306,7 @@ export function AISettingsPanel() {
               {form.clearApiKey && <p className="text-[11px] text-amber-600 dark:text-amber-300">{t('components.aiSettings.clearKeyPending')}</p>}
             </div>
             <div className="space-y-1"><Label>{t('components.aiSettings.temperature')}</Label><Input value={form.temperature} onChange={e => setForm(f => ({ ...f, temperature: e.target.value }))} placeholder="0.2" /></div>
+            <div className="space-y-1"><Label>请求头 JSON / Headers JSON（可选）</Label><Input data-testid="ai-headers" value={form.headers} onChange={e => setForm(f => ({ ...f, headers: e.target.value }))} placeholder='{"x-opencode-session":"ses_..."}' /></div>
           </DialogBody>
           <DialogFooter className="border-t">
             <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={!!busy}>{t('components.aiSettings.cancel')}</Button>

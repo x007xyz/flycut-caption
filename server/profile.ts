@@ -15,6 +15,13 @@ import { sherpaAsrPlugin } from './plugins/asr';
 import { endpointsPlugin } from './plugins/endpoints';
 import { cloudPlugin } from './plugins/cloud';
 import { ttsPlugin } from './plugins/tts';
+import { indexTts302Plugin } from './plugins/indexTts302';
+import { voicesPlugin } from './plugins/voices';
+import { speakersPlugin } from './plugins/speakers';
+import { separationPlugin } from './plugins/separation';
+import { clipsPlugin } from './plugins/clips';
+import { clipBatchPlugin } from './plugins/clipBatch';
+import { reframePlugin } from './plugins/reframe';
 import { dubbingPlugin } from './plugins/dubbing';
 import { aiSettingsPlugin } from './plugins/aiSettings';
 import { deleteSilenceEditingPlugin, editingPlugin, removeFillersEditingPlugin } from './plugins/editing';
@@ -43,6 +50,13 @@ export const BUILTINS: Record<string, Builtin> = {
   'asr-cloud': { plugin: cloudPlugin, provides: [] },
   endpoints: { plugin: endpointsPlugin, provides: [] },
   tts: { plugin: ttsPlugin, provides: [] },
+  'tts-index302': { plugin: indexTts302Plugin, provides: [] },
+  voices: { plugin: voicesPlugin, provides: [] },
+  speakers: { plugin: speakersPlugin, provides: [] },
+  separation: { plugin: separationPlugin, provides: [] },
+  clips: { plugin: clipsPlugin, provides: [] },
+  'clip-batch': { plugin: clipBatchPlugin, provides: [] },
+  reframe: { plugin: reframePlugin, provides: [] },
   'ai-settings': { plugin: aiSettingsPlugin, provides: ['aiSettings'] },
   editing: { plugin: editingPlugin, provides: ['editorPlugins'] },
   'editing-delete-silence': { plugin: deleteSilenceEditingPlugin, provides: [] },

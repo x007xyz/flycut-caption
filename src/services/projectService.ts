@@ -893,6 +893,7 @@ export class ProjectService {
       this.loadEditor({ projectId, videoId: video.id, name: project.name, revision: project.revision, hasTranscript: video.hasTranscript,
         media: { status: media.status, name: media.name }, videoName: video.name, videoRevision: video.revision, styleRevision: project.styleRevision,
         terminology: project.terminology ?? [], terminologyRevision: project.terminologyRevision ?? 0,
+        voiceProfiles: project.voiceProfiles ?? [], speakerSegments: edits?.speakerSegments ?? [], speakerNames: edits?.speakerNames ?? {}, speakerVoices: edits?.speakerVoices ?? {}, separation: edits?.separation, reframe: edits?.reframe, clips: edits?.clips ?? [],
         styleSource: video.styleSource, projectStyle: projectStyle ?? withAspect(defaultSubtitleStylePair, aspectOf(style.pair)), videos },
       videoFile, transcript ? mergeEdits(transcript as unknown as SubtitleTranscript, edits) : undefined, style.pair, style.restored,
       edits?.textHistory, edits?.languageTracks, edits?.activeLanguageTrackId ?? null, edits?.dubbings);
@@ -2357,19 +2358,20 @@ export class ProjectService {
     if (d.projectId) await this.openHotwordsDialog(d.projectId, d.projectName);
   }
 
-  addHotwordEntry(entry: { term: string; weight?: number; asHotword: boolean }) {
+  addHotwordEntry(entry: { term: string; weight?: number; asHotword: boolean; translations?: Record<string, string> }) {
     const d = this.state.hotwordsDialog;
     const next: ProjectTermEntry = {
       id: crypto.randomUUID(),
       term: entry.term,
       asHotword: entry.asHotword,
       ...(entry.weight !== undefined ? { weight: entry.weight } : {}),
+      ...(entry.translations ? { translations: entry.translations } : {}),
       updatedAt: new Date().toISOString(),
     };
     this.setHotwordsDialog({ terms: [...d.terms, next], dirty: true, phase: 'ready', error: undefined });
   }
 
-  updateHotwordEntry(id: string, patch: { term: string; weight?: number; asHotword: boolean }) {
+  updateHotwordEntry(id: string, patch: { term: string; weight?: number; asHotword: boolean; translations?: Record<string, string> }) {
     const d = this.state.hotwordsDialog;
     const terms = d.terms.map((item) =>
       item.id === id
@@ -2378,6 +2380,7 @@ export class ProjectService {
             term: patch.term,
             asHotword: patch.asHotword,
             weight: patch.weight,
+            translations: patch.translations,
             updatedAt: new Date().toISOString(),
           }
         : item,

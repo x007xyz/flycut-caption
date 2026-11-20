@@ -43,6 +43,10 @@ export function TranslationPanel({ translation }: { translation: BatchTranslatio
             {translation.model.name}
           </span>
         )}
+        <span data-testid="translation-terminology-version" title={copy.terminologyHint}
+          className="text-[10px] text-aimu-text-muted">
+          {fillTranslation(copy.terminologyVersion, { revision: translation.terminologyRevision, count: translation.terminologyCount })}
+        </span>
         <span className="ml-auto" />
         <Button
           size="sm"
@@ -345,6 +349,18 @@ export function TranslationPanel({ translation }: { translation: BatchTranslatio
         </div>
       )}
 
+      {isReviewing && translation.terminologyIssues.length > 0 && (
+        <div role="alert" data-testid="translation-terminology-issues" className="mt-2 rounded border border-amber-500/40 bg-amber-500/10 p-2 text-amber-800 dark:text-amber-200">
+          <p className="flex items-center gap-1 font-medium">
+            <AlertTriangle className="h-3.5 w-3.5" />
+            {fillTranslation(copy.terminologyIssues, { count: translation.terminologyIssues.length })}
+          </p>
+          <p className="mt-0.5 break-words text-[11px] text-aimu-text-muted">
+            {translation.terminologyIssues.map((issue) => `${issue.id} (${issue.terms.join(', ')})`).join(' · ')}
+          </p>
+        </div>
+      )}
+
       {/* Persistence failure (AC-8) */}
       {translation.applyError?.kind === 'failed' && (
         <div role="alert" data-testid="translation-apply-error" className="mt-2 rounded border border-aimu-coral/40 bg-aimu-red-bg p-2 text-aimu-coral">
@@ -378,6 +394,11 @@ export function TranslationPanel({ translation }: { translation: BatchTranslatio
                   {item.manuallyEdited && (
                     <span className="rounded bg-aimu-purple/10 px-1.5 py-0.5 text-aimu-purple" data-testid={`translation-edited-${item.id}`}>
                       {copy.manuallyEdited}
+                    </span>
+                  )}
+                  {translation.terminologyIssues.some((issue) => issue.id === item.id) && (
+                    <span className="rounded bg-amber-400/20 px-1.5 py-0.5 text-amber-700 dark:text-amber-300" data-testid={`translation-terminology-${item.id}`}>
+                      {copy.terminologyBadge}
                     </span>
                   )}
                   {item.constraints.tooLong && (

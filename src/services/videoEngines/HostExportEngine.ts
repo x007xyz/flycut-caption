@@ -24,7 +24,7 @@ export class HostExportEngine implements IVideoProcessingEngine {
     try {
       const info = await this.connection.call('host.info');
       const supported = info.capabilities?.export === true;
-      return { supported, reason: supported ? undefined : 'Host 导出插件不可用', formats: supported ? ['mp4', 'webm'] : [],
+      return { supported, reason: supported ? undefined : 'Host 导出插件不可用', formats: supported ? ['mp4', 'webm', 'mkv'] : [],
         features: { trimming: supported, concatenation: supported, audioProcessing: supported, subtitleBurning: supported, qualityControl: supported } };
     } catch (error) {
       return { supported: false, reason: error instanceof Error ? error.message : 'Host 不可用', formats: [], features: { trimming: false, concatenation: false, audioProcessing: false, subtitleBurning: false, qualityControl: false } };
@@ -54,11 +54,11 @@ export class HostExportEngine implements IVideoProcessingEngine {
         displayMode: options.subtitleExportMode ?? 'Bilingual', videoWidth: options.videoWidth ?? 1920,
         videoHeight: options.videoHeight ?? 1080, fps: options.fps ?? 30, duration });
     }
-    if (options.subtitleProcessing === 'soft' && chunks.length) {
+    if (options.subtitleProcessing === 'soft' && !options.subtitleTracks?.length && chunks.length) {
       subtitleTextContent = buildBurnTextSubtitleContent({ chunks, keptSegments: segments, exportMode: options.subtitleExportMode ?? 'Bilingual' });
     }
     const format = options.format ?? options.outputFormat ?? 'mp4';
-    if (format !== 'mp4' && format !== 'webm') throw new Error(`Host 导出不支持 ${format} 格式，请选择 MP4 或 WebM`);
+    if (format !== 'mp4' && format !== 'webm' && format !== 'mkv') throw new Error(`Host 导出不支持 ${format} 格式，请选择 MP4、WebM 或 MKV`);
     const operationKey = options.operationKey ?? taskOperationKey('export', this.assetId, format, options.quality,
       options.subtitleProcessing ?? 'none', options.subtitleExportMode, segments.length);
     const completed = await this.tasks.run<{ assetId: string; mimeType: string }>({
@@ -67,6 +67,10 @@ export class HostExportEngine implements IVideoProcessingEngine {
         format, quality: options.quality, preserveAudio: options.preserveAudio, joinFadeMs: options.joinFadeMs,
         subtitleProcessing: options.subtitleProcessing ?? 'none', subtitleExportMode: options.subtitleExportMode,
         subtitleTransport: subtitleScene ? 'skia-band' : undefined, subtitleScene, subtitleTextContent,
+        audioAssetId: options.audioAssetId,
+        crop: options.crop,
+        cropSamples: options.cropSamples,
+        subtitleTracks: options.subtitleTracks,
       } }),
       progress: current => this.report('encoding', current.progress?.progress ?? 10, current.progress?.data ?? 'Host 正在导出'),
       verifying: () => this.report('analyzing', 0, options.taskVerifyingMessage ?? 'Checking result…'),

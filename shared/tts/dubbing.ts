@@ -24,7 +24,11 @@ export const cueDubbingArtifactSchema = z.looseObject({
   speed: z.number().finite().min(0.25).max(4).optional(),
   options: optionValuesSchema.optional(),
   operationId: z.uuid().optional(),
+  voiceProfileId: z.uuid().optional(),
   createdAt: z.iso.datetime(),
+  /** F-0036: how this cue was aligned to its subtitle range. */
+  alignment: z.looseObject({ mode: z.enum(['none', 'speed', 'unresolved']), targetSeconds: z.number(),
+    sourceSeconds: z.number(), outputSeconds: z.number(), speed: z.number().optional() }).optional(),
 });
 export type CueDubbingArtifact = z.infer<typeof cueDubbingArtifactSchema>;
 
@@ -36,10 +40,12 @@ export const dubCueInputSchema = z.strictObject({
   baseVideoRevision: z.number().int().min(0),
   expectedText: z.string().trim().min(1).max(5000),
   operationId: z.uuid().optional(),
+  /** F-0038: project voice profile used as the cloning reference. */
+  voiceProfileId: z.uuid().optional(),
   request: ttsRequestSchema,
 }).refine(
-  input => !input.request.cloneReferenceAssetId && !input.request.cloneAuthorization,
-  '单条译文配音仅支持使用模型自带音色，不支持声音克隆',
+  input => Boolean(input.voiceProfileId) || (!input.request.cloneReferenceAssetId && !input.request.cloneAuthorization),
+  '声音克隆必须使用项目音色',
 );
 export type DubCueInput = z.infer<typeof dubCueInputSchema>;
 
@@ -191,3 +197,47 @@ export function validateCueDubbings(
     if (!chunkIds.has(item.chunkId)) throw new Error('Cue dubbing references an unknown subtitle');
   }
 }
+
+
+export const trackDubCueSchema = z.strictObject({
+  chunkId: z.string().min(1).max(128),
+  expectedText: z.string().trim().min(1).max(5000),
+});
+
+export const trackDubInputSchema = z.strictObject({
+  projectId: z.uuid(),
+  videoId: z.uuid(),
+  trackId: z.string().min(1).max(128),
+  baseVideoRevision: z.number().int().min(0),
+  cues: z.array(trackDubCueSchema).min(1).max(500),
+  voiceProfileId: z.uuid().optional(),
+  request: ttsRequestSchema.omit({ text: true }),
+  maxSpeed: z.number().finite().min(1).max(1.25).optional(),
+});
+export type TrackDubInput = z.infer<typeof trackDubInputSchema>;
+
+export type TrackDubUnresolvedReason = 'too-long' | 'failed';
+export interface TrackDubUnresolved { chunkId: string; reason: TrackDubUnresolvedReason; message?: string }
+
+export type TrackDubResult =
+  | { status: 'saved'; artifacts: CueDubbingArtifact[]; unresolved: TrackDubUnresolved[];
+      videoRevision: number; projectRevision: number; updatedAt: string }
+  | { status: 'conflict'; reason: DubCueConflictReason; videoRevision?: number; projectRevision?: number; updatedAt?: string };
+
+
+export const audioMixModeSchema = z.enum(['dubbing', 'dubbing-background', 'dubbing-ducked']);
+export type AudioMixMode = z.infer<typeof audioMixModeSchema>;
+
+export const dubbingMixInputSchema = z.strictObject({
+  projectId: z.uuid(),
+  videoId: z.uuid(),
+  trackId: z.string().min(1).max(128),
+  mode: audioMixModeSchema,
+  duckVolume: z.number().finite().min(0).max(1).optional(),
+  operationId: z.uuid().optional(),
+});
+export type DubbingMixInput = z.infer<typeof dubbingMixInputSchema>;
+
+export type DubbingMixResult =
+  | { status: 'saved'; assetId: string; durationSeconds: number; mode: AudioMixMode; aiLabel: string; warnings: string[] }
+  | { status: 'unresolved'; missing: string[]; outdated: string[]; tooLong: string[]; backgroundMissing?: boolean };

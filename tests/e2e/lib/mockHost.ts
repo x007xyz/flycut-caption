@@ -38,6 +38,7 @@ const defaults: MockHandlers = {
   'projects.identity': () => ({ hostId: E2E_HOST_ID, recovery: 1 }),
   'confirmations.list': () => [],
   'projects.suggestions.list': () => [],
+  'projects.getStylePresets': ({ projectId }: { projectId: string }) => ({ projectId, revision: 0, presets: [] }),
   'aiSettings.list': () => ({ hostId: E2E_HOST_ID, revision: 0, selectedId: null, configs: [] }),
   'tts.getSettings': () => ({ hostId: E2E_HOST_ID, revision: 0, selectedModel: null, voiceId: null, language: 'auto', speed: 1, options: {}, lastAudition: null }),
 };

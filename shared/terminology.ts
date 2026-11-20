@@ -127,3 +127,28 @@ export interface TerminologySnapshot {
 export type SaveTerminologyResult =
   | { status: 'saved'; revision: number; projectRevision: number; updatedAt: string; terminology: ProjectTermEntry[] }
   | { status: 'conflict'; revision: number; updatedAt: string; terminology: ProjectTermEntry[] };
+
+
+/** F-0032: flag cues whose translation does not contain a required glossary translation. */
+function usesTranslation(text: string, translation: string): boolean {
+  const haystack = text.toLocaleLowerCase();
+  const needle = translation.toLocaleLowerCase();
+  if (haystack.includes(needle)) return true;
+  if (!/^[a-z][a-z -]*$/i.test(needle)) return false;
+  if (needle.endsWith('y') && haystack.includes(`${needle.slice(0, -1)}ies`)) return true;
+  return haystack.includes(`${needle}s`) || haystack.includes(`${needle}es`);
+}
+
+export function findTerminologyIssues(
+  items: ReadonlyArray<{ id: string; sourceText: string; translatedText: string }>,
+  terms: ReadonlyArray<{ term: string; translation: string }>,
+): Array<{ id: string; terms: string[] }> {
+  if (!terms.length) return [];
+  const issues: Array<{ id: string; terms: string[] }> = [];
+  for (const item of items) {
+    const missing = terms.filter(({ term, translation }) =>
+      item.sourceText.includes(term) && !usesTranslation(item.translatedText, translation));
+    if (missing.length) issues.push({ id: item.id, terms: missing.map(entry => entry.term) });
+  }
+  return issues;
+}

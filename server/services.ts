@@ -69,6 +69,10 @@ export interface Provider {
   detectVoice?(modelId: string, audioPath: string, signal: AbortSignal, report: ProgressReporter): Promise<VoiceActivityResult>;
   /** `audioPath` is a 16 kHz mono PCM16 WAV. The registry validates the result. */
   transcribe?(request: AsrRequest, audioPath: string, signal: AbortSignal, report: ProgressReporter): Promise<SubtitleTranscript>;
+  /** Optional speaker diarization capability; audioPath is 16 kHz mono PCM16 WAV. */
+  diarize?(modelId: string, audioPath: string, signal: AbortSignal, report: ProgressReporter): Promise<{ duration: number; segments: Array<{ speaker: string; start: number; end: number }> }>;
+  /** Optional vocal/background separation; audioPath is a PCM WAV. */
+  separate?(modelId: string, audioPath: string, signal: AbortSignal, report: ProgressReporter): Promise<{ vocals: Buffer; background: Buffer; durationSeconds: number; sampleRate: number }>;
   /** Optional TTS capability; only implemented when the backend provides `role: 'tts'` models. */
   synthesize?(request: TtsSynthesizeProviderInput, signal: AbortSignal, report: ProgressReporter): Promise<TtsProviderAudio>;
 }
@@ -82,6 +86,10 @@ export interface ProviderRegistry {
   transcribe(request: AsrRequest, audioPath: string, signal: AbortSignal, report: ProgressReporter): Promise<SubtitleTranscript>;
   prepare(ref: ModelRef, signal: AbortSignal, report: ProgressReporter): Promise<void>;
   detectVoice(ref: ModelRef, audioPath: string, signal: AbortSignal, report: ProgressReporter): Promise<VoiceActivityResult>;
+  /** Runs the separation model, returning both stems. */
+  separate(ref: ModelRef, audioPath: string, signal: AbortSignal, report: ProgressReporter): Promise<{ vocals: Buffer; background: Buffer; durationSeconds: number; sampleRate: number }>;
+  /** Runs the diarization model and validates segment ranges. */
+  diarize(ref: ModelRef, audioPath: string, signal: AbortSignal, report: ProgressReporter): Promise<{ duration: number; segments: Array<{ speaker: string; start: number; end: number }> }>;
   /** Looks up the TTS model, validates capabilities & cloning authorization, runs synthesis and validates audio bytes. */
   synthesize(request: TtsSynthesizeProviderInput, signal: AbortSignal, report: ProgressReporter): Promise<TtsSynthesizeOutput>;
 }
@@ -138,6 +146,8 @@ export interface TextService {
   suggestCuts(input: SemanticCutsInput): JobSnapshot;
   /** F-0025: resolve the saved AI config on the Host and recommend grounded subtitle keywords. */
   suggestKeywords(input: KeywordSuggestInput): JobSnapshot;
+  /** F-0036: propose shorter translations; the client decides whether to apply them. */
+  shorten(input: { configId: string; items: Array<{ id: string; text: string; maxChars: number }> }): JobSnapshot;
 }
 export interface AISettingsService {
   snapshot(): Promise<AISettingsSnapshot>;

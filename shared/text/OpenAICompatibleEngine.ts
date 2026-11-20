@@ -9,12 +9,14 @@ import {
   type KeywordSuggestRequest, type KeywordSuggestResult,
 } from './keywords.ts'
 import { validateTranslationResults, type TranslationContextItem } from './translation.ts'
+import { clipCopySchema } from '../clips.ts'
 
 export interface TranslateOptions {
   sourceLang?: string
   semanticGroups?: Array<{ sentence: string; itemIds: string[] }>
   contextBefore?: TranslationContextItem[]
   contextAfter?: TranslationContextItem[]
+  terms?: Array<{ term: string; translation: string }>
 }
 
 const SEMANTIC_SYSTEM_PROMPT = `You review Chinese talking-head transcripts and propose only deletions that are safe when removed from the spoken video.
@@ -138,6 +140,32 @@ export class OpenAICompatibleEngine {
     return this.runItems(items, model, system, '纠错')
   }
 
+  /** F-0050: propose title/description/hashtags from the confirmed clip text only. */
+  async generateClipCopy(text: string, model: AIModelConfig) {
+    const system = '你是短视频发布文案助手。只根据给定片段原文生成标题、简介和话题标签，不得添加原文没有的人名、数字或观点。'
+      + '只输出 JSON 对象：{"title": string, "description": string, "hashtags": string[]}，不含额外解释。标题不超过 80 字，简介不超过 500 字，话题标签 3–10 个且不带 #。'
+    const content = await this.requestContent(model, system, JSON.stringify({ text }))
+    const trimmed = content.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')
+    const first = trimmed.indexOf('{'); const last = trimmed.lastIndexOf('}')
+    if (first < 0 || last < first) throw new Error('AI 文案结果不是 JSON 对象')
+    const parsed = JSON.parse(trimmed.slice(first, last + 1)) as { title?: unknown; description?: unknown; hashtags?: unknown }
+    return clipCopySchema.parse({ title: parsed.title, description: parsed.description, hashtags: parsed.hashtags,
+      generatedAt: new Date().toISOString(), baseText: text })
+  }
+
+  /** F-0036: shorten each translated cue to fit its subtitle range; caller must confirm before applying. */
+  async shorten(
+    items: AISubtitleItem[],
+    model: AIModelConfig,
+    maxChars: number,
+  ): Promise<AISubtitleItem[]> {
+    const limit = Math.max(4, Math.round(maxChars));
+    const system =
+      `你是字幕精简助手。请把每条字幕压缩到不超过 ${limit} 个字符，保留原意、语气和关键信息，不要改变语言。` +
+      '严格保持输入顺序、条数与原 id，只输出 JSON 数组，元素为 {"id": <原id>, "text": <精简后文本>}，不含额外解释。'
+    return this.runItems(items, model, system, '精简')
+  }
+
   /**
    * 字幕翻译：将每条翻译为指定语言
    */
@@ -154,10 +182,14 @@ export class OpenAICompatibleEngine {
     const hasContext = Boolean(
       options?.semanticGroups?.length || options?.contextBefore?.length || options?.contextAfter?.length,
     )
+    const terms = options?.terms ?? []
     const system =
       `你是专业字幕翻译。${sourceHint}请将待翻译的字幕条目翻译为「${targetLang}」，保持简洁口语化，符合字幕阅读习惯。` +
       (hasContext
         ? '输入的 contextBefore/contextAfter 仅作上下文语境参考，切勿输出；请结合 semanticSentences 中合并的完整语义句理解句意后再逐条切分对应回每个 item 的 id。'
+        : '') +
+      (terms.length
+        ? '术语表（必须使用指定译名，不要改写）：' + terms.map(item => `「${item.term}」→「${item.translation}」`).join('；') + '。'
         : '') +
       '严格保持待翻译 items 的顺序、数量与原 id，不可缺失、重复、增加或留空，只输出 JSON 数组，元素为 {"id": <原id>, "text": <译文>}，不含额外解释。'
 
@@ -257,6 +289,7 @@ export class OpenAICompatibleEngine {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...(model.headers ?? {}),
         Authorization: `Bearer ${model.apiKey}`,
       },
       body: JSON.stringify({

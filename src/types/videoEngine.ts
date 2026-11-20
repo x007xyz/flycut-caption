@@ -13,8 +13,13 @@ export type SubtitleProcessingType = 'none' | 'soft' | 'hard';
 // 视频处理选项
 export interface VideoProcessingOptions {
   edl?: import('../../shared/editing/edl').Edl;
-  format?: 'mp4' | 'webm' | 'avi';
-  outputFormat?: 'mp4' | 'webm' | 'avi';
+  format?: 'mp4' | 'webm' | 'avi' | 'mkv';
+  outputFormat?: 'mp4' | 'webm' | 'avi' | 'mkv';
+  audioAssetId?: string;
+  aiLabel?: string;
+  crop?: '9:16';
+  cropSamples?: Array<{ time: number; centerX: number }>;
+  subtitleTracks?: Array<{ id: string; name: string; languageCode: string; content: string; default?: boolean }>;
   quality: 'high' | 'medium' | 'low';
   preserveAudio: boolean;
   /** Audio fade at each internal EDL join, in milliseconds. 0 disables it. */

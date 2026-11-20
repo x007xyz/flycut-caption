@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DEFAULT_SUBTITLE_FONT_ID, resolveSubtitleFontFamily } from './fonts';
+import { DEFAULT_SUBTITLE_FONT_ID, resolveSubtitleFontFamily } from './fonts.ts';
 
 export const subtitleGraphicStyleSchema = z.object({
   fontId: z.string().min(1).max(64),

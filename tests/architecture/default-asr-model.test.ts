@@ -68,7 +68,7 @@ test('F-0018/AC-1 AC-2 AC-3 AC-6 AC-8 Host verifies checksums, reports byte prog
   let corruptFirst = false;
   let slowMode = false;
   let hitsA = 0;
-  let releaseSlow!: () => void;
+  let releaseSlow: (() => void) | undefined;
   const slowGate = () => new Promise<void>(resolve => { releaseSlow = resolve; });
 
   const mirror = createServer(async (req, res) => {
@@ -148,10 +148,12 @@ test('F-0018/AC-1 AC-2 AC-3 AC-6 AC-8 Host verifies checksums, reports byte prog
         providerId: 'sherpa-onnx', modelId: SENSEVOICE_ID,
       });
       assert.equal(cancelJob2.id, cancelJob1.id);
-      await setTimeout(80);
+      // Wait until the download is actually parked at the slow gate (can take >80ms under suite load).
+      for (let waited = 0; !releaseSlow && waited < 5000; waited += 20) await setTimeout(20);
+      assert.ok(releaseSlow, 'download never reached the slow gate');
       const cancelled = await host1.call<JobSnapshot>('jobs.cancel', { id: cancelJob1.id });
       assert.equal(cancelled.status, 'cancelled');
-      releaseSlow();
+      releaseSlow!();
       await setTimeout(30);
       const modelDirFiles = await readdir(join(appData, 'models', SENSEVOICE_ID)).catch(() => [] as string[]);
       assert.ok(!modelDirFiles.some(name => name.endsWith('.part')));

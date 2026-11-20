@@ -15,7 +15,12 @@ import {
   ttsSettingsSaveInputSchema, ttsSynthesizeInputSchema,
   type TtsSettingsSaveResult, type TtsSettingsSnapshot,
 } from './tts/settings';
-import { dubCueInputSchema } from './tts/dubbing';
+import { dubCueInputSchema, dubbingMixInputSchema, trackDubInputSchema } from './tts/dubbing';
+import { separationAnalyzeInputSchema } from './separation';
+import { reframeAnalyzeInputSchema } from './reframe/reframe';
+import { clipBatchCancelInputSchema, clipBatchStartInputSchema, clipBatchStatusInputSchema, clipCopyInputSchema, clipSaveCopyInputSchema, clipsCreateInputSchema, clipsDeleteInputSchema, clipsSuggestInputSchema, type ClipBatchSnapshot, type ClipRecord } from './clips';
+import { speakerAnalyzeInputSchema, speakerNamesInputSchema, speakerVoicesInputSchema } from './speakers';
+import { createVoiceProfileInputSchema, deleteVoiceProfileInputSchema, voiceProfilesInputSchema, type DeleteVoiceProfileResult, type VoiceProfile } from './tts/voices';
 import type { UploadCapabilities } from './uploads';
 import type { JianyingCapabilities, JianyingPreflightInput, JianyingPreflightResult, JianyingStartInput } from './jianying/draft';
 import type {
@@ -29,6 +34,9 @@ import type {
 import type {
   getTerminologyInputSchema, saveTerminologyInputSchema, SaveTerminologyResult, TerminologySnapshot,
 } from './terminology';
+import type {
+  getStylePresetsInputSchema, saveStylePresetsInputSchema, SaveStylePresetsResult, StylePresetsSnapshot,
+} from './stylePresets';
 import type { ProjectFile, ProjectListItem, ProjectOpenResult, SaveResult, projectCreateSchema, projectOpenSchema, saveTranscriptSchema,
   saveEditsSchema, duplicateSchema, relinkSchema, thumbnailSchema,
   createEmptySchema, projectRefSchema, renameSchema, emptyTrashSchema, addVideoSchema, removeVideoSchema, saveVideoEditsSchema, saveProjectStyleSchema, createFromSnapshotSchema,
@@ -61,16 +69,26 @@ export interface PipelineResult { transcript: SubtitleTranscript; cuts: Array<{ 
 export const exportSegmentSchema = z.object({ start: z.number().finite().min(0), end: z.number().finite().gt(0), keep: z.boolean(),
   text: z.string().optional(), secondText: z.string().optional(), id: z.string().optional() });
 export const exportInputSchema = z.object({ operationId: z.uuid().optional(), edl: edlSchema.optional(), assetId: z.string().uuid(), segments: z.array(exportSegmentSchema).min(1),
-  options: z.object({ format: z.enum(['mp4', 'webm']), quality: z.enum(['high', 'medium', 'low']), preserveAudio: z.boolean(),
+  options: z.object({ format: z.enum(['mp4', 'webm', 'mkv']), quality: z.enum(['high', 'medium', 'low']), preserveAudio: z.boolean(),
     joinFadeMs: z.number().min(0).max(100).optional(),
     subtitleProcessing: z.enum(['none', 'soft', 'hard']).default('none'), subtitleExportMode: z.enum(['Bilingual', 'Main', 'Second']).optional(),
     /** New hard-subtitle path: the client sends a versioned scene, the Host renders it with Skia. */
     subtitleTransport: z.literal('skia-band').optional(), subtitleScene: subtitleGraphicSceneSchema.optional(),
-    subtitleTextContent: z.string().optional() }) });
+    subtitleTextContent: z.string().optional(),
+    audioAssetId: z.uuid().optional(),
+    crop: z.enum(['9:16']).optional(),
+    cropSamples: z.array(z.object({ time: z.number().finite().nonnegative(), centerX: z.number().finite().nonnegative() })).max(2000).optional(),
+    subtitleTracks: z.array(z.object({ id: z.string().min(1).max(128), name: z.string().trim().min(1).max(80),
+      languageCode: z.string().trim().min(2).max(35), content: z.string().min(1), default: z.boolean().optional() })).max(20).optional() }) });
 export type ExportInput = z.infer<typeof exportInputSchema>;
 export interface ExportResult { assetId: string; filename: string; mimeType: string }
 
 export const jobIdSchema = z.object({ id: z.string().uuid() });
+export const textShortenInputSchema = z.strictObject({
+  configId: z.uuid(),
+  items: z.array(z.object({ id: z.string().min(1), text: z.string().min(1), maxChars: z.number().int().min(4).max(200) })).min(1).max(50),
+});
+
 export const textInputSchema = z.object({ mode: z.enum(['correction', 'translation']),
   items: z.array(z.object({ id: z.string(), text: z.string() })), targetLang: z.string().optional(),
   sourceLang: z.string().optional(),
@@ -80,6 +98,8 @@ export const textInputSchema = z.object({ mode: z.enum(['correction', 'translati
   })).optional(),
   contextBefore: z.array(z.object({ id: z.string().optional(), text: z.string() })).optional(),
   contextAfter: z.array(z.object({ id: z.string().optional(), text: z.string() })).optional(),
+  /** F-0032: source term -> required target-language translation for this request. */
+  terms: z.array(z.object({ term: z.string().trim().min(1).max(200), translation: z.string().trim().min(1).max(200) })).max(500).optional(),
   /** Preferred: the Host resolves the configured model and secret. */
   configId: z.uuid().optional(),
   /** Compatibility for clients released before F-0056. New clients never send this. */
@@ -172,6 +192,25 @@ export interface RpcMethods {
   'tts.saveSettings': { input: z.input<typeof ttsSettingsSaveInputSchema>; output: TtsSettingsSaveResult };
   'tts.synthesize': { input: z.input<typeof ttsSynthesizeInputSchema>; output: JobSnapshot };
   'dubbing.synthesizeCue': { input: z.input<typeof dubCueInputSchema>; output: JobSnapshot };
+  'dubbing.alignTrack': { input: z.input<typeof trackDubInputSchema>; output: JobSnapshot };
+  'dubbing.mix': { input: z.input<typeof dubbingMixInputSchema>; output: JobSnapshot };
+  'voices.create': { input: z.input<typeof createVoiceProfileInputSchema>; output: JobSnapshot };
+  'voices.list': { input: z.input<typeof voiceProfilesInputSchema>; output: VoiceProfile[] };
+  'voices.delete': { input: z.input<typeof deleteVoiceProfileInputSchema>; output: DeleteVoiceProfileResult };
+  'speakers.analyze': { input: z.input<typeof speakerAnalyzeInputSchema>; output: JobSnapshot };
+  'speakers.saveNames': { input: z.input<typeof speakerNamesInputSchema>; output: { status: 'saved'; videoRevision: number; projectRevision: number; updatedAt: string } };
+  'speakers.saveVoices': { input: z.input<typeof speakerVoicesInputSchema>; output: { status: 'saved'; videoRevision: number; projectRevision: number; updatedAt: string } };
+  'separation.analyze': { input: z.input<typeof separationAnalyzeInputSchema>; output: JobSnapshot };
+  'reframe.analyze': { input: z.input<typeof reframeAnalyzeInputSchema>; output: JobSnapshot };
+  'clips.suggest': { input: z.input<typeof clipsSuggestInputSchema>; output: JobSnapshot };
+  'clips.create': { input: z.input<typeof clipsCreateInputSchema>; output: { status: 'saved'; clip: ClipRecord; videoRevision: number; projectRevision: number; updatedAt: string } };
+  'clips.copy': { input: z.input<typeof clipCopyInputSchema>; output: JobSnapshot };
+  'clips.saveCopy': { input: z.input<typeof clipSaveCopyInputSchema>; output: { status: 'saved'; clip: ClipRecord; videoRevision: number; projectRevision: number } };
+  'clips.batchStart': { input: z.input<typeof clipBatchStartInputSchema>; output: ClipBatchSnapshot };
+  'clips.batchStatus': { input: z.input<typeof clipBatchStatusInputSchema>; output: ClipBatchSnapshot | null };
+  'clips.batchCancel': { input: z.input<typeof clipBatchCancelInputSchema>; output: ClipBatchSnapshot | null };
+  'clips.batchRetry': { input: z.input<typeof clipBatchStatusInputSchema>; output: ClipBatchSnapshot | null };
+  'clips.delete': { input: z.input<typeof clipsDeleteInputSchema>; output: { deleted: boolean; videoRevision: number; projectRevision: number } };
   'editing.list': { input: void; output: EditorPluginManifest[] };
   'silence.analyze': { input: z.input<typeof silenceAnalyzeInputSchema>; output: JobSnapshot };
   'agent.tools': { input: void; output: Array<{ name: string; description: string }> };
@@ -180,6 +219,7 @@ export interface RpcMethods {
   'text.start': { input: z.input<typeof textInputSchema>; output: JobSnapshot };
   'text.suggestCuts': { input: z.input<typeof semanticCutsInputSchema>; output: JobSnapshot };
   'text.suggestKeywords': { input: z.input<typeof keywordSuggestInputSchema>; output: JobSnapshot };
+  'text.shorten': { input: z.input<typeof textShortenInputSchema>; output: JobSnapshot };
   'export.start': { input: z.input<typeof exportInputSchema>; output: JobSnapshot };
   /** F-0011: normal builds are read-only; internal-validation builds also register the two opaque-grant methods. */
   'jianying.capabilities': { input: void; output: JianyingCapabilities };
@@ -220,7 +260,9 @@ export interface RpcMethods {
   'projects.backupDiscardStaging': { input: z.input<typeof backupDiscardStagingInputSchema>; output: { ok: true } };
   /** F-0019 / F-0032: project-level terminology and ASR hotwords. */
   'projects.getTerminology': { input: z.input<typeof getTerminologyInputSchema>; output: TerminologySnapshot };
+  'projects.getStylePresets': { input: z.input<typeof getStylePresetsInputSchema>; output: StylePresetsSnapshot };
   'projects.saveTerminology': { input: z.input<typeof saveTerminologyInputSchema>; output: SaveTerminologyResult };
+  'projects.saveStylePresets': { input: z.input<typeof saveStylePresetsInputSchema>; output: SaveStylePresetsResult };
   /** F-0051: Host-side project orchestration (shared by CLI and MCP). */
   'projects.transcribe': { input: z.input<typeof projectTranscribeInputSchema>; output: JobSnapshot };
   'projects.suggestEdits': { input: z.input<typeof projectSuggestInputSchema>; output: JobSnapshot };

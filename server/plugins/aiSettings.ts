@@ -75,6 +75,7 @@ export const aiSettingsPlugin = { name: 'flycut-ai-settings', inject: ['hostConf
     const current = data;
     const configs = await Promise.all(current.configs.map(async (item): Promise<AIConfigView> => ({
       id: item.id, name: item.name, baseUrl: item.baseUrl, model: item.model, temperature: item.temperature,
+      ...(item.headers ? { headers: item.headers } : {}),
       hasApiKey: !!item.secretRef && !!(await secrets.get(item.secretRef)),
     })));
     return { hostId, revision: current.revision, selectedId: current.selectedId, configs };
@@ -92,7 +93,8 @@ export const aiSettingsPlugin = { name: 'flycut-ai-settings', inject: ['hostConf
       if (!config.secretRef) throw new Error('AI 配置未设置 API Key');
       const apiKey = await secrets.get(config.secretRef);
       if (!apiKey) throw new Error('AI 配置的 Key 不可用，请重新输入');
-      return { id: config.id, name: config.name, baseUrl: config.baseUrl, model: config.model, temperature: config.temperature, apiKey };
+      return { id: config.id, name: config.name, baseUrl: config.baseUrl, model: config.model, temperature: config.temperature,
+        ...(config.headers ? { headers: config.headers } : {}), apiKey };
     },
     save(input) {
       return exclusive(async (): Promise<AISettingsSaveResult> => {
@@ -110,6 +112,7 @@ export const aiSettingsPlugin = { name: 'flycut-ai-settings', inject: ['hostConf
         const nextConfig: StoredConfig = {
           id, name: input.config.name, baseUrl: input.config.baseUrl, model: input.config.model,
           ...(input.config.temperature === undefined ? {} : { temperature: input.config.temperature }),
+          ...(input.config.headers ? { headers: input.config.headers } : {}),
           ...(newRef ? { secretRef: newRef } : newRef === undefined && input.config.clearApiKey ? {} : oldRef ? { secretRef: oldRef } : {}),
           ...(existing?.sourceId ? { sourceId: existing.sourceId } : {}),
         };

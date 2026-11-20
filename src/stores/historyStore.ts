@@ -14,6 +14,7 @@ import { reconcileChunkKeywords, type SubtitleKeyword } from '../../shared/text/
 import { createLanguageTrack as makeLanguageTrack, findTrackForLanguage, keepTranslation, normalizeLanguageTracks,
   projectLanguageTrack, withTranslation, type LanguageTrack } from '../../shared/languageTracks';
 import { removeTrackDubbings, upsertCueDubbing, type CueDubbingArtifact } from '../../shared/tts/dubbing';
+import { validateSplitPlans, type SplitPlan } from '../../shared/asr/sentenceSplitting';
 
 type ChunkLayer = 'sentence' | 'word';
 type Chunk = SubtitleChunk;
@@ -73,6 +74,8 @@ export interface HistoryActions {
   setTextHistory: (records: TextRecord[]) => void;
   /** One atomic AI-correction confirm; every update is validated before any chunk changes. */
   applyTextBatch: (updates: TextUpdate[], kind?: TextRecord['kind']) => { ok: boolean; count?: number; error?: 'empty' | 'duplicate' | 'unknown' | 'blank' | 'stale' };
+  /** F-0020: apply reviewed sentence splits as one undoable edit; EDL and word ids stay untouched. */
+  applySentenceSplits: (plans: SplitPlan[]) => { ok: boolean; count?: number; error?: 'empty' | 'invalid' | 'stale' };
   /** Restore one persisted text record as a new record; later edits to an affected subtitle are a conflict. */
   restoreTextHistory: (id: string) => { ok: boolean; count?: number; error?: 'missing' | 'conflict' };
   previewTextHistory: (id: string | null) => void;
@@ -373,6 +376,32 @@ export const createHistoryStore = () => createStore<HistoryState & HistoryAction
         set({ textError: error instanceof Error ? error.message : String(error) });
         return { ok: false, error: 'unknown' };
       }
+    },
+    applySentenceSplits: plans => {
+      try {
+        const s = get();
+        if (s.updatingCuts) return { ok: false, error: 'stale' };
+        const validation = validateSplitPlans(s.chunks, plans);
+        if (validation.ok === false) return { ok: false, error: validation.reason === 'empty' ? 'empty' : 'invalid' };
+        const byChunk = new Map(plans.map(plan => [plan.chunkId, plan]));
+        const wordSentence = new Map<string, string>();
+        const chunks: Chunk[] = [];
+        for (const chunk of s.chunks) {
+          const plan = byChunk.get(chunk.id);
+          if (!plan) { chunks.push(chunk); continue; }
+          for (const piece of plan.pieces) {
+            const id = crypto.randomUUID();
+            for (const wordId of piece.wordIds) wordSentence.set(wordId, id);
+            chunks.push({ ...chunk, id, text: piece.text.trim(), timestamp: piece.timestamp, wordIds: [...piece.wordIds],
+              deleted: false, secondText: undefined, keywords: undefined });
+          }
+        }
+        const wordChunks = s.wordChunks.map(word => wordSentence.has(word.id)
+          ? { ...word, sentenceId: wordSentence.get(word.id)! } : word);
+        const before = snapshot(s); const next = { ...before, chunks, wordChunks };
+        commit(next, 'sentence-split', false);
+        return { ok: true, count: plans.length };
+      } catch (error) { fail(error); return { ok: false, error: 'invalid' }; }
     },
     restoreTextHistory: id => {
       try {

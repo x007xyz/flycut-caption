@@ -42,7 +42,7 @@ export function useVideoExport({
   const edl = useHistoryStore(s => s.edl);
   const cutError = useHistoryStore(s => s.cutError);
   const updatingCuts = useHistoryStore(s => s.updatingCuts);
-  const { videoEngines, stores } = useClientRuntime();
+  const { videoEngines, stores, connection } = useClientRuntime();
   const setError = useAppStore(state => state.setError);
   const joinFadeMs = useAppStore(state => state.joinFadeMs);
 
@@ -227,7 +227,25 @@ export function useVideoExport({
 
   // 处理视频导出配置：先选择保存位置，再开始处理
   const handleVideoExport = useCallback(async (options: VideoExportOptions) => {
-    const format = options.format === 'mp4' ? 'mp4' : 'webm';
+    let audioAssetId = options.audioAssetId;
+    if (options.audioMode && options.audioMode !== 'original') {
+      const current = stores.project.getState().current;
+      const trackId = stores.history.getState().activeLanguageTrackId;
+      if (!current || !trackId) { setError('请先打开项目和目标语言轨'); return; }
+      try {
+        const job = await connection.call('dubbing.mix', { projectId: current.projectId, videoId: current.videoId, trackId, mode: options.audioMode }) as { id: string };
+        const result = await connection.waitJob<{ status: string; assetId?: string; missing?: string[]; outdated?: string[]; tooLong?: string[]; backgroundMissing?: boolean }>(job.id);
+        if (result.status !== 'saved' || !result.assetId) {
+          setError(result.backgroundMissing ? '缺少背景分离产物，请先生成人声分离'
+            : `有 ${ (result.missing?.length ?? 0) + (result.outdated?.length ?? 0) + (result.tooLong?.length ?? 0) } 条配音缺失/过期/过长，无法导出`);
+          return;
+        }
+        audioAssetId = result.assetId;
+      } catch (error) {
+        setError(error instanceof Error ? error.message : String(error)); return;
+      }
+    }
+    const format = options.format;
     const saveTarget = await pickVideoExportSaveTarget(format, videoFile?.name);
     if (!saveTarget) return;
 
@@ -241,12 +259,14 @@ export function useVideoExport({
       subtitleStyle: subtitleStylePair.primary,
       subtitleStylePair: subtitleStylePair,
       subtitleExportMode: options.subtitleExportMode,
+      audioAssetId,
+      subtitleTracks: options.subtitleTracks,
       videoWidth: videoMeta.width,
       videoHeight: videoMeta.height,
       outputPath: saveTarget.outputPath,
       joinFadeMs,
     });
-  }, [handleStartProcessing, subtitleStylePair, videoMeta, videoFile?.name, joinFadeMs]);
+  }, [connection, handleStartProcessing, setError, stores, subtitleStylePair, videoMeta, videoFile?.name, joinFadeMs]);
 
   return { isProcessing, videoProgress, handleStartProcessing, handleVideoExport };
 }

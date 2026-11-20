@@ -1,10 +1,11 @@
 import type { Context } from '@deepseek-ai/cordis';
 import type { TextUpdate } from '../../shared/text/corrections';
+import type { SplitPlan } from '../../shared/asr/sentenceSplitting';
 
 export interface TextPersistenceResult {
   ok: boolean;
   count?: number;
-  error?: 'empty' | 'duplicate' | 'unknown' | 'blank' | 'stale' | 'missing' | 'conflict' | 'apply-failed';
+  error?: 'empty' | 'duplicate' | 'unknown' | 'blank' | 'stale' | 'missing' | 'conflict' | 'apply-failed' | 'invalid';
 }
 
 /** Save the current formal edits, confirming a lost response by reading the project back. */
@@ -39,6 +40,29 @@ export async function applyTextBatchWithPersistence(ctx: Context, updates: TextU
     history.setState({ chunks: before.chunks, text: before.text, duration: before.duration, textHistory: before.textHistory,
       textHistoryPreview: before.textHistoryPreview, textError: null, undoStack: before.undoStack, redoStack: before.redoStack,
       canUndo: before.canUndo, canRedo: before.canRedo, updatingCuts: false });
+    return { ok: false, error: 'apply-failed' };
+  }
+  history.setState({ updatingCuts: false });
+  return { ok: saved, count: result.count, error: saved ? undefined : 'apply-failed' };
+}
+
+/** Apply reviewed sentence splits and persist them; a failed write restores the exact pre-apply state. */
+export async function applySentenceSplitsWithPersistence(ctx: Context, plans: SplitPlan[]): Promise<TextPersistenceResult> {
+  const history = ctx.stores.history;
+  const owner = ctx.stores.project.getState().current;
+  const before = history.getState();
+  const result = before.applySentenceSplits(plans);
+  if (!result.ok) return { ok: false, error: result.error };
+  const applied = history.getState();
+  history.setState({ updatingCuts: true });
+  const saved = await persistFormal(ctx);
+  const current = ctx.stores.project.getState().current;
+  const sameOwner = current?.projectId === owner?.projectId && current?.videoId === owner?.videoId;
+  const unchanged = history.getState().chunks === applied.chunks;
+  if (!saved && sameOwner && unchanged) {
+    history.setState({ chunks: before.chunks, wordChunks: before.wordChunks, text: before.text, duration: before.duration,
+      undoStack: before.undoStack, redoStack: before.redoStack, canUndo: before.canUndo, canRedo: before.canRedo,
+      cutError: null, updatingCuts: false });
     return { ok: false, error: 'apply-failed' };
   }
   history.setState({ updatingCuts: false });

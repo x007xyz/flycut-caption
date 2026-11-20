@@ -70,6 +70,8 @@ export interface AppState {
 
   // 智能剪切空白段设置
   smartCutSilenceThreshold: number // 秒，超过此时长的空白段将被标记裁剪
+  /** F-0021: show only this speaker in the subtitle list; null shows all. */
+  speakerFilter: string | null
   /** F-0006：EDL 内部接点的音频淡入淡出，毫秒；0 关闭 */
   joinFadeMs: number
 
@@ -122,6 +124,7 @@ export interface AppActions {
 
   // 智能剪切空白段设置
   setSmartCutSilenceThreshold: (threshold: number) => void
+  setSpeakerFilter: (speaker: string | null) => void
   setJoinFadeMs: (joinFadeMs: number) => void
 
   // 重置
@@ -169,6 +172,7 @@ const initialState: AppState = {
   translationLimits: DEFAULT_TRANSLATION_LIMITS,
 
   smartCutSilenceThreshold: 1.5,
+  speakerFilter: null,
   joinFadeMs: 5,
 
   subtitleStylePair: defaultSubtitleStylePair,
@@ -362,6 +366,7 @@ export const createAppStore = () => createStore<AppState & AppActions>()(
           }
         }),
 
+      setSpeakerFilter: (speakerFilter) => set({ speakerFilter }),
       setSmartCutSilenceThreshold: (threshold) =>
         set((state) => ({
           ...state,

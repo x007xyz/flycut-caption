@@ -58,6 +58,15 @@ export class ProjectStore {
   dir(id: string) { if (!ID.test(id)) throw new Error('Invalid project ID'); return join(this.root, id); }
   videoDir(id: string, videoId: string) { if (!ID.test(videoId)) throw new Error('Invalid video ID'); return join(this.dir(id), 'videos', videoId); }
   dubbingDir(id: string, videoId: string) { return join(this.videoDir(id, videoId), 'dubbing'); }
+  voiceDir(id: string, videoId: string) { return join(this.videoDir(id, videoId), 'voices'); }
+  separationDir(id: string, videoId: string, separationId: string) {
+    if (!/^[0-9a-f-]{36}$/i.test(separationId)) throw new Error('Invalid separation id');
+    return join(this.videoDir(id, videoId), 'separation', separationId);
+  }
+  voiceFile(id: string, videoId: string, file: string) {
+    if (!/^voices\/[0-9a-f-]{36}\.wav$/i.test(file)) throw new Error('Invalid voice sample file');
+    return join(this.videoDir(id, videoId), file);
+  }
   dubbingFile(id: string, videoId: string, file: string) {
     if (!DUBBING_FILE_PATTERN.test(file)) throw new Error('Invalid dubbing file');
     return join(this.videoDir(id, videoId), file);

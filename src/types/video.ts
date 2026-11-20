@@ -39,7 +39,7 @@ export interface VideoProcessingProgress {
 }
 
 export interface ExportOptions {
-  format: 'mp4' | 'webm' | 'avi';
+  format: 'mp4' | 'webm' | 'avi' | 'mkv';
   quality: 'high' | 'medium' | 'low';
   includeSubtitles: boolean;
   subtitleFormat?: 'srt' | 'vtt' | 'json';

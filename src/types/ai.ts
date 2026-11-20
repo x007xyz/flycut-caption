@@ -11,6 +11,7 @@ export interface AIModelConfig {
   apiKey: string;
   model: string; // 例如 gpt-4o-mini
   temperature?: number;
+  headers?: Record<string, string>;
 }
 
 /** Public Host projection used by the UI. It intentionally has no API-key field. */

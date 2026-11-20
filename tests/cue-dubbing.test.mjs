@@ -120,7 +120,7 @@ test('F-0035/AC-2 AC-3 evaluateCueDubbingStatus flags tooLong and outdated reaso
   assert.deepEqual(voiceChanged.reasons, ['voiceChanged']);
 });
 
-test('F-0035/AC-1 AC-2 schema enforces safe dubbing path, built-in voice only, and edits compatibility', () => {
+test('F-0035/AC-1 AC-2 F-0038 schema enforces safe dubbing path and requires a project voice profile for cloning', () => {
   assert.throws(() => cueDubbingArtifactSchema.parse({ ...baseArtifact, file: '../evil.wav' }), /Invalid dubbing file path/);
   assert.throws(() => cueDubbingArtifactSchema.parse({ ...baseArtifact, file: 'media/foo.wav' }), /Invalid dubbing file path/);
   assert.ok(cueDubbingArtifactSchema.parse(baseArtifact));
@@ -139,7 +139,7 @@ test('F-0035/AC-1 AC-2 schema enforces safe dubbing path, built-in voice only, a
       language: 'en',
       cloneReferenceAssetId: ID_2,
     },
-  }), /不支持声音克隆/);
+  }), /声音克隆必须使用项目音色/);
 
 });
 

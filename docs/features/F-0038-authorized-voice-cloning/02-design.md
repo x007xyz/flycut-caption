@@ -10,48 +10,34 @@ approved_at:
 
 ## UI / UX
 
-<!-- 界面状态和文案以 01-spec.md 的 AC 为准。这里写改哪些组件、新增哪些组件、接哪些 stores 和 RPC；没有界面改动写「无界面改动」 -->
+在字幕编辑器工具栏新增「声音克隆」面板：从当前项目视频输入起止时间截取 1–15 秒样本，必须勾选本人/说话人授权并填写说明；创建后命名、试听、删除。删除时明确提示 302.ai 无远端删除接口，只清本地样本。
+
+| 状态 | 用户看到什么 | 验收构造 |
+|---|---|---|
+| 空态 | 「暂无内容 / Nothing here yet」+ 起止时间/名称/授权表单 | `voices.list` 返回空 |
+| 未授权 | 创建按钮禁用，提示先确认授权 | 不勾选 |
+| 处理中 | 「正在处理…」+ 进度；禁止重复提交 | `voices.create` 挂起 |
+| 完成 | 音色列表显示名称、时长、试听/删除 | 返回 profile |
+| 删除 | 二次确认；完成后提示远端留存 | `voices.delete` |
+| 失败/冲突 | 具体原因、重试、保留输入 | job error |
 
 ## 技术方案
 
-### 涉及的子系统
-
-<!-- 对照 AGENTS.md 的路由表，列出要读的子系统文档 -->
-
-### 方案
-
-### 接口与数据
-
-<!-- RPC 方法（shared/protocol.ts）、事件、数据结构变化、兼容迁移 -->
-
-### 备选方案与取舍
-
-## 架构决策
-
-<!-- 需要长期遵守的决定写成 ADR：docs/20-architecture/adr/NNNN-<slug>.md，这里只放链接 -->
-
-## 自行决定的事项
-
-<!-- 需求说明没写清、由设计自己决定的事：决定了什么、为什么、影响哪条 AC。验收时汇总进测试报告 -->
-
-## 风险与回退
+- `project.json` 增量字段 `voiceProfiles` / `voiceProfilesRevision`；样本存 `videos/<videoId>/voices/<uuid>.wav`。
+- Host `voices.create` job：校验项目/视频/授权/1–15 秒，FFmpeg 从项目媒体提取 16k 单声道 WAV，写入 profile；`voices.list`、`voices.delete`、只读音频路由。
+- 302.ai Provider `index-tts-302`：把参考 WAV 上传 `/302/upload-file`，创建 `/302/index_tts2/task`（2.0），轮询下载；`voiceCloning: true`。
+- 授权记录写入 profile（statement、confirmedAt、sourceLabel）；Agent/CLI 不提供代替确认的入口。
 
 ## 实现清单
 
-<!--
-开发阶段按这份清单推进，不再拆任务。每一项是一段能单独验证的功能（从存储到界面打通），做完提交一次并勾选。
-项数不限，一般 3–8 项；按依赖顺序排列。进入「测试与验收」前必须全部勾选（脚本检查）。
-一个需求做不完、需要拆成几个 PR 分别发布时，说明需求太大，回到 Epic 拆成多个需求。
--->
-
-- [ ] 
+- [x] 1. 共享 voice profile schema 与项目增量字段。
+- [x] 2. Host `voices.create/list/delete` + 样本提取 + 只读音频路由。
+- [x] 3. 302.ai IndexTTS Provider（真实克隆验证通过）。
+- [x] 4. 声音克隆面板：起止时间、授权、创建、列表、试听、删除。
+- [x] 5. 把项目音色接入单条/整段配音音色选择，并补试听原片段、取消与远端留存决策。
 
 ## 验证计划
 
-<!-- 每一项完成时要跑的检查（对照 docs/code-standards.md）；涉及界面的 AC 写哪些端到端测试；哪些 AC 需要真实使用验证 -->
-
-## 验收标准覆盖
-
-| AC | 设计中的对应部分 |
-|---|---|
-| AC-1 | |
+- 架构测试 `tests/architecture/voices-f0038.test.ts`：授权、1–15 秒、样本落盘、列表、删除、远端留存。
+- 真实接口 `pnpm acceptance:f0038`：用 `音色.m4a` 调 302 IndexTTS 2.0，验证 WAV 返回。
+- E2E `tests/e2e/features/F-0038.spec.ts`：中英文 × 明暗主题，空态/授权/完成/删除。

@@ -1,9 +1,13 @@
 import { edlCopy } from '@/locales/edl';
 import { projectCues, outputDuration } from '../shared/editing/edl';
+import { projectLanguageTrack } from '../shared/languageTracks';
+import { buildVideoExportSegments } from '@/utils/videoExportSegments';
+import { buildSoftSubtitleTracks, listSoftSubtitleTracks } from '@/subtitle/softSubtitles';
 // FlyCut Caption - 智能视频字幕裁剪工具
 
 import { useCallback, useMemo, useState, useRef, useEffect } from 'react';
 import { useAppStore } from '@/stores/appStore';
+import { useProjectStore } from '@/stores/projectStore';
 import { useRuntimeStoreApi } from '@/stores/runtimeStore';
 import { findModel, useProviderModels } from '@/hooks/useProviderModels';
 import { getModelLanguageConfig, resolveLanguageForModel } from '@/utils/modelLanguageConfig';
@@ -21,7 +25,7 @@ import { useMediaLoader } from '@/hooks/useMediaLoader';
 import { WorkstationHeader } from '@/components/Workstation/WorkstationHeader';
 import { AISettingsPanel } from '@/components/AISettingsPanel';
 import { SettingsDialog } from '@/components/ProcessingPanel/SettingsDialog';
-import { ExportDialog } from '@/components/ExportPanel/ExportDialog';
+import { ExportDialog, type VideoExportOptions } from '@/components/ExportPanel/ExportDialog';
 import { ThemeInitializer } from '@/components/ThemeInitializer';
 import { ToastContainer } from '@/components/MessageCenter';
 import { SubtitleSettings } from '@/components/SubtitleSettings';
@@ -122,6 +126,11 @@ export function FlyCutCaptionContent(props: FlyCutCaptionProps) {
   const updatingCuts = useHistoryStore(s => s.updatingCuts);
   const wordChunks = useWordChunks();
   const hasWordTimestamps = useHasWordTimestamps();
+  const languageTracks = useHistoryStore(s => s.languageTracks);
+  const activeLanguageTrackId = useHistoryStore(s => s.activeLanguageTrackId);
+  const subtitleLanguage = useHistoryStore(s => s.language);
+  const dubbings = useHistoryStore(s => s.dubbings);
+  const currentProject = useProjectStore(s => s.current);
   const insertBlankChunks = useHistoryStore(state => state.proposeCuts);
   const smartCutSilenceThreshold = useAppStore(state => state.smartCutSilenceThreshold);
   const videoDuration = useAppStore(state => state.videoPlayerState.duration);
@@ -395,9 +404,10 @@ export function FlyCutCaptionContent(props: FlyCutCaptionProps) {
   });
 
   // 导出字幕
-  const handleExportSubtitles = useCallback(async (format: SubtitleExportFormat, exportMode: SubtitleDisplayMode) => {
+  const handleExportSubtitles = useCallback(async (format: SubtitleExportFormat, exportMode: SubtitleDisplayMode, languageTrackId?: string) => {
     if (!edl || cutError || updatingCuts || !outputDuration(edl)) { toast.error(t('common.error')); return; }
-    const keptChunks = projectCues(edl, chunks);
+    const sourceChunks = languageTrackId && exportMode !== 'Main' ? projectLanguageTrack(chunks, languageTracks, languageTrackId) : chunks;
+    const keptChunks = projectCues(edl, sourceChunks);
     if (keptChunks.length === 0) {
       toast.error(t('messages.subtitle.emptySubtitleText'));
       return;
@@ -424,9 +434,22 @@ export function FlyCutCaptionContent(props: FlyCutCaptionProps) {
       const detail = error instanceof Error ? error.message : t('common.error');
       toast.error(t('messages.subtitle.exportFailed'), { description: detail });
     }
-  }, [edl, cutError, updatingCuts, chunks, videoMeta, subtitleStylePair, onExportComplete, t]);
+  }, [edl, cutError, updatingCuts, chunks, languageTracks, videoMeta, subtitleStylePair, onExportComplete, t]);
 
 
+
+  const softTracks = useMemo(() => listSoftSubtitleTracks({ chunks, languageTracks,
+    activeTrackId: activeLanguageTrackId, primaryLanguage: subtitleLanguage }), [chunks, languageTracks, activeLanguageTrackId, subtitleLanguage]);
+
+  const handleVideoExportWithTracks = useCallback((options: VideoExportOptions) => {
+    if (options.subtitleProcessing !== 'soft') { void handleVideoExport(options); return; }
+    const segments = buildVideoExportSegments({ chunks, wordChunks, hasWordTimestamps, duration: timelineDuration, edl });
+    const built = buildSoftSubtitleTracks({ chunks, keptSegments: segments, languageTracks,
+      activeTrackId: activeLanguageTrackId, primaryLanguage: subtitleLanguage,
+      selectedIds: options.softTrackIds?.length ? options.softTrackIds : ['primary'],
+      allowPartial: options.softAllowPartial ?? false });
+    void handleVideoExport({ ...options, subtitleTracks: built.tracks });
+  }, [activeLanguageTrackId, chunks, edl, handleVideoExport, hasWordTimestamps, languageTracks, subtitleLanguage, timelineDuration, wordChunks]);
 
   // 打开视频导出对话框
   const handleOpenVideoExportDialog = useCallback(() => {
@@ -669,8 +692,11 @@ export function FlyCutCaptionContent(props: FlyCutCaptionProps) {
           onOpenChange={setExportDialogOpen}
           exportType={exportDialogType}
           defaultExportMode={display}
-          onExportSubtitles={(format, mode) => handleExportSubtitles(format, mode)}
-          onExportVideo={handleVideoExport}
+          onExportSubtitles={(format, mode, trackId) => handleExportSubtitles(format, mode, trackId)}
+          onExportVideo={handleVideoExportWithTracks}
+          hasDubbings={dubbings.length > 0}
+          hasBackground={!!currentProject?.separation}
+          softTracks={softTracks}
           videoMeta={videoMeta}
         />
 

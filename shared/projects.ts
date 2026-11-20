@@ -9,6 +9,11 @@ import { modelRefSchema } from './providers';
 import { textRecordSchema } from './text/corrections';
 import { subtitleKeywordSchema } from './text/keywords';
 import { projectTermEntrySchema } from './terminology';
+import { customStylePresetSchema } from './stylePresets';
+import { voiceProfileSchema } from './tts/voices';
+import { separationRecordSchema } from './separation';
+import { clipRecordSchema } from './clips';
+import { reframeRecordSchema } from './reframe/reframe';
 import { cueDubbingArtifactSchema } from './tts/dubbing';
 
 /** Bump together with a migration in `server/projects/migrations.ts` and a note in ADR-0001. */
@@ -63,6 +68,17 @@ export const projectEditsSchema = z.object({
   languageTracks: z.array(languageTrackSchema).optional(),
   /** F-0030: active track whose translation is projected into the legacy chunk.secondText field. */
   activeLanguageTrackId: z.string().min(1).max(128).nullable().optional(),
+  /** F-0021: speaker diarization segments and user-visible names. Additive format-4 extension. */
+  speakerSegments: z.array(z.looseObject({ speaker: z.string().min(1).max(64), start: z.number().finite().nonnegative(), end: z.number().finite().positive() })).optional(),
+  speakerNames: z.record(z.string().max(64), z.string().trim().min(1).max(80)).optional(),
+  /** F-0042: speaker id -> `profile:<voiceProfileId>` or `voice:<builtinVoiceId>`. */
+  speakerVoices: z.record(z.string().max(64), z.string().min(1).max(200)).optional(),
+  /** F-0048: subject-following crop path. */
+  reframe: reframeRecordSchema.optional(),
+  /** F-0045: confirmed short clips referencing the original media. */
+  clips: z.array(clipRecordSchema).optional(),
+  /** F-0041: cached vocal/background separation for the current media. */
+  separation: separationRecordSchema.optional(),
   /**
    * F-0035: per-cue dubbing audio artifacts stored under `videos/<videoId>/dubbing/<id>.<ext>`.
    * Additive format-4 extension; missing means none.
@@ -118,6 +134,14 @@ export const projectFileSchema = z.object({
   terminology: z.array(projectTermEntrySchema).optional(),
   /** F-0019 / F-0032: grows on every terminology save. */
   terminologyRevision: z.number().int().min(0).optional(),
+  /** F-0027: project-wide named subtitle styles. Additive format-4 extension; missing means none. */
+  stylePresets: z.array(customStylePresetSchema).optional(),
+  /** F-0027: grows on every custom style preset save. */
+  stylePresetsRevision: z.number().int().min(0).optional(),
+  /** F-0038: authorized voice samples cloned from this project's videos. */
+  voiceProfiles: z.array(voiceProfileSchema).optional(),
+  /** F-0038: grows on every voice profile create/delete. */
+  voiceProfilesRevision: z.number().int().min(0).optional(),
   /** Format 2: set while the project is in Trash (ISO 8601). */
   deletedAt: z.string().optional(),
   /** Format 2: when the Host deletes the project permanently (ISO 8601). */

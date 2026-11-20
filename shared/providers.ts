@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /** Model Provider contract shared by Host and client. Rules: docs/subsystems/providers.md. */
-export type ModelRole = 'asr' | 'vad' | 'punc' | 'speaker' | 'align' | 'tts';
+export type ModelRole = 'asr' | 'vad' | 'punc' | 'speaker' | 'align' | 'tts' | 'separation';
 export type TimestampLevel = 'none' | 'segment' | 'word';
 export type ModelStatus = 'ready' | 'download' | 'unavailable';
 export type OptionValue = string | number | boolean;
@@ -189,7 +189,7 @@ export const hotwordCapabilitiesSchema = z.object({
 /** Validates model rows coming from an HTTP Provider; built-in Providers are typed instead. */
 export const modelInfoSchema = z.object({
   id: z.string().regex(MODEL_ID_PATTERN), name: z.string().min(1).max(200),
-  role: z.enum(['asr', 'vad', 'punc', 'speaker', 'align', 'tts']), description: z.string().max(2000).optional(),
+  role: z.enum(['asr', 'vad', 'punc', 'speaker', 'align', 'tts', 'separation']), description: z.string().max(2000).optional(),
   languages: z.array(z.string().max(20)).max(200).optional(), timestampLevel: z.enum(['none', 'segment', 'word']).optional(),
   size: z.string().max(50).optional(), status: z.enum(['ready', 'download', 'unavailable']), reason: z.string().max(1000).optional(),
   recommended: z.boolean().optional(), offline: z.boolean().optional(), recommendation: modelRecommendationSchema.optional(),

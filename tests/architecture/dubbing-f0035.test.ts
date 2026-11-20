@@ -130,7 +130,7 @@ test('F-0035/AC-1 AC-2 AC-3 AC-4 AC-7 project cue dubbing persists in project di
         language: 'en',
         cloneReferenceAssetId: assetId,
       },
-    }), /不支持声音克隆/);
+    }), /声音克隆必须使用项目音色/);
 
     // English cue synthesis
     const opEn = crypto.randomUUID();

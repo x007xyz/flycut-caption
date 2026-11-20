@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { useHistoryStore, useChunks, useHistoryText, useHistoryLanguage, useHistoryDuration, useCanUndo, useCanRedo, useUndo, useRedo } from '@/stores/historyStore';
 import { useAppStore } from '@/stores/appStore';
 import { useProjectStore } from '@/stores/projectStore';
+import { speakerForCue } from '../../../shared/speakers';
 import { isTimeInRange } from '@/utils/timeUtils';
 import { runSmartCutBlank } from '@/utils/smartCutBlank';
 import { FileText, Trash2, RotateCcw, Undo, Redo, Languages, Loader2, Mic, AlertCircle, Wand2, Scissors, Volume2 } from 'lucide-react';
@@ -30,6 +31,16 @@ import { useCueDubbing } from '@/hooks/useCueDubbing';
 import { CorrectionReviewPanel } from './CorrectionReviewPanel';
 import { TranslationPanel } from './TranslationPanel';
 import { SingleCueDubbingPanel } from './SingleCueDubbingPanel';
+import { TrackDubbingPanel } from './TrackDubbingPanel';
+import { VoiceClonePanel } from './VoiceClonePanel';
+import { SpeakerPanel } from './SpeakerPanel';
+import { SeparationPanel } from './SeparationPanel';
+import { ClipsPanel } from './ClipsPanel';
+import { useClips } from '@/hooks/useClips';
+import { useClipExport } from '@/hooks/useClipExport';
+import { useSeparation } from '@/hooks/useSeparation';
+import { useSpeakers } from '@/hooks/useSpeakers';
+import { useTrackDubbing } from '@/hooks/useTrackDubbing';
 import { dubbingCopy } from '@/locales/dubbing';
 import type { FindReplaceActions, FindReplaceState } from '@/hooks/useFindReplace';
 import type { FindMatch } from '../../../shared/text/findReplace';
@@ -100,6 +111,8 @@ export function SubtitleList({
 }: SubtitleListProps) {
   const { t, language: uiLanguage } = useTranslation();
   const chunks = useChunks();
+  const speakerFilter = useAppStore(state => state.speakerFilter);
+  const speakerSegments = useProjectStore(state => state.current?.speakerSegments);
   const text = useHistoryText();
   const language = useHistoryLanguage();
   const duration = useHistoryDuration();
@@ -118,8 +131,8 @@ export function SubtitleList({
   }), [text, chunks, language, duration]);
   
   const activeChunks = useMemo(
-    () => chunks.filter(c => !c.deleted),
-    [chunks]
+    () => chunks.filter(c => !c.deleted && (!speakerFilter || speakerForCue(speakerSegments ?? [], c.timestamp) === speakerFilter)),
+    [chunks, speakerFilter, speakerSegments]
   );
   
   const videoFile = useAppStore(state => state.videoFile);
@@ -223,6 +236,12 @@ export function SubtitleList({
     if (outside.length) flushDrafts(outside);
   }, [flushDrafts, indexById, range.end, range.start]);
   const dubbing = useCueDubbing({ modelGroups, modelsLoading, modelsError, onFlushDrafts: () => flushDrafts() });
+  const trackDubbing = useTrackDubbing(modelGroups ?? [], onOpenSettings);
+  const [voicePanelOpen, setVoicePanelOpen] = useState(false);
+  const speakers = useSpeakers(modelGroups ?? []);
+  const separation = useSeparation(modelGroups ?? []);
+  const clips = useClips(time => videoPlayerRef?.current?.seekTo(time));
+  const clipExport = useClipExport();
 
   useEffect(() => {
     const flushBeforeLeavingList = (event: PointerEvent) => {
@@ -596,6 +615,46 @@ export function SubtitleList({
             <span>{translation.phase === 'running' ? t('components.workstation.translating') : t('components.workstation.translateStart')}</span>
           </button>
 
+          {/* 短片推荐 */}
+          <button data-testid="clips-open" onClick={clips.openPanel}
+            className={cn('flex items-center gap-1 px-2 py-0.5 text-xs rounded font-medium transition-colors',
+              clips.open ? 'bg-aimu-purple text-white' : 'bg-aimu-input text-aimu-text-secondary hover:text-aimu-text-primary')}>
+            短片推荐
+          </button>
+
+          {/* 人声分离 */}
+          <button data-testid="separation-open" onClick={separation.openPanel}
+            className={cn('flex items-center gap-1 px-2 py-0.5 text-xs rounded font-medium transition-colors',
+              separation.open ? 'bg-aimu-purple text-white' : 'bg-aimu-input text-aimu-text-secondary hover:text-aimu-text-primary')}>
+            人声分离
+          </button>
+
+          {/* 说话人 */}
+          <button data-testid="speaker-open" onClick={speakers.openPanel}
+            className={cn('flex items-center gap-1 px-2 py-0.5 text-xs rounded font-medium transition-colors',
+              speakers.open ? 'bg-aimu-purple text-white' : 'bg-aimu-input text-aimu-text-secondary hover:text-aimu-text-primary')}>
+            说话人
+          </button>
+
+          {/* 声音克隆 */}
+          <button data-testid="voice-clone-open" onClick={() => setVoicePanelOpen(value => !value)}
+            className={cn('flex items-center gap-1 px-2 py-0.5 text-xs rounded font-medium transition-colors',
+              voicePanelOpen ? 'bg-aimu-purple text-white' : 'bg-aimu-input text-aimu-text-secondary hover:text-aimu-text-primary')}>
+            声音克隆
+          </button>
+
+          {/* 整段配音 */}
+          <button
+            data-testid="track-dubbing-open"
+            onClick={trackDubbing.openPanel}
+            className={cn(
+              'flex items-center gap-1 px-2 py-0.5 text-xs rounded font-medium transition-colors',
+              trackDubbing.open ? 'bg-aimu-purple text-white' : 'bg-aimu-input text-aimu-text-secondary hover:text-aimu-text-primary',
+            )}
+          >
+            整段配音
+          </button>
+
           {/* 单条配音 */}
           <button
             data-testid="cue-dubbing-open"
@@ -617,6 +676,13 @@ export function SubtitleList({
       <CorrectionReviewPanel review={review} />
       <TranslationPanel translation={translation} />
       <SingleCueDubbingPanel dubbing={dubbing} onOpenSettings={onOpenSettings} />
+      <TrackDubbingPanel state={trackDubbing} />
+      <VoiceClonePanel open={voicePanelOpen} onClose={() => setVoicePanelOpen(false)} />
+      <SpeakerPanel state={speakers} />
+      <SeparationPanel state={separation} />
+      <ClipsPanel state={clips} onExport={clip => void clipExport.exportClip(clip)} exportPhase={clipExport.phase} exportProgress={clipExport.progress} exportError={clipExport.error}
+        onBatch={clips => void clipExport.batchExport(clips)} batch={clipExport.batch} onBatchCancel={() => void clipExport.batchCancel()}
+        hasReframe={clipExport.hasReframe} followSubject={clipExport.followSubject} setFollowSubject={clipExport.setFollowSubject} />
 
       {/* Subtitle List (virtualized scroll window) */}
       <div

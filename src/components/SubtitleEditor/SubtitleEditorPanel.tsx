@@ -18,12 +18,15 @@ import { useEffect, useState, type RefObject } from 'react';
 import type { EnhancedVideoPlayerRef } from '@/components/VideoPlayer/EnhancedVideoPlayer';
 import type { ASRProgress } from '@/types/subtitle';
 import type { ProviderModels } from '../../../shared/providers';
-import { Scissors, Languages, AlertCircle } from 'lucide-react';
+import { Scissors, Languages, AlertCircle, Pilcrow } from 'lucide-react';
 import { useWordChunks, useHasWordTimestamps, useHistoryStore } from '@/stores/historyStore';
 import { canDeleteByWordAtRuntime } from '@/utils/wordLevelEdit';
 import { useKeywordRecommendation } from '@/hooks/useKeywordRecommendation';
+import { useSentenceSplits } from '@/hooks/useSentenceSplits';
 import { KeywordEmphasisPanel } from './KeywordEmphasisPanel';
+import { SentenceSplitPanel } from './SentenceSplitPanel';
 import { keywordCopy } from '@/locales/keywords';
+import { sentenceSplitCopy } from '@/locales/sentenceSplits';
 import { Tag } from 'lucide-react';
 
 export type SubtitleEditorView = 'processed' | 'original';
@@ -57,6 +60,7 @@ export function SubtitleEditorPanel({
   const [view, setView] = useState<SubtitleEditorView>('processed');
   const find = useFindReplace();
   const keywordReview = useKeywordRecommendation();
+  const sentenceSplit = useSentenceSplits();
   const openFind = find.openFind;
   const wordChunks = useWordChunks();
   const updating = useHistoryStore(s => s.updatingCuts);
@@ -82,6 +86,7 @@ export function SubtitleEditorPanel({
   }, [keywordReview]);
 
   const kwCopy = keywordCopy(language);
+  const ssCopy = sentenceSplitCopy(language);
 
   return (
     <div className={cn('flex flex-col h-full', className)}>
@@ -126,9 +131,19 @@ export function SubtitleEditorPanel({
           <Tag className="w-3 h-3" />
           {kwCopy.panelEntry}
         </button>
+        <button
+          type="button"
+          data-testid="sentence-split-open"
+          onClick={sentenceSplit.openPanel}
+          className="ml-2 flex items-center gap-1 rounded px-2 py-1 text-xs text-aimu-text-secondary transition-colors hover:text-aimu-text-primary"
+        >
+          <Pilcrow className="w-3 h-3" />
+          {ssCopy.entry}
+        </button>
       </div>
 
       <KeywordEmphasisPanel review={keywordReview} />
+      <SentenceSplitPanel state={sentenceSplit} />
       <LanguageTrackBar />
       <CutHistoryPanel />
       <AgentSuggestionsBar />

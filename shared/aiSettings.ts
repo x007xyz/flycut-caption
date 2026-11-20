@@ -10,6 +10,7 @@ export const aiConfigViewSchema = z.object({
   baseUrl: z.string(),
   model: z.string(),
   temperature: z.number().optional(),
+  headers: z.record(z.string(), z.string()).optional(),
   hasApiKey: z.boolean(),
 });
 export type AIConfigView = z.infer<typeof aiConfigViewSchema>;
@@ -28,6 +29,7 @@ const configFields = {
   baseUrl: baseUrlSchema,
   model: z.string().trim().min(1).max(200),
   temperature: z.number().finite().min(0).max(2).optional(),
+  headers: z.record(z.string().min(1).max(100), z.string().max(2000)).optional(),
   /** Empty or absent keeps the existing secret. Only non-empty values are stored. */
   apiKey: z.string().max(8192).optional(),
   clearApiKey: z.boolean().optional(),
@@ -123,5 +125,6 @@ export interface ResolvedAIConfig {
   baseUrl: string;
   model: string;
   temperature?: number;
+  headers?: Record<string, string>;
   apiKey: string;
 }

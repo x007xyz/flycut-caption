@@ -10,6 +10,7 @@ import { useHistoryStore } from '@/stores/historyStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { toast } from 'sonner';
 import { findTrackForLanguage, isTranslationOutdated } from '../../shared/languageTracks';
+import { findTerminologyIssues } from '../../shared/terminology';
 import {
   evaluateTranslationConstraints,
   splitTranslationBatches,
@@ -59,6 +60,7 @@ interface BaseSnapshot {
   sources: Map<string, string>;
   trackId: string | null;
   entriesJson: string;
+  terminologyRevision: number;
 }
 
 export interface OutdatedCueOption {
@@ -92,6 +94,9 @@ export interface BatchTranslationController {
   appliedCount: number;
   appliedTrackName: string;
   canApply: boolean;
+  terminologyRevision: number;
+  terminologyCount: number;
+  terminologyIssues: Array<{ id: string; terms: string[] }>;
   openPanel: (initialScope?: TranslationScope) => void;
   closePanel: () => void;
   setSourceLang: (lang: string) => void;
@@ -141,6 +146,17 @@ export function useBatchTranslation(
 
   const projectId = useProjectStore((s) => s.current?.projectId ?? '');
   const videoId = useProjectStore((s) => s.current?.videoId ?? '');
+  const terminology = useProjectStore((s) => s.current?.terminology);
+  const currentTerminologyRevision = useProjectStore((s) => s.current?.terminologyRevision ?? 0);
+  const targetTerms = useMemo(() => {
+    const language = targetLang.toLowerCase();
+    const short = language.split(/[-_]/)[0];
+    return (terminology ?? []).flatMap((entry) => {
+      const translation = entry.translations?.[language] ?? entry.translations?.[short];
+      return translation?.trim() ? [{ term: entry.term, translation: translation.trim() }] : [];
+    });
+  }, [terminology, targetLang]);
+  const runTermsRef = useRef<Array<{ term: string; translation: string }>>([]);
 
   const [open, setOpen] = useState(false);
   const [phase, setPhase] = useState<TranslationPhase>('idle');
@@ -269,12 +285,14 @@ export function useBatchTranslation(
 
   const captureBaseSnapshot = useCallback((): BaseSnapshot => {
     const sources = new Map(activeCues.map((cue) => [cue.id, cue.text]));
+    runTermsRef.current = targetTerms;
     return {
       sources,
       trackId: targetTrack?.id ?? null,
       entriesJson: JSON.stringify(targetTrack?.entries ?? {}),
+      terminologyRevision: currentTerminologyRevision,
     };
-  }, [activeCues, targetTrack]);
+  }, [activeCues, targetTrack, targetTerms, currentTerminologyRevision]);
 
   const changedIds = useMemo(() => {
     if (!baseSnapshot || !['review', 'partial', 'applying'].includes(phase)) return [];
@@ -294,8 +312,14 @@ export function useBatchTranslation(
     if (changedIds.length > 0) return true;
     const currentTrackId = targetTrack?.id ?? null;
     const currentEntriesJson = JSON.stringify(targetTrack?.entries ?? {});
-    return currentTrackId !== baseSnapshot.trackId || currentEntriesJson !== baseSnapshot.entriesJson;
-  }, [baseSnapshot, changedIds.length, phase, targetTrack]);
+    return currentTrackId !== baseSnapshot.trackId || currentEntriesJson !== baseSnapshot.entriesJson
+      || currentTerminologyRevision !== baseSnapshot.terminologyRevision;
+  }, [baseSnapshot, changedIds.length, currentTerminologyRevision, phase, targetTrack]);
+
+  const terminologyIssues = useMemo(() => {
+    if (!['review', 'partial', 'applying'].includes(phase)) return [];
+    return findTerminologyIssues([...rawDrafts.values()], targetTerms);
+  }, [phase, rawDrafts, targetTerms]);
 
   const executeBatches = useCallback(
     async (targets: TranslationBatchState[], runId: number, controller: AbortController, activeModel: AIModelView, lang: string, srcLang: string) => {
@@ -315,6 +339,7 @@ export function useBatchTranslation(
             semanticGroups: target.semanticGroups,
             contextBefore: target.contextBefore,
             contextAfter: target.contextAfter,
+            terms: runTermsRef.current,
             signal: controller.signal,
           });
           if (runRef.current !== runId || controller.signal.aborted) return;
@@ -657,6 +682,9 @@ export function useBatchTranslation(
     appliedCount,
     appliedTrackName,
     canApply,
+    terminologyRevision: currentTerminologyRevision,
+    terminologyCount: targetTerms.length,
+    terminologyIssues,
     openPanel,
     closePanel,
     setSourceLang,

@@ -9,6 +9,12 @@ import type { ExportProbeInfo, ExportService, ProgressReporter } from '../servic
 import { createSubtitleBandRenderer, type SubtitleBandRenderer } from '../subtitle-render';
 import type { SubtitleGraphicScene } from '../../shared/subtitle-graphics';
 
+const ISO_639_2: Record<string, string> = {
+  en: 'eng', zh: 'zho', ja: 'jpn', ko: 'kor', fr: 'fra', de: 'deu', es: 'spa', ru: 'rus', pt: 'por', it: 'ita',
+  ar: 'ara', hi: 'hin', th: 'tha', vi: 'vie', id: 'ind', ms: 'msa', tr: 'tur', pl: 'pol', nl: 'nld', sv: 'swe',
+  da: 'dan', fi: 'fin', no: 'nor', cs: 'ces', el: 'ell', he: 'heb', hu: 'hun', ro: 'ron', uk: 'ukr',
+};
+const subtitleLanguageTag = (code: string) => ISO_639_2[code.toLowerCase().split(/[-_]/)[0]] ?? 'und';
 const qualityCrf = { high: '18', medium: '23', low: '28' } as const;
 
 function probeVideo(info: string): { width?: number; height?: number; fps?: number } {
@@ -102,6 +108,8 @@ export const exportPlugin = { name: 'flycut-export', inject: ['hostConfig', 'job
     if (!kept.length) throw new Error('没有选择要保留的视频片段');
 
     const args = ['-y', '-i', source];
+    const audioAssetPath = input.options.audioAssetId ? ctx.assets.path(input.options.audioAssetId) : undefined;
+    if (audioAssetPath) args.push('-i', audioAssetPath);
     const ffmpeg = await resolveFfmpeg();
     // Probe through the bundled FFmpeg; ffprobe is not assumed to be installed.
     const info = await probeStderr(ffmpeg, source, signal);
@@ -110,7 +118,11 @@ export const exportPlugin = { name: 'flycut-export', inject: ['hostConfig', 'job
     if (input.edl && (!sourceDuration || Math.abs(sourceDuration - input.edl.sourceDurationUs / 1e6) > 0.05))
       throw new Error('The EDL duration does not match the source media');
     const probe = probeVideo(info);
-    const withAudio = input.options.preserveAudio && /Stream.*Audio:/.test(info);
+    const withAudio = input.options.preserveAudio && (!!audioAssetPath || /Stream.*Audio:/.test(info));
+    const audioSource = audioAssetPath ? '1:a:0' : '0:a:0';
+    const rendererInputIndex = 1 + (audioAssetPath ? 1 : 0);
+    const willRender = input.options.subtitleProcessing === 'hard' && !!input.options.subtitleScene;
+    const subtitleInputStart = 1 + (audioAssetPath ? 1 : 0) + (willRender ? 1 : 0);
     // Preserve the old request semantics. Every versioned plan is explicitly trimmed, including a tail-only cut.
     const hasCuts = !!input.edl || kept.length !== 1 || kept[0].start > 0.001;
     const outputSeconds = input.edl ? outputDuration(input.edl) : kept.reduce((total, segment) => total + segment.end - segment.start, 0);
@@ -122,13 +134,13 @@ export const exportPlugin = { name: 'flycut-export', inject: ['hostConfig', 'job
         ...(fade > 0 && index > 0 ? [`afade=t=in:st=0:d=${fade}`] : []),
         ...(fade > 0 && index < kept.length - 1 ? [`afade=t=out:st=${Math.max(0, duration - fade)}:d=${fade}`] : []),
       ];
-      return `[0:a:0]atrim=start=${segment.start}:end=${segment.end},asetpts=PTS-STARTPTS${fades.length ? ',' + fades.join(',') : ''}[a${index}]`;
+      return `[${audioSource}]atrim=start=${segment.start}:end=${segment.end},asetpts=PTS-STARTPTS${fades.length ? ',' + fades.join(',') : ''}[a${index}]`;
     };
 
     let renderer: SubtitleBandRenderer | undefined;
     let subtitleScene: SubtitleGraphicScene | undefined;
     if (input.options.subtitleProcessing === 'hard' && input.options.subtitleScene) {
-      subtitleScene = normalizeScene(input.options.subtitleScene, probe, outputSeconds);
+      subtitleScene = normalizeScene(input.options.subtitleScene, input.options.crop === '9:16' ? { width: 1080, height: 1920, fps: probe.fps } : probe, outputSeconds);
       renderer = await createSubtitleBandRenderer(subtitleScene, ctx.hostConfig.resourceRoot);
       args.push('-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${renderer.band.width}x${renderer.band.height}`,
         '-r', String(subtitleScene.fps), '-i', 'pipe:0');
@@ -169,18 +181,48 @@ export const exportPlugin = { name: 'flycut-export', inject: ['hostConfig', 'job
       videoLabel = '[vout]';
     }
 
+    if (input.options.crop === '9:16') {
+      const samples = (input.options.cropSamples ?? []).filter((sample, index, list) => index === 0 || sample.time > list[index - 1].time);
+      const targetOf = (centerX: number) => `(${(centerX / 640).toFixed(6)}*iw-ih*9/32)`;
+      let x = samples.length ? targetOf(samples[samples.length - 1].centerX) : 'iw/2-ih*9/32';
+      for (let index = samples.length - 2; index >= 0; index -= 1) {
+        x = `if(lt(t,${samples[index].time.toFixed(3)}),${targetOf(samples[index].centerX)},${x})`;
+      }
+      const expr = `max(0,min(iw-ih*9/16,${x}))`;
+      filterParts.push(`${videoLabel}crop=w=ih*9/16:h=ih:x='${expr}',scale=1080:1920:flags=lanczos,setsar=1[vcrop]`);
+      videoLabel = '[vcrop]';
+    }
+
     if (renderer) {
       const band = renderer.band;
-      filterParts.push('[1:v]format=rgba[sub]', `${videoLabel}[sub]overlay=x=0:y=${band.y}:format=yuv420:eof_action=pass[vsub]`);
+      filterParts.push(`[${rendererInputIndex}:v]format=rgba[sub]`, `${videoLabel}[sub]overlay=x=0:y=${band.y}:format=yuv420:eof_action=pass[vsub]`);
       videoLabel = '[vsub]';
     }
 
     if (filterParts.length > 0) args.push('-filter_complex', filterParts.join(';'));
-    if (input.options.subtitleProcessing === 'soft' && input.options.subtitleTextContent) {
-      const subtitlePath = join(exportRoot, `${id}.vtt`); await writeFile(subtitlePath, input.options.subtitleTextContent); tempFiles.push(subtitlePath);
-      args.push('-i', subtitlePath, '-map', videoLabel);
+    const softTracks = input.options.subtitleProcessing === 'soft'
+      ? (input.options.subtitleTracks?.length
+        ? input.options.subtitleTracks
+        : input.options.subtitleTextContent
+          ? [{ id: 'default', name: 'Subtitles', languageCode: 'und', content: input.options.subtitleTextContent, default: true }]
+          : [])
+      : [];
+    if (extension === 'webm' && softTracks.length > 1) throw new Error('WebM 只支持一条软字幕轨，请选择 MP4 或 MKV');
+    if (softTracks.length) {
+      for (const [index, track] of softTracks.entries()) {
+        const subtitlePath = join(exportRoot, `${id}-${index}.vtt`);
+        await writeFile(subtitlePath, track.content); tempFiles.push(subtitlePath);
+        args.push('-i', subtitlePath);
+      }
+      args.push('-map', videoLabel);
       if (withAudio) args.push('-map', audioLabel);
-      args.push('-map', '1:0', '-c:s', extension === 'webm' ? 'webvtt' : 'mov_text');
+      const subtitleCodec = extension === 'mkv' ? 'srt' : extension === 'webm' ? 'webvtt' : 'mov_text';
+      for (const [index, track] of softTracks.entries()) {
+        args.push('-map', `${subtitleInputStart + index}:0`, `-c:s:${index}`, subtitleCodec,
+          `-metadata:s:s:${index}`, `language=${subtitleLanguageTag(track.languageCode)}`,
+          `-metadata:s:s:${index}`, `title=${track.name}`,
+          `-disposition:s:${index}`, track.default ? 'default' : '0');
+      }
     } else {
       args.push('-map', videoLabel);
       if (withAudio) args.push('-map', audioLabel);
@@ -224,7 +266,7 @@ export const exportPlugin = { name: 'flycut-export', inject: ['hostConfig', 'job
       await Promise.all([...tempFiles, output].map(file => rm(file, { force: true })));
     }
     report({ status: 'progress', purpose: 'transcribe', progress: 100, data: '导出完成' });
-    return { assetId, filename: `cut_video_${id}.${extension}`, mimeType: extension === 'webm' ? 'video/webm' : 'video/mp4' };
+    return { assetId, filename: `cut_video_${id}.${extension}`, mimeType: extension === 'webm' ? 'video/webm' : extension === 'mkv' ? 'video/x-matroska' : 'video/mp4' };
   }
   const service: ExportService = {
     probeFile,

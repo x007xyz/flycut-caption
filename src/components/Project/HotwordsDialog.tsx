@@ -16,6 +16,7 @@ export function HotwordsDialog() {
   const [draftTerm, setDraftTerm] = useState('');
   const [draftWeight, setDraftWeight] = useState('');
   const [draftAsHotword, setDraftAsHotword] = useState(true);
+  const [draftTranslations, setDraftTranslations] = useState('');
   const [editingId, setEditingId] = useState<string | undefined>();
   const [fieldError, setFieldError] = useState<string | undefined>();
 
@@ -26,6 +27,7 @@ export function HotwordsDialog() {
     setDraftTerm('');
     setDraftWeight('');
     setDraftAsHotword(true);
+    setDraftTranslations('');
     setEditingId(undefined);
     setFieldError(undefined);
   };
@@ -36,11 +38,31 @@ export function HotwordsDialog() {
       setFieldError(checked.message);
       return;
     }
+    let translations: Record<string, string> | undefined;
+    if (draftTranslations.trim()) {
+      translations = {};
+      for (const line of draftTranslations.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        const index = trimmed.indexOf('=') >= 0 ? trimmed.indexOf('=') : trimmed.indexOf(':');
+        const code = index > 0 ? trimmed.slice(0, index).trim() : '';
+        const text = index > 0 ? trimmed.slice(index + 1).trim() : '';
+        if (!/^[A-Za-z]{2,8}(?:[-_][A-Za-z0-9]{1,8})?$/.test(code)) {
+          setFieldError('译名格式应为 语言=译名，例如 en=Subtitle / Use lang=translation');
+          return;
+        }
+        if (!text) {
+          setFieldError('译名不能为空 / Translation cannot be empty');
+          return;
+        }
+        translations[code] = text;
+      }
+    }
     setFieldError(undefined);
     if (editingId) {
-      projects.updateHotwordEntry(editingId, { term: checked.term, weight: checked.weight, asHotword: draftAsHotword });
+      projects.updateHotwordEntry(editingId, { term: checked.term, weight: checked.weight, asHotword: draftAsHotword, translations });
     } else {
-      projects.addHotwordEntry({ term: checked.term, weight: checked.weight, asHotword: draftAsHotword });
+      projects.addHotwordEntry({ term: checked.term, weight: checked.weight, asHotword: draftAsHotword, translations });
     }
     resetForm();
   };
@@ -97,6 +119,20 @@ export function HotwordsDialog() {
               </div>
             </div>
 
+            <div className="space-y-1">
+              <Label htmlFor="hotword-translations-input" className="text-xs">译名（每行 语言=译名） / Translations (lang=text)</Label>
+              <textarea
+                id="hotword-translations-input"
+                data-testid="hotword-translations-input"
+                value={draftTranslations}
+                placeholder={'en=Subtitle\nja=字幕'}
+                disabled={busy}
+                rows={2}
+                onChange={(e) => { setDraftTranslations(e.target.value); if (fieldError) setFieldError(undefined); }}
+                className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-xs shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </div>
+
             {fieldError && (
               <p className="flex items-center gap-1.5 text-xs text-aimu-coral" role="alert">
                 <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
@@ -123,6 +159,10 @@ export function HotwordsDialog() {
                     {item.weight !== undefined && (
                       <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">w:{item.weight}</span>
                     )}
+                    {item.translations && Object.entries(item.translations).map(([code, text]) => (
+                      <span key={code} data-testid={`hotword-translation-${item.id}-${code}`}
+                        className="rounded bg-aimu-purple/10 px-1.5 py-0.5 text-[10px] text-aimu-purple">{code}:{text}</span>
+                    ))}
                     <button
                       type="button"
                       aria-label={`${tp('hotwordsEdit')} ${item.term}`}
@@ -132,6 +172,7 @@ export function HotwordsDialog() {
                         setDraftTerm(item.term);
                         setDraftWeight(item.weight !== undefined ? String(item.weight) : '');
                         setDraftAsHotword(item.asHotword);
+                        setDraftTranslations(item.translations ? Object.entries(item.translations).map(([code, text]) => `${code}=${text}`).join('\n') : '');
                         setFieldError(undefined);
                       }}
                       className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"

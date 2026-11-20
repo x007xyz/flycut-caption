@@ -25,22 +25,33 @@ import { useTranslation } from '@/contexts/LocaleProvider';
 import type { SubtitleDisplayMode } from '@/subtitle';
 import { useClientRuntime } from '@/runtime/context';
 import { JianyingDraftInfoPanel } from './JianyingDraftInfoPanel';
+import type { SoftSubtitleCandidate } from '@/subtitle/softSubtitles';
+import { SUBTITLE_FONTS } from '@/config/subtitleFonts';
 
 export interface VideoExportOptions {
-  format: 'mp4' | 'webm';
+  format: 'mp4' | 'webm' | 'mkv';
   quality: 'high' | 'medium' | 'low';
   subtitleProcessing: 'none' | 'soft' | 'hard';
   subtitleExportMode: SubtitleDisplayMode;
+  softTrackIds?: string[];
+  softAllowPartial?: boolean;
+  audioMode?: 'original' | 'dubbing' | 'dubbing-background' | 'dubbing-ducked';
+  audioAssetId?: string;
+  aiLabel?: string;
+  subtitleTracks?: Array<{ id: string; name: string; languageCode: string; content: string; default?: boolean }>;
 }
 
 interface ExportDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   exportType: 'subtitles' | 'video' | 'jianying';
-  onExportSubtitles: (format: 'srt' | 'json' | 'vtt' | 'ass', exportMode: SubtitleDisplayMode) => void | Promise<void>;
+  onExportSubtitles: (format: 'srt' | 'json' | 'vtt' | 'ass', exportMode: SubtitleDisplayMode, languageTrackId?: string) => void | Promise<void>;
   onExportVideo: (options: VideoExportOptions) => void;
   defaultExportMode?: SubtitleDisplayMode;
   videoMeta: { width: number; height: number };
+  softTracks?: SoftSubtitleCandidate[];
+  hasDubbings?: boolean;
+  hasBackground?: boolean;
 }
 
 interface ExportEnvironment {
@@ -58,6 +69,9 @@ export function ExportDialog({
   onExportVideo,
   defaultExportMode,
   videoMeta,
+  softTracks = [],
+  hasDubbings = false,
+  hasBackground = false,
 }: ExportDialogProps) {
   const { connection } = useClientRuntime();
   const { t } = useTranslation();
@@ -71,12 +85,24 @@ export function ExportDialog({
   });
 
   const [isExportingSubtitles, setIsExportingSubtitles] = useState(false);
+  const [selectedSoftTracks, setSelectedSoftTracks] = useState<string[]>(['primary']);
+  const [allowPartial, setAllowPartial] = useState(false);
+  const [subtitleTrackId, setSubtitleTrackId] = useState<string>('primary');
+  const [audioMode, setAudioMode] = useState<NonNullable<VideoExportOptions['audioMode']>>('original');
 
   const [env, setEnv] = useState<ExportEnvironment>({
     isTauri: isTauriRuntime(),
     hostExportAvailable: false,
     checking: true,
   });
+
+  useEffect(() => {
+    if (!open) return;
+    const ready = softTracks.filter(track => track.missing + track.outdated === 0).map(track => track.id);
+    setSelectedSoftTracks(ready.length ? ready : ['primary']);
+    setAllowPartial(false);
+    setSubtitleTrackId(softTracks.find(track => track.active)?.id ?? 'primary');
+  }, [open, softTracks]);
 
   useEffect(() => {
     if (!open || exportType !== 'video') return;
@@ -117,7 +143,7 @@ export function ExportDialog({
 
     setIsExportingSubtitles(true);
     try {
-      await onExportSubtitles(format, subtitleExportMode);
+      await onExportSubtitles(format, subtitleExportMode, subtitleExportMode === 'Main' ? undefined : subtitleTrackId);
       onOpenChange(false);
     } finally {
       setIsExportingSubtitles(false);
@@ -126,7 +152,8 @@ export function ExportDialog({
 
   const handleVideoExport = () => {
     if (!canExportVideo) return;
-    onExportVideo({ ...videoOptions, subtitleExportMode });
+    onExportVideo({ ...videoOptions, subtitleExportMode, audioMode,
+      ...(videoOptions.subtitleProcessing === 'soft' ? { softTrackIds: selectedSoftTracks, softAllowPartial: allowPartial } : {}) });
     onOpenChange(false);
   };
 
@@ -162,6 +189,20 @@ export function ExportDialog({
     { id: 'Second', label: t('components.workstation.exportSecond') },
   ];
 
+  const renderLanguageTrackSelector = () => {
+    if (softTracks.length <= 1 || subtitleExportMode === 'Main') return null;
+    return <div className="space-y-2">
+      <label className="text-sm font-medium">语言轨 / Language track</label>
+      <div className="grid grid-cols-2 gap-1">
+        {softTracks.map(track => <button key={track.id} type="button" onClick={() => setSubtitleTrackId(track.id)}
+          className={cn('rounded border p-1.5 text-left text-xs transition-colors', subtitleTrackId === track.id ? 'border-primary bg-primary/10' : 'hover:bg-muted/50')}>
+          <span className="block font-medium">{track.name}</span>
+          <span className="text-[10px] text-muted-foreground">{track.languageCode} · {track.total - track.missing - track.outdated}/{track.total}</span>
+        </button>)}
+      </div>
+    </div>;
+  };
+
   const renderExportContentSelector = () => (
     <div className="space-y-2">
       <label className="text-sm font-medium">{t('components.workstation.exportContent')}</label>
@@ -184,6 +225,10 @@ export function ExportDialog({
       </div>
     </div>
   );
+
+  const activeSoftTrack = softTracks.find(track => track.active) ?? softTracks[0];
+  const burnLanguage = activeSoftTrack?.languageCode?.slice(0, 2).toLowerCase() ?? 'und';
+  const burnable = burnLanguage === 'und' || SUBTITLE_FONTS.some(font => font.languages.includes('auto') || font.languages.includes(burnLanguage));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -220,6 +265,7 @@ export function ExportDialog({
           ) : exportType === 'subtitles' ? (
             <div className="space-y-4">
               {renderExportContentSelector()}
+              {renderLanguageTrackSelector()}
 
               {isExportingSubtitles && (
                 <div className="flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-sm text-primary">
@@ -349,7 +395,7 @@ export function ExportDialog({
 
               <div className="space-y-2">
                 <label className="text-sm font-medium">输出格式</label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <button
                     onClick={() => setVideoOptions(prev => ({ ...prev, format: 'mp4' }))}
                     className={cn(
@@ -373,6 +419,18 @@ export function ExportDialog({
                   >
                     <div className="font-semibold">WebM</div>
                     <div className="text-xs text-muted-foreground">体积更小</div>
+                  </button>
+                  <button
+                    onClick={() => setVideoOptions(prev => ({ ...prev, format: 'mkv' }))}
+                    className={cn(
+                      'p-3 border rounded-lg text-left transition-colors',
+                      videoOptions.format === 'mkv'
+                        ? 'border-primary bg-primary/10'
+                        : 'hover:bg-muted/50'
+                    )}
+                  >
+                    <div className="font-semibold">MKV</div>
+                    <div className="text-xs text-muted-foreground">多软字幕轨</div>
                   </button>
                 </div>
               </div>
@@ -412,15 +470,50 @@ export function ExportDialog({
                     'hard',
                     '硬烧录',
                     'Host + Skia 字幕条带烧录到画面',
-                    env.hostExportAvailable,
-                    '需要 Host 导出能力',
+                    env.hostExportAvailable && burnable,
+                    burnable ? '需要 Host 导出能力' : '此语言暂不支持烧录 / Burn-in is not available for this language',
                   )}
                 </div>
+              </div>
+
+              <div className="space-y-2" data-testid="audio-mode-selector">
+                <label className="text-sm font-medium">音轨 / Audio</label>
+                <div className="grid grid-cols-2 gap-1">
+                  {([['original', '原声'], ['dubbing', '配音'], ['dubbing-background', '配音+背景'], ['dubbing-ducked', '配音+压低原声']] as const).map(([id, label]) => (
+                    <button key={id} type="button" disabled={(id !== 'original' && !hasDubbings) || (id === 'dubbing-background' && !hasBackground)}
+                      onClick={() => setAudioMode(id)}
+                      className={cn('rounded border p-1.5 text-xs', audioMode === id ? 'border-primary bg-primary/10' : 'hover:bg-muted/50', ((id !== 'original' && !hasDubbings) || (id === 'dubbing-background' && !hasBackground)) && 'opacity-40')}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {audioMode !== 'original' && <p className="text-[11px] text-muted-foreground">成片默认写入 AI 配音标注；缺少/过期/过长配音会阻止导出。</p>}
               </div>
 
               {videoOptions.subtitleProcessing !== 'none' && (
                 <>
                   {renderExportContentSelector()}
+                  {videoOptions.subtitleProcessing === 'soft' && softTracks.length > 1 && <div className="space-y-1 rounded border p-2" data-testid="soft-track-selector">
+                    <div className="text-sm font-medium">软字幕轨 / Soft subtitle tracks</div>
+                    {videoOptions.format === 'webm' && <p className="text-xs text-orange-600">WebM 只支持一条软字幕轨</p>}
+                    {softTracks.map(track => {
+                      const issues = track.missing + track.outdated;
+                      return <label key={track.id} className="flex items-center gap-2 text-xs">
+                        <input type="checkbox" data-testid={`soft-track-${track.id}`} checked={selectedSoftTracks.includes(track.id)}
+                          disabled={issues > 0 && !allowPartial}
+                          onChange={() => setSelectedSoftTracks(previous => previous.includes(track.id)
+                            ? previous.filter(id => id !== track.id)
+                            : [...previous, track.id])} />
+                        <span className="font-medium">{track.name}</span>
+                        <span className="text-muted-foreground">{track.languageCode}</span>
+                        {issues > 0 && <span className="text-orange-600">{issues} 条缺译/过期</span>}
+                      </label>;
+                    })}
+                    {softTracks.some(track => track.missing + track.outdated > 0) && <label className="flex items-center gap-2 text-xs text-orange-700">
+                      <input type="checkbox" data-testid="soft-track-partial" checked={allowPartial} onChange={event => setAllowPartial(event.target.checked)} />
+                      导出已完成部分（缺译/过期条目会省略）
+                    </label>}
+                  </div>}
                 </>
               )}
 

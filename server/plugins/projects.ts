@@ -25,6 +25,10 @@ import {
   dedupeProjectTerms, getTerminologyInputSchema, normalizeTermKey, saveTerminologyInputSchema,
   type ProjectTermEntry, type SaveTerminologyResult, type TerminologySnapshot,
 } from '../../shared/terminology';
+import {
+  dedupePresets, getStylePresetsInputSchema, presetNameKey, saveStylePresetsInputSchema,
+  type CustomStylePreset, type SaveStylePresetsResult, type StylePresetsSnapshot,
+} from '../../shared/stylePresets';
 import { fingerprintFile, ProjectStore } from '../projects/store';
 import { NewerFormatError } from '../projects/migrations';
 import { readFileSync } from 'node:fs';
@@ -640,6 +644,50 @@ export const projectsPlugin = { name: 'flycut-projects', inject: ['hostConfig', 
       if (opKey) {
         terminologyOps.set(opKey, saved);
         if (terminologyOps.size > 200) terminologyOps.delete(terminologyOps.keys().next().value!);
+      }
+      return saved;
+    })));
+
+  // F-0027: project-wide named subtitle styles. Styles stay opaque to the Host.
+  const presetOps = new Map<string, SaveStylePresetsResult>();
+  ctx.effect(() => ctx.rpc.register('projects.getStylePresets', getStylePresetsInputSchema, async ({ projectId }): Promise<StylePresetsSnapshot> => {
+    const project = await readActive(projectId);
+    return { projectId: project.id, revision: project.stylePresetsRevision ?? 0, presets: project.stylePresets ?? [] };
+  }));
+  ctx.effect(() => ctx.rpc.register('projects.saveStylePresets', saveStylePresetsInputSchema, ({ projectId, presets, baseRevision, operationId }) =>
+    store.exclusive(projectId, async (): Promise<SaveStylePresetsResult> => {
+      const opKey = operationId ? `${projectId}:${operationId}` : undefined;
+      if (opKey && presetOps.has(opKey)) return presetOps.get(opKey)!;
+      const project = await readActive(projectId);
+      const currentRevision = project.stylePresetsRevision ?? 0;
+      const currentPresets = project.stylePresets ?? [];
+      if (currentRevision !== baseRevision) {
+        return { status: 'conflict', revision: currentRevision, updatedAt: project.updatedAt, presets: currentPresets };
+      }
+      const existingByKey = new Map<string, CustomStylePreset>(currentPresets.map(preset => [presetNameKey(preset.name), preset]));
+      const now = new Date().toISOString();
+      const nextPresets = dedupePresets(presets.map(draft => {
+        const key = presetNameKey(draft.name);
+        const previous = existingByKey.get(key);
+        return {
+          id: draft.id ?? previous?.id ?? randomUUID(),
+          name: draft.name,
+          primary: draft.primary,
+          secondary: draft.secondary,
+          createdAt: previous?.createdAt ?? now,
+          updatedAt: now,
+        };
+      }));
+      project.stylePresets = nextPresets;
+      project.stylePresetsRevision = currentRevision + 1;
+      project.revision += 1;
+      project.updatedAt = now;
+      await store.writeProject(project);
+      const saved: SaveStylePresetsResult = { status: 'saved', revision: project.stylePresetsRevision,
+        projectRevision: project.revision, updatedAt: now, presets: nextPresets };
+      if (opKey) {
+        presetOps.set(opKey, saved);
+        if (presetOps.size > 200) presetOps.delete(presetOps.keys().next().value!);
       }
       return saved;
     })));

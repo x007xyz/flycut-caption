@@ -1,5 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis';
-import { keywordSuggestInputSchema, semanticCutsInputSchema, textInputSchema } from '../../shared/protocol';
+import { keywordSuggestInputSchema, semanticCutsInputSchema, textInputSchema, textShortenInputSchema } from '../../shared/protocol';
 import type { TextService } from '../services';
 import { OpenAICompatibleEngine } from '../../shared/text/OpenAICompatibleEngine';
 import { SemanticContractError } from '../../shared/editing/semanticFillers';
@@ -19,6 +19,7 @@ export const textPlugin = { name: 'flycut-text-provider', inject: ['jobs', 'rpc'
             semanticGroups: input.semanticGroups,
             contextBefore: input.contextBefore,
             contextAfter: input.contextAfter,
+            terms: input.terms,
           });
       });
     },
@@ -35,6 +36,20 @@ export const textPlugin = { name: 'flycut-text-provider', inject: ['jobs', 'rpc'
           }
           throw error;
         }
+      });
+    },
+    shorten(input) {
+      return ctx.jobs.create(async (signal, report) => {
+        const engine = new OpenAICompatibleEngine();
+        engine.setAbortSignal(signal); engine.setProgressCallback(report);
+        const model = await ctx.aiSettings.resolve(input.configId);
+        const items = input.items.map(item => ({ id: item.id, text: item.text, maxChars: item.maxChars }));
+        const results: Array<{ id: string; text: string }> = [];
+        for (const item of items) {
+          const [result] = await engine.shorten([{ id: item.id, text: item.text }], model, item.maxChars);
+          results.push(result);
+        }
+        return results;
       });
     },
     suggestKeywords(input) {
@@ -57,4 +72,5 @@ export const textPlugin = { name: 'flycut-text-provider', inject: ['jobs', 'rpc'
   ctx.effect(() => ctx.rpc.register('text.start', textInputSchema, input => service.start(input)));
   ctx.effect(() => ctx.rpc.register('text.suggestCuts', semanticCutsInputSchema, input => service.suggestCuts(input)));
   ctx.effect(() => ctx.rpc.register('text.suggestKeywords', keywordSuggestInputSchema, input => service.suggestKeywords(input)));
+  ctx.effect(() => ctx.rpc.register('text.shorten', textShortenInputSchema, input => service.shorten(input)));
 } };

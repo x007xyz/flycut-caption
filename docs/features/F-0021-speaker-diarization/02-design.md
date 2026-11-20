@@ -10,48 +10,24 @@ approved_at:
 
 ## UI / UX
 
-<!-- 界面状态和文案以 01-spec.md 的 AC 为准。这里写改哪些组件、新增哪些组件、接哪些 stores 和 RPC；没有界面改动写「无界面改动」 -->
+工具栏新增「说话人」面板：分析进度/取消、说话人列表、改名、保存名称、按说话人筛选字幕；筛选只改列表显示，不删除字幕、不改变导出。
 
 ## 技术方案
 
-### 涉及的子系统
-
-<!-- 对照 AGENTS.md 的路由表，列出要读的子系统文档 -->
-
-### 方案
-
-### 接口与数据
-
-<!-- RPC 方法（shared/protocol.ts）、事件、数据结构变化、兼容迁移 -->
-
-### 备选方案与取舍
-
-## 架构决策
-
-<!-- 需要长期遵守的决定写成 ADR：docs/20-architecture/adr/NNNN-<slug>.md，这里只放链接 -->
-
-## 自行决定的事项
-
-<!-- 需求说明没写清、由设计自己决定的事：决定了什么、为什么、影响哪条 AC。验收时汇总进测试报告 -->
-
-## 风险与回退
+- 本地 Provider `sherpa-diarization`（role `speaker`）：pyannote 分割 + 3D-Speaker CAM++ 嵌入 + fast clustering；模型与 venv 在 `~/.cache/flycut-speaker`，路径可用 `FLYCUT_SPEAKER_MODEL_DIR` / `FLYCUT_SPEAKER_PYTHON` 覆盖。
+- Host `speakers.analyze`：读取项目媒体 → FFmpeg 16k WAV → `ctx.providers.diarize` → 写入 `edits.speakerSegments` / `speakerNames`，递增修订号；不改原文、时间戳、EDL。
+- `speakers.saveNames` 保存显示名。
+- 客户端 `useSpeakers` + `SpeakerPanel`；`speakerForCue` 按最大重叠把字幕条映射到说话人；`appStore.speakerFilter` 控制 SubtitleList 过滤。
 
 ## 实现清单
 
-<!--
-开发阶段按这份清单推进，不再拆任务。每一项是一段能单独验证的功能（从存储到界面打通），做完提交一次并勾选。
-项数不限，一般 3–8 项；按依赖顺序排列。进入「测试与验收」前必须全部勾选（脚本检查）。
-一个需求做不完、需要拆成几个 PR 分别发布时，说明需求太大，回到 Epic 拆成多个需求。
--->
-
-- [ ] 
+- [x] 1. 共享 speaker schema、`speakerForCue`、项目增量字段。
+- [x] 2. Provider `sherpa-diarization` + Host `speakers.analyze`/`saveNames` + 真实模型。
+- [x] 3. 说话人面板：分析/取消/进度、列表、改名、保存、筛选/显示全部。
+- [ ] 4. 单条字幕改归属（把某条字幕指派到另一个说话人）与重开保持。
+- [x] 5. E2E 中英文 × 明暗主题；真实双人素材分析。
 
 ## 验证计划
 
-<!-- 每一项完成时要跑的检查（对照 docs/code-standards.md）；涉及界面的 AC 写哪些端到端测试；哪些 AC 需要真实使用验证 -->
-
-## 验收标准覆盖
-
-| AC | 设计中的对应部分 |
-|---|---|
-| AC-1 | |
+- `tests/architecture/speakers-f0021.test.ts`：真实 60 秒 CPPCC 双人片段，至少 2 个说话人、片段持久化。
+- `tests/e2e/features/F-0021.spec.ts`：面板、改名、筛选/恢复；中英文 × 明暗主题。

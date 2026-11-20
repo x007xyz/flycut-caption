@@ -33,6 +33,8 @@ import {
   matchActiveStylePreset,
 } from '@/subtitle';
 import { PlatformPresetsSection } from './PlatformPresetsSection';
+import { CustomPresetsSection } from './CustomPresetsSection';
+import { useCustomStylePresets } from '@/hooks/useCustomStylePresets';
 
 interface SubtitleSettingsProps {
   stylePair: SubtitleStylePair;
@@ -296,6 +298,7 @@ export function SubtitleSettings({
 
   // 当前编辑的样式：primary 决定位置/比例，secondary 共享 primary 的位置
   const activeStyle = activeStyleTab === 'primary' ? stylePair.primary : stylePair.secondary;
+  const customPresets = useCustomStylePresets(stylePair, onStylePairChange);
   const isPrimaryTab = activeStyleTab === 'primary';
 
   const updateActiveStyle = useCallback(
@@ -405,6 +408,8 @@ export function SubtitleSettings({
           </div>
         )}
       </div>
+
+      <CustomPresetsSection state={customPresets} style={activeStyle} />
 
       <PlatformPresetsSection
         primaryStyle={stylePair.primary}

@@ -8,50 +8,17 @@ approved_at:
 
 # F-0041 人声与背景声分离：设计
 
-## UI / UX
+## 方案
 
-<!-- 界面状态和文案以 01-spec.md 的 AC 为准。这里写改哪些组件、新增哪些组件、接哪些 stores 和 RPC；没有界面改动写「无界面改动」 -->
-
-## 技术方案
-
-### 涉及的子系统
-
-<!-- 对照 AGENTS.md 的路由表，列出要读的子系统文档 -->
-
-### 方案
-
-### 接口与数据
-
-<!-- RPC 方法（shared/protocol.ts）、事件、数据结构变化、兼容迁移 -->
-
-### 备选方案与取舍
-
-## 架构决策
-
-<!-- 需要长期遵守的决定写成 ADR：docs/20-architecture/adr/NNNN-<slug>.md，这里只放链接 -->
-
-## 自行决定的事项
-
-<!-- 需求说明没写清、由设计自己决定的事：决定了什么、为什么、影响哪条 AC。验收时汇总进测试报告 -->
-
-## 风险与回退
+- 新模型角色 `separation`；内置 Provider `demucs-local`（HTDemucs，MIT）通过本地 Python Demucs 运行，不随客户端分发 Python。
+- Host `separation.analyze`：从项目媒体提取 44.1k 立体声 WAV → Demucs `--two-stems=vocals` → 写入 `videos/<videoId>/separation/<id>/vocals.wav` 与 `background.wav`，元数据存 `edits.separation`（模型、时长、采样率、源指纹）。
+- 缓存按源指纹 + ModelRef；同一源不重复生成。提供只读音频路由。
+- 面板：模型/进度/取消、生成/重新生成、试听人声/背景、缓存状态；原音频不改。
 
 ## 实现清单
 
-<!--
-开发阶段按这份清单推进，不再拆任务。每一项是一段能单独验证的功能（从存储到界面打通），做完提交一次并勾选。
-项数不限，一般 3–8 项；按依赖顺序排列。进入「测试与验收」前必须全部勾选（脚本检查）。
-一个需求做不完、需要拆成几个 PR 分别发布时，说明需求太大，回到 Epic 拆成多个需求。
--->
-
-- [ ] 
-
-## 验证计划
-
-<!-- 每一项完成时要跑的检查（对照 docs/code-standards.md）；涉及界面的 AC 写哪些端到端测试；哪些 AC 需要真实使用验证 -->
-
-## 验收标准覆盖
-
-| AC | 设计中的对应部分 |
-|---|---|
-| AC-1 | |
+- [x] 1. 共享 separation schema、项目字段、Provider/registry `separate`。
+- [x] 2. Host Provider + job + 缓存 + 音频路由。
+- [x] 3. 面板与试听。
+- [x] 4. 真实 Demucs 分离与质量抽查。
+- [ ] 5. 配音+背景混音导出（F-0037）。

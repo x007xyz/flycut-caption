@@ -54,6 +54,22 @@ export const providerRegistryPlugin = { name: 'flycut-provider-registry', inject
       if (info.status !== 'ready') throw new Error(info.name + ' 不可用：' + (info.reason ?? '模型未就绪'));
       return voiceActivityResultSchema.parse(await provider.detectVoice(ref.modelId, audioPath, signal, report));
     },
+    async separate(ref, audioPath, signal, report) {
+      const provider = get(ref.providerId);
+      if (!provider.separate) throw new Error(provider.name + ' 不支持人声分离');
+      const info = await model(provider, ref.modelId, signal);
+      if (info.role !== 'separation') throw new Error(info.name + ' 不是人声分离模型');
+      if (info.status !== 'ready') throw new Error(info.name + ' 不可用：' + (info.reason ?? '模型未就绪'));
+      return provider.separate(ref.modelId, audioPath, signal, report);
+    },
+    async diarize(ref, audioPath, signal, report) {
+      const provider = get(ref.providerId);
+      if (!provider.diarize) throw new Error(provider.name + ' 不支持说话人分析');
+      const info = await model(provider, ref.modelId, signal);
+      if (info.role !== 'speaker') throw new Error(info.name + ' 不是说话人模型');
+      if (info.status !== 'ready') throw new Error(info.name + ' 不可用：' + (info.reason ?? '模型未就绪'));
+      return provider.diarize(ref.modelId, audioPath, signal, report);
+    },
     async synthesize(request, signal, report) {
       const provider = get(request.providerId);
       if (!provider.synthesize) throw new Error(`${provider.name} 不支持语音合成（TTS）`);

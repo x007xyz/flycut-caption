@@ -4,6 +4,7 @@ import { ModelOptionsForm } from '@/components/ASR/ModelOptionsForm';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useTranslation } from '@/contexts/LocaleProvider';
+import { useProjectStore } from '@/stores/projectStore';
 import type { CueDubbingController } from '@/hooks/useCueDubbing';
 import { dubbingCopy, fillDubbingCopy } from '@/locales/dubbing';
 import { modelKey } from '@/stores/appStore';
@@ -29,6 +30,7 @@ export function SingleCueDubbingPanel({
     }
   }, [dubbing.currentArtifact, dubbing.playingCueKey]);
 
+  const voiceProfiles = useProjectStore(state => state.current?.voiceProfiles) ?? [];
   if (!dubbing.open) return null;
 
   const activeModel = dubbing.activeEntry?.model;
@@ -154,6 +156,19 @@ export function SingleCueDubbingPanel({
                 </div>
               )}
             </label>
+
+            {voiceProfiles.length > 0 && (
+              <label className="flex flex-col gap-1">
+                <span className="text-[11px] text-aimu-text-muted">项目音色 / Project voice</span>
+                <select data-testid="cue-dub-voice-profile" value={dubbing.voiceProfileId ?? ''}
+                  disabled={dubbing.processing}
+                  onChange={event => dubbing.setVoiceProfileId(event.target.value || null)}
+                  className="h-7 rounded border border-aimu-border bg-aimu-input px-2 text-xs text-aimu-text-primary">
+                  <option value="">模型自带音色</option>
+                  {voiceProfiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
+                </select>
+              </label>
+            )}
 
             <label className="flex flex-col gap-1">
               <span className="text-[11px] text-aimu-text-muted">{copy.languageLabel}</span>
