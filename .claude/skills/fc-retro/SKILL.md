@@ -10,5 +10,5 @@ description: FlyCut 版本发布后的观察与复盘：在 docs/40-ops/releases
 1. 打开 `docs/40-ops/releases/v<版本>.md`（不知道哪个版本就看最新的）。
 2. 发布后观察（建议发布后 1–2 周）：收集 GitHub issue、用户反馈（原话原样引用）、崩溃和错误报告，逐条写处理方式：关联 issue，或用 `fc-spec` 立为新需求。严重问题（功能不可用、数据丢失、安全问题）用 `pnpm feature incident <slug> "<标题>"` 建事故记录，**立即告诉维护者**。排查时总结出的操作步骤补充到 `docs/40-ops/runbooks/`。
 3. 复盘：对照这个版本每个需求 `01-spec.md` 的成功指标填写实际结果，拿不到数据的写原因。回看测试报告和相关提交，找返工、验证不足和做得好的地方，可复用的按 `LESSONS.md` 的格式写进去（附真实 Evidence）。
-4. 合并到项目级文档：`docs/10-product/`（能力地图、Epic 候选状态）、`docs/20-architecture/`（架构、ADR 状态）。要改 `docs/decisions.md` 的，先列出来请维护者确认。
+4. 合并到项目级文档：`docs/10-product/`（能力地图、Epic 候选状态）、`docs/20-architecture/`（架构、ADR 状态）。要改 `docs/decisions.md` 的，不单独停下来：列进下一个批次的「节点一：方案确认」（还没有批次就新建一个），和那一批的方案一起请维护者确认。
 5. 写完用几句话告诉维护者：发现了什么问题、新立了哪些需求、写了哪些教训。

@@ -53,3 +53,4 @@ src-tauri/binaries/flycut-node*
 
 # 真实场景测试视频（pnpm fetch:test-media 下载）
 tests/media/
+.omo/
