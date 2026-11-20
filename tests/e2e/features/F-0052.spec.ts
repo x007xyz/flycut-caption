@@ -253,7 +253,7 @@ for (const theme of ['light', 'dark'] as const) {
       await shot(page, F, `mcp-editor-suggestions-loaded-${theme}-${lang}`);
 
       // Apply selected suggestions -> formal save + auto-dismiss Host pending suggestion
-      await page.getByRole('button', { name: lang === 'zh' ? '应用选中建议' : 'Apply selected suggestions' }).click();
+      await page.getByTestId('cut-suggestions').getByRole('button', { name: lang === 'zh' ? '应用选中建议' : 'Apply selected suggestions' }).click();
       await expect.poll(() => host.calls.filter(c => c.method === 'projects.saveVideoEdits').length).toBeGreaterThan(0);
       await expect.poll(() => host.calls.filter(c => c.method === 'projects.suggestions.dismiss').length).toBe(1);
       await expect(page.getByTestId('host-suggestions-banner')).toHaveCount(0);

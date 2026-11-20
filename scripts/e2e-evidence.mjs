@@ -1,10 +1,10 @@
-// 生成需求验收的界面证据：跑 tests/e2e/features/<F-编号>.spec.ts，截图和录屏写进需求目录。
+// 生成需求验收的界面证据：跑 tests/e2e/features/<F-编号>.spec.ts，截图和录屏写到 test-results/evidence/<F-编号>/（不进 git）。
 //
 //   pnpm e2e:evidence F-0002
 //
-// - 截图：测试里用 tests/e2e/lib/evidence.ts 的 shot()，写到 docs/features/<需求>/screenshots/
-// - 录屏：每个测试一段 .webm，写到 docs/features/<需求>/recordings/（不进 git）
-// - 结果摘要：docs/features/<需求>/recordings/summary.json，测试报告引用它
+// - 截图：测试里用 tests/e2e/lib/evidence.ts 的 shot()，写到 test-results/evidence/<需求>/screenshots/
+// - 录屏：每个测试一段 .webm，写到 test-results/evidence/<需求>/recordings/
+// - 结果摘要：test-results/evidence/<需求>/recordings/summary.json
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, platform } from 'node:os';
@@ -16,12 +16,7 @@ if (!/^F-\d{4}$/.test(id ?? '')) {
   console.error('用法：pnpm e2e:evidence F-0002');
   process.exit(1);
 }
-const dirName = readdirSync('docs/features').find((name) => name.startsWith(`${id}-`));
-if (!dirName) {
-  console.error(`找不到需求目录 docs/features/${id}-*`);
-  process.exit(1);
-}
-const featureDir = join('docs/features', dirName);
+const featureDir = join('test-results', 'evidence', id);
 const spec = `tests/e2e/features/${id}.spec.ts`;
 if (!existsSync(spec)) {
   console.error(`没有 ${spec}。涉及界面的 AC 要先写端到端测试`);
@@ -48,8 +43,6 @@ const record = hasPlaywrightFfmpeg();
 if (!record) console.warn('⚠ 没有找到 Playwright 的 ffmpeg，这次只截图不录屏。安装：pnpm exec playwright install ffmpeg');
 
 const recordings = join(featureDir, 'recordings');
-rmSync(recordings, { recursive: true, force: true });
-mkdirSync(recordings, { recursive: true });
 const reportFile = join('test-results', `${id}-evidence.json`);
 mkdirSync('test-results', { recursive: true });
 
@@ -64,6 +57,9 @@ if (!existsSync(reportFile)) {
   process.exit(run.status ?? 1);
 }
 
+// Playwright 启动时会清空 test-results/，录屏目录必须在运行结束后再建
+rmSync(recordings, { recursive: true, force: true });
+mkdirSync(recordings, { recursive: true });
 const report = JSON.parse(readFileSync(reportFile, 'utf8'));
 const tests = [];
 const walk = (suite, titles) => {

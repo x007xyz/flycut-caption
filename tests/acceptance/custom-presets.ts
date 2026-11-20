@@ -10,7 +10,7 @@ import type { ProjectOpenResult, ProjectStyle } from '../../shared/projects';
 import type { StylePresetsSnapshot } from '../../shared/stylePresets';
 import { defaultSubtitleStylePair } from '../../src/subtitle/subtitleStyle';
 
-const SHOTS = resolve('docs/features/F-0027-custom-subtitle-presets/screenshots');
+const SHOTS = resolve('test-results/evidence/F-0027/screenshots');
 const dir = await mkdtemp(join(tmpdir(), 'flycut-f0027-real-'));
 const token = randomUUID();
 const ctx = await createHost({ home: dir, appData: dir, bind: '127.0.0.1', port: 0,

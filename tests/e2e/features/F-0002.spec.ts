@@ -200,7 +200,8 @@ async function editFirst(page: Page, text: string) {
   await box.blur();
 }
 
-const status = (page: Page) => page.getByRole('status').filter({ hasText: /保存|修改/ });
+// 只取项目保存状态；F-0026 的平台样式保存提示也是 role=status 且含「保存」，要排除
+const status = (page: Page) => page.locator('[role="status"]:not([data-testid^="platform-save"])').filter({ hasText: /保存|修改/ });
 const saveCalls = (host: { calls: { method: string }[] }) => host.calls.filter(call => call.method === 'projects.saveVideoEdits');
 
 for (const theme of THEMES) {

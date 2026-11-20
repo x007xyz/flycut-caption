@@ -555,7 +555,7 @@ for (const theme of THEMES) {
       await expect(dialog(page)).toHaveCount(0);
       await expect.poll(() => calls(host, 'projects.saveVideoEdits').length).toBe(2);
       expect((calls(host, 'projects.saveVideoEdits')[1].payload.edits as { chunks: { text: string }[] }).chunks[0].text).toBe('别处删除后还在改');
-      await expect(page.getByRole('status').filter({ hasText: '已保存' })).toBeVisible();
+      await expect(page.locator('[role="status"]:not([data-testid^="platform-save"])').filter({ hasText: '已保存' })).toBeVisible();
     });
 
     test(`F-0003/AC-32 项目已彻底删除：只能另存为新项目或放弃修改 (${theme})`, async ({ page }) => {

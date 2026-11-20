@@ -10,7 +10,7 @@ import type { ProjectOpenResult } from '../../shared/projects';
 
 const MEDIA = process.env.FLYCUT_F0020_MEDIA ?? resolve('tests/media/external/coscup-bTc722zFo7o.mp4');
 const TRANSCRIPT = process.env.FLYCUT_F0020_TRANSCRIPT ?? resolve('tests/media/external/coscup-bTc722zFo7o.transcript.json');
-const SHOTS = resolve('docs/features/F-0020-punctuation-sentence-splitting/screenshots');
+const SHOTS = resolve('test-results/evidence/F-0020/screenshots');
 
 if (!existsSync(MEDIA) || !existsSync(TRANSCRIPT)) {
   console.log(`SKIP F-0020 real acceptance: missing ${MEDIA} or ${TRANSCRIPT}`);

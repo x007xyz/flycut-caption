@@ -798,7 +798,7 @@ function batchNew([slugRaw, title, ...featureIds]) {
   validateMembers(featureIds, ctx, null);
   const docs = splitList(option('docs'));
   validateDocs(docs);
-  const id = `B-${pad(nextNumber(listFiles(BATCHES), /^B-(\d{2})-/), 2)}`;
+  const id = `B-${pad(nextNumber([...listFiles(BATCHES), 'B-01-removed'], /^B-(\d{2})-/), 2)}`;
   const file = join(BATCHES, `${id}-${slug}.md`);
   if (existsSync(file)) fail(`${file} 已存在`);
   mkdirSync(BATCHES, { recursive: true });
@@ -922,7 +922,8 @@ switch (command) {
     if (epic.status !== 'approved') fail(`${epicId} 还是 ${epic.status}，Epic 确认后才能立项`);
     const type = option('type') ?? 'feature';
     if (!STAGES[type]) fail('--type 只能是 feature 或 spike');
-    const id = `F-${pad(nextNumber([...listDirs(FEATURES), ...listDirs(ARCHIVE)], /^F-(\d{4})-/))}`;
+    // docs/features 于 2026-11-19 整体移除（原文在 git 历史 ed177c8），编号从 F-0059 继续，不复用旧编号
+    const id = `F-${pad(nextNumber([...listDirs(FEATURES), ...listDirs(ARCHIVE), 'F-0058-removed'], /^F-(\d{4})-/))}`;
     const deps = splitList(option('depends'));
     validateDepends(id, deps);
     const dir = join(FEATURES, `${id}-${slug}`);

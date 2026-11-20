@@ -170,7 +170,7 @@ for (const theme of ['light', 'dark'] as const) for (const english of [false, tr
       await mockHost(page, empty.handlers);
       await page.goto(`/?ui=${english ? 'en' : 'zh'}#/projects/${P}/videos/${VIDEO_ID}`);
       await setEnglish(page, english);
-      await expect(page.getByText(english ? 'Nothing here yet' : '暂无内容')).toBeVisible();
+      await expect(page.getByTestId('platform-empty-subtitles').getByText(english ? 'Nothing here yet' : '暂无内容')).toBeVisible();
       await shot(page, 'F-0030', `no-content-${theme}-${lang}`);
     });
 

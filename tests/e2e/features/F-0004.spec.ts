@@ -182,7 +182,7 @@ for (const theme of THEMES) {
       const save = calls(host, 'projects.saveVideoEdits');
       expect(save).toHaveLength(1);
       expect(save[0].payload).toMatchObject({ baseRevision: 3, force: false });
-      await expect(page.getByRole('status').filter({ hasText: /已保存/ })).toBeVisible();
+      await expect(page.locator('[role="status"]:not([data-testid^="platform-save"])').filter({ hasText: /已保存/ })).toBeVisible();
       await shot(page, F, `recovered-${theme}`);
       // 只清除这次恢复的副本，另一个会话的副本还在
       await expect.poll(async () => (await copies(page)).map(copy => copy.content.chunks[0].text)).toEqual(['更早的会话']);
@@ -229,7 +229,7 @@ for (const theme of THEMES) {
       // 正常保存成功后副本删除，再打开不提示
       await expect.poll(async () => (await copies(reopened)).length).toBe(0);
       await editAt(reopened, 0, '保存后的修改');
-      await expect(reopened.getByRole('status').filter({ hasText: /已保存/ })).toBeVisible({ timeout: 5000 });
+      await expect(reopened.locator('[role="status"]:not([data-testid^="platform-save"])').filter({ hasText: /已保存/ })).toBeVisible({ timeout: 5000 });
       await expect.poll(async () => (await copies(reopened)).length).toBe(0);
       await reopened.close();
       const last = await reopen(context, theme, fake);

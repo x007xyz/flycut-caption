@@ -138,7 +138,7 @@ for (const theme of ['light', 'dark'] as const) for (const english of [false, tr
     test('F-0031/AC-5 empty subtitles shows Nothing here yet', async ({ page }) => {
       const empty = createFixture({ chunks: [], hasModel: false });
       await openEditor(page, theme, english, empty);
-      await expect(page.getByText(english ? 'Nothing here yet' : '暂无内容')).toBeVisible();
+      await expect(page.getByTestId('platform-empty-subtitles').getByText(english ? 'Nothing here yet' : '暂无内容')).toBeVisible();
       await shot(page, 'F-0031', `empty-${theme}-${lang}`);
     });
 

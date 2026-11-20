@@ -673,6 +673,8 @@ export function SubtitleList({
         </div>
       </div>
 
+      {/* 功能面板最多占一半高度并各自滚动，避免把字幕列表挤没（列表行被底栏遮住无法点击） */}
+      <div data-testid="subtitle-panels" className="shrink-0 max-h-[50%] overflow-y-auto">
       <CorrectionReviewPanel review={review} />
       <TranslationPanel translation={translation} />
       <SingleCueDubbingPanel dubbing={dubbing} onOpenSettings={onOpenSettings} />
@@ -683,12 +685,13 @@ export function SubtitleList({
       <ClipsPanel state={clips} onExport={clip => void clipExport.exportClip(clip)} exportPhase={clipExport.phase} exportProgress={clipExport.progress} exportError={clipExport.error}
         onBatch={clips => void clipExport.batchExport(clips)} batch={clipExport.batch} onBatchCancel={() => void clipExport.batchCancel()}
         hasReframe={clipExport.hasReframe} followSubject={clipExport.followSubject} setFollowSubject={clipExport.setFollowSubject} />
+      </div>
 
       {/* Subtitle List (virtualized scroll window) */}
       <div
         ref={virtual.scrollRef}
         data-testid="subtitle-virtual-scroll"
-        className="flex-1 overflow-y-auto"
+        className="flex-1 min-h-0 overflow-y-auto"
         style={{ overflowAnchor: 'none' }}
         onScroll={virtual.onScroll}
         onWheel={markManualScroll}
