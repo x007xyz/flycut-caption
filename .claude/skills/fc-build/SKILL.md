@@ -48,7 +48,7 @@ description: FlyCut 需求流程的执行阶段：批次方案确认后，严格
 2. 逐条验证每一条 AC：
    - 自动测试：写出测试名和命令。
    - 涉及界面的 AC：先在目标平台跑端到端测试，测试名带 AC 编号；覆盖需求说明写到的每个界面状态和明暗主题，断言关键文字和可操作的控件。Web 现用 Playwright（`tests/e2e/features/<F-编号>.spec.ts`）；可用 `page.route` 构造异常状态，需要真实 Host 时用 `pnpm dev` 并注明。桌面专属行为不得用 Web 通过代替。
-   - Web 界面证据用 `shot()` 和 `pnpm e2e:evidence <F-编号>`：截图写进 `screenshots/`（进 git），录屏和摘要写进 `recordings/`（只在本地）。桌面证据注明应用构建和运行平台。
+   - Web 界面证据用 `shot()` 和 `pnpm e2e:evidence <F-编号>`：截图和录屏写进 `test-results/evidence/<F-编号>/`（不进 git，需要留存的附到 PR 或测试报告）。桌面证据注明应用构建和运行平台。
    - 修 bug 类的 AC 做 Red check：撤掉修复后测试必须失败。
    - 需要真实使用的 AC（真实模型、真实视频、Tauri 桌面端、真实 API），优先自动化驱动真实环境；只有现有自动化无法验证的步骤才用 Computer Use 或人工补验，记录原因、步骤和观察结果。
    - 做不到的写 `⏸ Not run` 和原因，**不能省略或写成通过**。

@@ -6,8 +6,8 @@
 |---|---|---|
 | 纯逻辑、数据迁移、Host RPC、错误处理 | 单元或集成测试，用固定输入断言输出或实际状态 | `pnpm test`、`pnpm test:architecture` |
 | Web 界面、交互与界面状态 | Playwright，用角色、名称等稳定定位，等待可观察结果；需要时连接真实 Host | `pnpm test:e2e tests/e2e/features/<F-编号>.spec.ts`；用 `pnpm e2e:evidence <F-编号>` 生成截图和录屏 |
-| Web 与桌面共用的业务流程 | 复用素材、操作和断言，在 Chrome 与真实 Tauri WKWebView 分别运行 | Web 现用 Playwright；WebdriverIO 双端试点见 [F-0058](../features/F-0058-cross-platform-acceptance/01-spec.md)，桌面入口待实现 |
-| 桌面启动、内置 Host、字体和 FFmpeg 等打包资源 | 用脚本启动本次打包的应用，验证 Host 就绪并真实导出；检查输出文件和字幕画面 | 打包冒烟入口随 [F-0058](../features/F-0058-cross-platform-acceptance/01-spec.md) 实现 |
+| Web 与桌面共用的业务流程 | 复用素材、操作和断言，在 Chrome 与真实 Tauri WKWebView 分别运行 | Web 现用 Playwright；WebdriverIO 双端试点见 F-0058，桌面入口待实现 |
+| 桌面启动、内置 Host、字体和 FFmpeg 等打包资源 | 用脚本启动本次打包的应用，验证 Host 就绪并真实导出；检查输出文件和字幕画面 | 打包冒烟入口随 F-0058 实现 |
 | 原生系统交互、剪映等外部应用 | 先检查是否有可靠的脚本或原生测试接口；没有时只补必要的实机步骤 | 在报告写明应用版本、操作、观察结果与自动化缺口 |
 
 **执行与证据**

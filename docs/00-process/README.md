@@ -92,7 +92,7 @@ fc-build ── 按执行图逐波次执行：同一波次并发，每个需求 
 
 - **需求说明写清楚界面状态**：每个新增或改动的界面，每个状态（空、加载中、正常、出错、冲突……）都写成一条 AC，说明用户看到什么、能做什么、文案是什么。状态怎么处理在方案确认时就定下来，不留到写代码时顺手决定。
 - **开发直接写真实代码**：界面直接接真实的 stores 和 Host，不另写假数据版本。
-- **验收先跑自动化**：涉及界面的每条 AC 优先用目标平台上的端到端测试，测试名带 AC 编号，覆盖需求说明列出的状态和明暗主题；Web 沿用 Playwright，桌面专属行为在真实 Tauri 中验证。截图存进需求目录的 `screenshots/`，作为补充证据。规则见 [自动化验收方案](../30-engineering/acceptance-testing.md) 和 [fc-build](../../.claude/skills/fc-build/SKILL.md)。
+- **验收先跑自动化**：涉及界面的每条 AC 优先用目标平台上的端到端测试，测试名带 AC 编号，覆盖需求说明列出的状态和明暗主题；Web 沿用 Playwright，桌面专属行为在真实 Tauri 中验证。截图和录屏由 `pnpm e2e:evidence` 写进 `test-results/evidence/<F-编号>/`（不进 git），需要留存的附到 PR 或测试报告，作为补充证据。规则见 [自动化验收方案](../30-engineering/acceptance-testing.md) 和 [fc-build](../../.claude/skills/fc-build/SKILL.md)。
 
 例外：全新的大页面、方向还不清楚时，可以先用独立 HTML 或 Artifact 页面做低保真探索，看完就扔，结论写进需求说明。**从零开始的项目**在第一个有界面的需求之前，先建立设计系统（技术栈、颜色 / 字号 / 间距等基础样式值、基础组件），写一份 ADR，见 [agent-maintenance-playbook.md](../agent/agent-maintenance-playbook.md)。
 

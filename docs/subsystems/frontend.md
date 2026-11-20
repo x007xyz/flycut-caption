@@ -29,7 +29,7 @@
 - 新的 Shadcn 组件用 `pnpm dlx shadcn@latest add <component-name>` 添加，不要手抄。
 - 用户可见文案走 `src/locales`，见根目录 `INTERNATIONALIZATION.md`。
 - 改动交互细节前先查 [decisions.md](../decisions.md)，已拍板的行为不要在 PR 里顺手改。
-- **端到端测试**：按 [自动化验收方案](../30-engineering/acceptance-testing.md) 选择目标平台，测试名带 AC 编号，覆盖 PRD 列出的状态和明暗主题。Web 用例写在 `tests/e2e/features/<F-编号>.spec.ts`，截图用 `tests/e2e/lib/evidence.ts` 的 `shot()`；`pnpm e2e:evidence F-NNNN` 把截图写进需求目录的 `screenshots/`、录屏写进 `recordings/`。Web 异常状态可用 `page.route` 构造；需要真实 Host 时用 `pnpm dev`，在证据中注明。桌面专属行为在真实 Tauri 中验收。
+- **端到端测试**：按 [自动化验收方案](../30-engineering/acceptance-testing.md) 选择目标平台，测试名带 AC 编号，覆盖 PRD 列出的状态和明暗主题。Web 用例写在 `tests/e2e/features/<F-编号>.spec.ts`，截图用 `tests/e2e/lib/evidence.ts` 的 `shot()`；`pnpm e2e:evidence F-NNNN` 把截图和录屏写进 `test-results/evidence/<F-编号>/`（不进 git）。Web 异常状态可用 `page.route` 构造；需要真实 Host 时用 `pnpm dev`，在证据中注明。桌面专属行为在真实 Tauri 中验收。
 
 ## F-0006 / F-0007 / F-0012 实施
 

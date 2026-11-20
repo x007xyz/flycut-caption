@@ -1,6 +1,6 @@
 # F-0016 字幕渲染方案原型
 
-一次性原型，不进构建、不进测试。结论见 [docs/features/archive/F-0016-subtitle-render-research/02-research.md](../../docs/features/archive/F-0016-subtitle-render-research/02-research.md)。
+一次性原型，不进构建、不进测试。结论见 docs/features/archive/F-0016-subtitle-render-research/02-research.md。
 
 测试环境：macOS 26.6.2（Apple Silicon，10 核），Node 24.6.0，FFmpeg 8.0.1（`src-tauri/binaries/ffmpeg`），Chrome for Testing 151.0.7922.34（Playwright 缓存的 chromium-1234），系统 WKWebView（WebKit 605.1.15）。
 

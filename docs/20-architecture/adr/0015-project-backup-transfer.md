@@ -11,7 +11,7 @@ superseded_by:
 
 ## 背景
 
-创作者需要把包含多视频、字幕修改、EDL 剪辑决策、样式与媒体的完整项目打包备份，或迁移到另一台机器 / 另一个 Host（[F-0023](../../features/F-0023-project-transfer/01-spec.md)）。约束如下：
+创作者需要把包含多视频、字幕修改、EDL 剪辑决策、样式与媒体的完整项目打包备份，或迁移到另一台机器 / 另一个 Host（F-0023）。约束如下：
 
 - 已拍板（[decisions.md](../../decisions.md)）：业务在 Host，Tauri 只做外壳，RPC 不接收任意本地路径；项目格式带版本号（[ADR-0001](0001-project-storage-format.md)）；桌面端可能使用 `linked` 外部媒体（[ADR-0002](0002-desktop-project-media.md)）；AI 密钥、token 与客户端 IndexedDB 崩溃恢复副本不能随项目导出（[ADR-0004](0004-client-recovery-copies.md)、[ADR-0007](0007-host-ai-settings-and-secrets.md)）。
 - 10–60 分钟口播素材常达数 GB，打包和解包必须流式处理，不能整包读入内存，也不能引入需要跨平台编译的原生归档依赖。

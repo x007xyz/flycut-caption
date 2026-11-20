@@ -23,7 +23,6 @@ target/
 # Test reports (regenerate with pnpm test:report)
 test-results/
 # 验收录屏只在本地看，不进 git
-docs/features/*/recordings/
 
 models/*
 # 共享资源由 scripts/fetch-shared-assets.sh 在构建前拉取并打入安装包

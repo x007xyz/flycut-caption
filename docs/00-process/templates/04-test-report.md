@@ -34,7 +34,7 @@ approved_at:
 
 ## 界面证据
 
-<!-- 涉及界面时：pnpm e2e:evidence <F-编号> 生成的截图（screenshots/，进 git）和录屏（recordings/，只在本地），按界面和状态列出；没有界面改动写「无界面改动」 -->
+<!-- 涉及界面时：pnpm e2e:evidence <F-编号> 生成的截图和录屏（test-results/evidence/<F-编号>/，不进 git；需要留存的附到 PR），按界面和状态列出；没有界面改动写「无界面改动」 -->
 
 | 界面 | 状态 | AC | 截图 | 录屏 |
 |---|---|---|---|---|

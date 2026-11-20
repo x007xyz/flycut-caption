@@ -13,7 +13,7 @@ superseded_by:
 
 现在预览和导出是两套渲染：播放器预览用 Canvas 2D 绘制（`src/subtitle/subtitleRenderer.ts`），导出时生成 ASS 交给 FFmpeg 的 libass 硬烧（`src/subtitle/burnAss.ts`，`server/plugins/export.ts`）。静态样式靠两边各写一遍保持一致；E-03 要做的逐字高亮、关键词强调、弹出动画、渐变、贴图，用两套实现无法逐帧对齐。`docs/decisions.md` 已规定「只做了预览的特效不算完成」，并要求桌面端、Web 端、CLI / MCP、Cloud 都能导出。
 
-F-0016 在当前环境（macOS 26.6.2，Apple Silicon）实测了 Epic E-03 的方案 A–E，数据见 [F-0016 调研报告](../../features/archive/F-0016-subtitle-render-research/02-research.md)，原型在 `experiments/f-0016-render/`。
+F-0016 在当前环境（macOS 26.6.2，Apple Silicon）实测了 Epic E-03 的方案 A–E，数据见 F-0016 调研报告，原型在 `experiments/f-0016-render/`。
 
 ## 决策
 

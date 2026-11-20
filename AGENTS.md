@@ -9,8 +9,9 @@ FlyCut Caption 是智能视频字幕裁剪工具：上传视频/音频 → ASR �
 1. 读 [LESSONS.md](LESSONS.md)：之前踩过的坑和照做的做法。
 2. 读 [docs/code-standards.md](docs/code-standards.md)：验收标准，写代码和交付前都要对照。
 3. 新功能和较大的改动走需求流程（[docs/00-process/README.md](docs/00-process/README.md)）：一批需求只有两个人工节点——方案确认（这一批的需求说明 + 技术设计 + 执行图）和验收（这一批的测试报告），agent 不能自己确认；交给人之前先由独立 AI 审查员审过，能由 AI 确认的不留给人；方案确认后按批次文件里的执行图并发推进，每步 `pnpm feature batch sync` 同步回执行图；发布、运维观察和复盘按版本做；依赖未完成的需求不能开始开发。小的 bug 修复和文档修正可以直接做。
-4. 产品方向（目标用户：口播创作者；平台：先桌面端再 Web）见 [docs/10-product/vision.md](docs/10-product/vision.md)。
-5. 每个任务都先按 [自动化验收方案](docs/30-engineering/acceptance-testing.md) 选择并运行可复现的检查，再补自动化覆盖不到的实机验证。交付时记录目标平台、命令、结果和未跑原因。
+4. 还没做完的事（v2.1.0 发布、F-0029/F-0040/F-0054 与待维护者决定的问题）见 [docs/remaining-work.md](docs/remaining-work.md)；`docs/features/` 下的旧需求文档已移除，原文在 git 历史 `ed177c8`。
+5. 产品方向（目标用户：口播创作者；平台：先桌面端再 Web）见 [docs/10-product/vision.md](docs/10-product/vision.md)。
+6. 每个任务都先按 [自动化验收方案](docs/30-engineering/acceptance-testing.md) 选择并运行可复现的检查，再补自动化覆盖不到的实机验证。交付时记录目标平台、命令、结果和未跑原因。
 
 ## 按改动范围读文档
 
